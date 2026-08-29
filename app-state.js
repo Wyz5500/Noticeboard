@@ -123,6 +123,13 @@ var GuildState = (function () {
     });
   }
 
+  function latestStatusActorId(task) {
+    if (!task || !Array.isArray(task.timeline) || !task.timeline.length) return null;
+    var latestEvent = task.timeline[task.timeline.length - 1];
+    if (!latestEvent || !latestEvent.actorId || !isKnownUser({ id: latestEvent.actorId })) return null;
+    return latestEvent.actorId;
+  }
+
   function createTask(input, publisher, now) {
     if (!isKnownUser(publisher)) throw new Error('只有有效用户可以创建任务');
     if (!input || !input.title || !input.type || !input.description || !input.reward || !input.dueDate) {
@@ -230,10 +237,8 @@ var GuildState = (function () {
 
   function filterTasks(tasks, scope, filter, user) {
     return tasks.filter(function (task) {
-      var matchesScope = scope !== 'mine' || (user && task.assignee && task.assignee.id === user.id);
-      var matchesFilter = !filter || filter === '全部' ||
-        (filter === STATUS.IN_PROGRESS && (task.status === STATUS.IN_PROGRESS || task.status === STATUS.REOPENED)) ||
-        task.status === filter;
+      var matchesScope = scope !== 'mine' || (isKnownUser(user) && latestStatusActorId(task) === user.id);
+      var matchesFilter = !filter || filter === '全部' || task.status === filter;
       return matchesScope && matchesFilter;
     });
   }
@@ -278,6 +283,7 @@ var GuildState = (function () {
     TYPES: TYPES,
     createSeedTasks: createSeedTasks,
     createTask: createTask,
+    latestStatusActorId: latestStatusActorId,
     canAct: canAct,
     applyAction: applyAction,
     getUser: getUser,

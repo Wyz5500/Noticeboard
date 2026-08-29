@@ -117,8 +117,10 @@
   }
 
   function renderStats() {
-    var count = function (status) { return GuildState.filterTasks(state.tasks, 'all', status, currentUser()).length; };
-    elements.statTotal.textContent = state.tasks.length;
+    var user = currentUser();
+    var myTasks = GuildState.filterTasks(state.tasks, 'mine', '全部', user);
+    var count = function (status) { return GuildState.filterTasks(myTasks, 'all', status, user).length; };
+    elements.statTotal.textContent = myTasks.length;
     elements.statActive.textContent = count(GuildState.STATUS.IN_PROGRESS);
     elements.statReview.textContent = count(GuildState.STATUS.COMPLETED);
     elements.statClosed.textContent = count(GuildState.STATUS.CLOSED);
@@ -254,7 +256,7 @@
   elements.homeView.addEventListener('click', function (event) {
     var shortcut = event.target.closest('[data-status-shortcut]');
     if (!shortcut) return;
-    activeScope = 'all';
+    activeScope = 'mine';
     activeFilter = shortcut.getAttribute('data-status-shortcut');
     searchTerm = '';
     updateHash();
