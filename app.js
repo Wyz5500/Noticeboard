@@ -114,9 +114,6 @@
       var item = GuildState.USERS[key];
       return '<option value="' + escapeHTML(item.id) + '" ' + (item.id === user.id ? 'selected' : '') + '>' + escapeHTML(item.name) + '</option>';
     }).join('');
-    var canPublish = user.role === 'publisher';
-    elements.newTaskButton.disabled = !canPublish;
-    elements.newTaskButton.title = canPublish ? '' : '切换为任务发布者后才能发布任务';
   }
 
   function renderStats() {
@@ -222,7 +219,6 @@
   }
 
   function openModal() {
-    if (currentUser().role !== 'publisher') { showToast('请先切换为任务发布者'); return; }
     elements.formError.textContent = '';
     elements.taskForm.reset();
     elements.modal.classList.add('is-open');

@@ -10,9 +10,9 @@ var GuildState = (function () {
   };
 
   var USERS = {
-    publisher: { id: 'guild-master', name: '公会发布者', role: 'publisher', roleLabel: '任务发布者' },
-    adventurerA: { id: 'adventurer-a', name: '冒险者 A', role: 'adventurer', roleLabel: '冒险者' },
-    adventurerB: { id: 'adventurer-b', name: '冒险者 B', role: 'adventurer', roleLabel: '冒险者' }
+    userA: { id: 'guild-master', name: '用户 A', role: 'user', roleLabel: '普通用户' },
+    userB: { id: 'adventurer-a', name: '用户 B', role: 'user', roleLabel: '普通用户' },
+    userC: { id: 'adventurer-b', name: '用户 C', role: 'user', roleLabel: '普通用户' }
   };
 
   var TYPES = ['探索', '采集', '护送', '悬赏', '建造'];
@@ -40,7 +40,7 @@ var GuildState = (function () {
       description: data.description,
       reward: data.reward,
       dueDate: data.dueDate,
-      publisher: copy(USERS.publisher),
+      publisher: copy(USERS.userA),
       assignee: data.assignee ? copy(data.assignee) : null,
       status: data.status,
       createdAt: data.createdAt,
@@ -60,7 +60,7 @@ var GuildState = (function () {
         dueDate: '2026-09-04',
         status: STATUS.NOT_STARTED,
         createdAt: '2026-08-28T09:10:00.000Z',
-        timeline: [event('创建任务', USERS.publisher, '2026-08-28T09:10:00.000Z', '任务发布至冒险家工会')]
+        timeline: [event('创建任务', USERS.userA, '2026-08-28T09:10:00.000Z', '任务发布至冒险家工会')]
       }),
       seedTask({
         id: 'task-outpost',
@@ -69,13 +69,13 @@ var GuildState = (function () {
         description: '护送一车铁锭、面包与火把穿越冻原，安全抵达北境哨站。途中可能遭遇冰原骷髅。',
         reward: '32 金币 · 哨站声望 +12',
         dueDate: '2026-08-31',
-        assignee: USERS.adventurerA,
+        assignee: USERS.userB,
         status: STATUS.IN_PROGRESS,
         createdAt: '2026-08-27T07:40:00.000Z',
         updatedAt: '2026-08-28T14:25:00.000Z',
         timeline: [
-          event('创建任务', USERS.publisher, '2026-08-27T07:40:00.000Z', '任务发布至冒险家工会'),
-          event('接取任务', USERS.adventurerA, '2026-08-28T14:25:00.000Z', '开始执行任务')
+          event('创建任务', USERS.userA, '2026-08-27T07:40:00.000Z', '任务发布至冒险家工会'),
+          event('接取任务', USERS.userB, '2026-08-28T14:25:00.000Z', '开始执行任务')
         ]
       }),
       seedTask({
@@ -85,14 +85,14 @@ var GuildState = (function () {
         description: '为旧矿井入口与第一层通道补齐照明符文，确保矿工夜间通行安全。',
         reward: '25 金币 · 红石组件包',
         dueDate: '2026-08-29',
-        assignee: USERS.adventurerB,
+        assignee: USERS.userC,
         status: STATUS.COMPLETED,
         createdAt: '2026-08-24T11:20:00.000Z',
         updatedAt: '2026-08-28T18:05:00.000Z',
         timeline: [
-          event('创建任务', USERS.publisher, '2026-08-24T11:20:00.000Z', '任务发布至冒险家工会'),
-          event('接取任务', USERS.adventurerB, '2026-08-26T10:15:00.000Z', '开始执行任务'),
-          event('标记完成', USERS.adventurerB, '2026-08-28T18:05:00.000Z', '等待发布者验收')
+          event('创建任务', USERS.userA, '2026-08-24T11:20:00.000Z', '任务发布至冒险家工会'),
+          event('接取任务', USERS.userC, '2026-08-26T10:15:00.000Z', '开始执行任务'),
+          event('标记完成', USERS.userC, '2026-08-28T18:05:00.000Z', '等待发布者验收')
         ]
       }),
       seedTask({
@@ -102,23 +102,29 @@ var GuildState = (function () {
         description: '绘制废弃峡谷中的安全路线，找到传说中的星火祭坛入口，并带回一枚现场印记。',
         reward: '50 金币 · 稀有地图碎片',
         dueDate: '2026-08-27',
-        assignee: USERS.adventurerA,
+        assignee: USERS.userB,
         status: STATUS.CLOSED,
         createdAt: '2026-08-20T08:30:00.000Z',
         updatedAt: '2026-08-26T16:50:00.000Z',
         timeline: [
-          event('创建任务', USERS.publisher, '2026-08-20T08:30:00.000Z', '任务发布至冒险家工会'),
-          event('接取任务', USERS.adventurerA, '2026-08-21T09:00:00.000Z', '开始执行任务'),
-          event('标记完成', USERS.adventurerA, '2026-08-25T17:20:00.000Z', '等待发布者验收'),
-          event('验收通过', USERS.publisher, '2026-08-26T16:48:00.000Z', '任务成果符合要求'),
-          event('关闭任务', USERS.publisher, '2026-08-26T16:50:00.000Z', '任务流程结束')
+          event('创建任务', USERS.userA, '2026-08-20T08:30:00.000Z', '任务发布至冒险家工会'),
+          event('接取任务', USERS.userB, '2026-08-21T09:00:00.000Z', '开始执行任务'),
+          event('标记完成', USERS.userB, '2026-08-25T17:20:00.000Z', '等待发布者验收'),
+          event('验收通过', USERS.userA, '2026-08-26T16:48:00.000Z', '任务成果符合要求'),
+          event('关闭任务', USERS.userA, '2026-08-26T16:50:00.000Z', '任务流程结束')
         ]
       })
     ];
   }
 
+  function isKnownUser(user) {
+    return !!user && Object.keys(USERS).some(function (key) {
+      return USERS[key].id === user.id;
+    });
+  }
+
   function createTask(input, publisher, now) {
-    if (!publisher || publisher.role !== 'publisher') throw new Error('只有任务发布者可以创建任务');
+    if (!isKnownUser(publisher)) throw new Error('只有有效用户可以创建任务');
     if (!input || !input.title || !input.type || !input.description || !input.reward || !input.dueDate) {
       throw new Error('请完整填写任务信息');
     }
@@ -141,7 +147,7 @@ var GuildState = (function () {
   }
 
   function canAct(task, action, user) {
-    if (!task || !user) return false;
+    if (!task || !isKnownUser(user)) return false;
     if (action === 'accept') {
       return (task.status === STATUS.NOT_STARTED && !task.assignee) || task.status === STATUS.REOPENED;
     }
@@ -150,10 +156,10 @@ var GuildState = (function () {
         task.assignee && task.assignee.id === user.id;
     }
     if (action === 'approve' || action === 'reopen') {
-      return user.role === 'publisher' && task.publisher.id === user.id && task.status === STATUS.COMPLETED;
+      return task.publisher.id === user.id && task.status === STATUS.COMPLETED;
     }
     if (action === 'close') {
-      return user.role === 'publisher' && task.publisher.id === user.id &&
+      return task.publisher.id === user.id &&
         (task.status === STATUS.COMPLETED || task.status === STATUS.REOPENED);
     }
     return false;
@@ -194,20 +200,20 @@ var GuildState = (function () {
     for (var i = 0; i < users.length; i += 1) {
       if (USERS[users[i]].id === id) return copy(USERS[users[i]]);
     }
-    return copy(USERS.publisher);
+    return copy(USERS.userA);
   }
 
   function load(storage) {
     var source = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (!source) return { tasks: createSeedTasks(), currentUserId: USERS.publisher.id };
+    if (!source) return { tasks: createSeedTasks(), currentUserId: USERS.userA.id };
     try {
       var saved = source.getItem(STORAGE_KEY);
-      if (!saved) return { tasks: createSeedTasks(), currentUserId: USERS.publisher.id };
+      if (!saved) return { tasks: createSeedTasks(), currentUserId: USERS.userA.id };
       var parsed = JSON.parse(saved);
       if (!parsed || !Array.isArray(parsed.tasks) || !parsed.currentUserId) throw new Error('invalid state');
       return parsed;
     } catch (error) {
-      return { tasks: createSeedTasks(), currentUserId: USERS.publisher.id };
+      return { tasks: createSeedTasks(), currentUserId: USERS.userA.id };
     }
   }
 
@@ -217,7 +223,7 @@ var GuildState = (function () {
   }
 
   function reset(storage) {
-    var state = { tasks: createSeedTasks(), currentUserId: USERS.publisher.id };
+    var state = { tasks: createSeedTasks(), currentUserId: USERS.userA.id };
     save(state, storage);
     return state;
   }
