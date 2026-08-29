@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Minecraft 冒险家工会任务平台原型" />
+    <title>冒险家工会 · 任务公告板</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#top" aria-label="冒险家工会首页">
+          <span class="brand-mark" aria-hidden="true">AG</span>
+          <span>
+            <span class="brand-name">冒险家工会</span>
+            <span class="brand-caption">ADVENTURERS GUILD</span>
+          </span>
+        </a>
+        <div class="topbar-meta">
+          <span class="role-chip" id="activeRole">任务发布者</span>
+          <button class="text-button" id="resetButton" type="button">重置演示数据</button>
+        </div>
+      </header>
+
+      <main id="top">
+        <section class="hero-section">
+          <div>
+            <p class="eyebrow">任务公告板 <span>/</span> QUEST BOARD</p>
+            <h1>把每一次冒险，<br /><em>变成可完成的委托。</em></h1>
+            <p class="hero-copy">发布委托、组队出发、回到公会交付成果。每一步都留下记录。</p>
+          </div>
+          <div class="hero-index" aria-label="页面索引">
+            <span class="hero-index-label">BOARD</span>
+            <span class="hero-index-number">01</span>
+          </div>
+        </section>
+
+        <section class="stats-row" aria-label="任务统计">
+          <div class="stat-card"><span class="stat-label">全部任务</span><strong id="statTotal">0</strong><span class="stat-foot">BOARD TOTAL</span></div>
+          <div class="stat-card"><span class="stat-label">进行中</span><strong id="statActive">0</strong><span class="stat-foot">IN PROGRESS</span></div>
+          <div class="stat-card"><span class="stat-label">待验收</span><strong id="statReview">0</strong><span class="stat-foot">AWAITING REVIEW</span></div>
+          <div class="stat-card"><span class="stat-label">已关闭</span><strong id="statClosed">0</strong><span class="stat-foot">ARCHIVED</span></div>
+        </section>
+
+        <section class="board-layout" aria-label="任务列表">
+          <aside class="board-sidebar">
+            <div class="section-kicker">浏览方式 <span>FILTER BY</span></div>
+            <nav class="filter-list" id="filterList" aria-label="任务状态筛选">
+              <button class="filter-button is-active" type="button" data-filter="全部"><span>全部任务</span><span class="filter-count" data-count="全部">0</span></button>
+              <button class="filter-button" type="button" data-filter="未开始"><span>未开始</span><span class="filter-count" data-count="未开始">0</span></button>
+              <button class="filter-button" type="button" data-filter="进行中"><span>进行中</span><span class="filter-count" data-count="进行中">0</span></button>
+              <button class="filter-button" type="button" data-filter="已完成"><span>待验收</span><span class="filter-count" data-count="已完成">0</span></button>
+              <button class="filter-button" type="button" data-filter="重新打开"><span>重新打开</span><span class="filter-count" data-count="重新打开">0</span></button>
+              <button class="filter-button" type="button" data-filter="关闭"><span>已关闭</span><span class="filter-count" data-count="关闭">0</span></button>
+            </nav>
+            <div class="sidebar-note">
+              <span class="note-symbol">↗</span>
+              <p>每一项委托都属于冒险家工会。请在行动前确认截止时间与任务要求。</p>
+            </div>
+          </aside>
+
+          <div class="board-content">
+            <div class="board-toolbar">
+              <div>
+                <div class="section-kicker">当前委托 <span id="resultLabel">ALL QUESTS</span></div>
+                <p class="result-count" id="resultCount">0 项任务</p>
+              </div>
+              <div class="toolbar-actions">
+                <label class="search-box">
+                  <span class="sr-only">搜索任务</span>
+                  <span aria-hidden="true">⌕</span>
+                  <input id="searchInput" type="search" placeholder="搜索任务、类型或描述" />
+                </label>
+                <button class="primary-button" id="newTaskButton" type="button"><span>＋</span> 发布新任务</button>
+              </div>
+            </div>
+            <div class="task-grid" id="taskGrid"></div>
+          </div>
+        </section>
+      </main>
+
+      <div class="identity-switcher">
+        <span class="identity-dot" aria-hidden="true"></span>
+        <label for="identitySelect">
+          <span class="identity-caption">当前用户名</span>
+          <select id="identitySelect" aria-label="切换当前用户"></select>
+        </label>
+        <span class="identity-arrow" aria-hidden="true">⌄</span>
+      </div>
+    </div>
+
+    <div class="drawer-backdrop" id="drawerBackdrop"></div>
+    <aside class="detail-drawer" id="detailDrawer" aria-labelledby="drawerTitle" aria-hidden="true">
+      <div class="drawer-inner" id="drawerInner"></div>
+    </aside>
+
+    <div class="modal-backdrop" id="modalBackdrop"></div>
+    <section class="task-modal" id="taskModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-hidden="true">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">NEW COMMISSION <span>/</span> 发布委托</p>
+          <h2 id="modalTitle">发布一项新任务</h2>
+        </div>
+        <button class="icon-button" id="closeModalButton" type="button" aria-label="关闭发布任务窗口">×</button>
+      </div>
+      <form id="taskForm" class="task-form">
+        <label class="field field-wide"><span>任务标题 <b>*</b></span><input name="title" required maxlength="80" placeholder="例如：寻找遗失的地图碎片" /></label>
+        <label class="field"><span>任务类型 <b>*</b></span><select name="type" id="taskType" required></select></label>
+        <label class="field"><span>截止时间 <b>*</b></span><input name="dueDate" type="date" required /></label>
+        <label class="field field-wide"><span>任务描述 <b>*</b></span><textarea name="description" required maxlength="500" rows="4" placeholder="说明目的地、完成标准与注意事项"></textarea></label>
+        <label class="field field-wide"><span>奖励 <b>*</b></span><input name="reward" required maxlength="120" placeholder="例如：30 金币 · 稀有材料包" /></label>
+        <p class="form-error" id="formError" role="alert"></p>
+        <div class="form-actions"><button class="quiet-button" id="cancelModalButton" type="button">取消</button><button class="primary-button" type="submit">发布任务 <span>↗</span></button></div>
+      </form>
+    </section>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="app-state.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
