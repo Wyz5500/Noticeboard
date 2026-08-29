@@ -23,6 +23,10 @@
         </nav>
         <div class="topbar-meta">
           <span class="role-chip" id="activeRole">普通用户</span>
+          <label class="style-switcher" for="styleSelect">
+            <span class="style-caption">视觉风格 <small>STYLE</small></span>
+            <select id="styleSelect" aria-label="选择视觉风格"></select>
+          </label>
           <button class="text-button" id="resetButton" type="button">重置演示数据</button>
         </div>
       </header>
@@ -106,7 +110,6 @@
           <span class="identity-caption">当前用户名</span>
           <select id="identitySelect" aria-label="切换当前用户"></select>
         </label>
-        <span class="identity-arrow" aria-hidden="true">⌄</span>
       </div>
     </div>
 
@@ -138,6 +141,17 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script src="app-state.js"></script>
+    <script src="style-preferences.js"></script>
+    <script src="style-configs/swiss-international.js"></script>
+    <script src="style-configs/neo-brutalism.js"></script>
+    <script src="style-configs/bauhaus.js"></script>
+    <script src="style-configs/y2k-cyber.js"></script>
+    <script src="style-configs/retro-terminal.js"></script>
+    <script src="style-configs/memphis.js"></script>
+    <script src="style-configs/editorial-magazine.js"></script>
+    <script src="style-configs/glassmorphism.js"></script>
+    <script src="style-configs/japanese-minimalism.js"></script>
+    <script src="style-configs/pixel-retro.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

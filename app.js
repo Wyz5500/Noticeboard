@@ -8,10 +8,12 @@
   var searchTerm = route.query || '';
   var selectedTaskId = null;
   var toastTimer;
+  var currentStyle = GuildStyle.load();
 
   var elements = {
     activeRole: document.getElementById('activeRole'),
     resetButton: document.getElementById('resetButton'),
+    styleSelect: document.getElementById('styleSelect'),
     viewNav: document.querySelector('.view-nav'),
     homeView: document.getElementById('homeView'),
     tasksView: document.getElementById('tasksView'),
@@ -41,6 +43,18 @@
   };
 
   function currentUser() { return GuildState.getUser(state.currentUserId); }
+
+  function renderStyleControl() {
+    currentStyle = GuildStyle.apply(currentStyle, document.documentElement);
+    document.documentElement.setAttribute('data-style', currentStyle);
+    document.body.setAttribute('data-style', currentStyle);
+    elements.styleSelect.value = currentStyle;
+  }
+
+  function applyStyle(styleId) {
+    currentStyle = GuildStyle.save(styleId);
+    renderStyleControl();
+  }
 
   function escapeHTML(value) {
     return String(value == null ? '' : value).replace(/[&<>'"]/g, function (character) {
@@ -253,6 +267,9 @@
   }
 
   elements.taskType.innerHTML = GuildState.TYPES.map(function (type) { return '<option value="' + escapeHTML(type) + '">' + escapeHTML(type) + '</option>'; }).join('');
+  elements.styleSelect.innerHTML = GuildStyle.OPTIONS.map(function (option) {
+    return '<option value="' + escapeHTML(option.id) + '">' + escapeHTML(option.label) + '</option>';
+  }).join('');
   elements.homeView.addEventListener('click', function (event) {
     var shortcut = event.target.closest('[data-status-shortcut]');
     if (!shortcut) return;
@@ -310,6 +327,9 @@
     render();
     showToast('已切换当前身份');
   });
+  elements.styleSelect.addEventListener('change', function (event) {
+    applyStyle(event.target.value);
+  });
   elements.resetButton.addEventListener('click', function () {
     if (!window.confirm('确定要恢复初始演示任务吗？当前本地任务会被清除。')) return;
     state = GuildState.reset();
@@ -342,5 +362,6 @@
     else if (elements.drawer.classList.contains('is-open')) closeDrawer();
   });
 
+  renderStyleControl();
   render();
 }());
