@@ -129,6 +129,8 @@ assert(page.indexOf('aria-controls="profilePanel"') !== -1, 'the avatar button p
 assert(page.indexOf('<div class="profile-panel" id="profilePanel"') !== -1, 'the page includes the profile panel');
 assert(page.indexOf('<label class="style-switcher" for="styleSelect">') !== -1, 'the profile panel includes a style switcher');
 assert(page.indexOf('<label class="profile-field" for="identitySelect">') !== -1, 'the profile panel includes an identity switcher');
+assert(page.indexOf('<select id="identitySelect" class="profile-select"') !== -1, 'the identity selector uses the shared profile select class');
+assert(page.indexOf('<select id="styleSelect" class="profile-select"') !== -1, 'the style selector uses the shared profile select class');
 assert(page.indexOf('id="resetButton"') !== -1, 'the profile panel includes the reset action');
 assert(page.indexOf('id="activeRole"') === -1, 'the topbar does not show a redundant role label');
 assert(page.indexOf('class="identity-switcher"') === -1, 'the standalone identity switcher is removed');
@@ -145,6 +147,11 @@ assert(app.indexOf('closeProfileMenu();') !== -1, 'Escape can close the profile 
 assert(styles.indexOf('.avatar-button') !== -1, 'the stylesheet defines the avatar button');
 assert(styles.indexOf('.avatar-button:hover { background: var(--accent); border-color: var(--accent);') !== -1, 'the avatar hover state preserves its contrast');
 assert(styles.indexOf('.profile-panel') !== -1, 'the stylesheet defines the profile panel');
+assert(styles.indexOf('.topbar { position: fixed; top: 0; left: 32px; right: 32px;') !== -1, 'the topbar stays fixed in the viewport while the page scrolls');
+assert(styles.indexOf('padding: 86px 32px 120px;') !== -1, 'the page reserves space for the fixed topbar');
+assert(styles.indexOf('padding: 102px 20px 120px;') !== -1, 'the narrow layout reserves space for the wrapped fixed topbar');
+assert(styles.indexOf('.profile-select {') !== -1, 'the stylesheet defines a shared profile select control');
+assert(styles.indexOf('appearance: none') !== -1, 'profile selects use a consistent custom appearance');
 assert(styles.indexOf('.identity-switcher') === -1, 'the standalone identity switcher styles are removed');
 assert(styles.indexOf('--radius-control:') !== -1, 'controls use a semantic radius token');
 assert(styles.indexOf('--radius-surface:') !== -1, 'surfaces use a semantic radius token');
