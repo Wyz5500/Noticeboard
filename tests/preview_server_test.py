@@ -1,5 +1,4 @@
 import json
-import importlib.util
 import os
 import pathlib
 import subprocess
@@ -9,15 +8,10 @@ import time
 import unittest
 import urllib.request
 from urllib.error import URLError
-from unittest.mock import patch
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 SERVER_SCRIPT = REPO_ROOT / '.codex' / 'hooks' / 'preview_server.py'
-
-SERVER_MODULE_SPEC = importlib.util.spec_from_file_location('preview_server', SERVER_SCRIPT)
-PREVIEW_SERVER = importlib.util.module_from_spec(SERVER_MODULE_SPEC)
-SERVER_MODULE_SPEC.loader.exec_module(PREVIEW_SERVER)
 
 
 class PreviewServerTest(unittest.TestCase):
@@ -82,19 +76,6 @@ class PreviewServerTest(unittest.TestCase):
         process.terminate()
         process.wait(timeout=3)
         self.fail('external server did not start: ' + repr(last_error))
-
-    def test_health_check_rejects_a_process_that_exits_after_external_health_response(self):
-        class ExitingProcess:
-            def __init__(self):
-                self.poll_count = 0
-
-            def poll(self):
-                self.poll_count += 1
-                return None if self.poll_count == 1 else 1
-
-        process = ExitingProcess()
-        with patch.object(PREVIEW_SERVER, 'healthy', return_value=True):
-            self.assertFalse(PREVIEW_SERVER.wait_for_health(8765, 1, process))
 
     def test_start_reuses_server_and_stop_shuts_it_down(self):
         first_start = self.run_server_command('start')

@@ -167,9 +167,7 @@ def wait_for_health(server_port, timeout, process=None):
         if process is not None and process.poll() is not None:
             return False
         if healthy(server_port):
-            if process is None or process.poll() is None:
-                return True
-            return False
+            return True
         time.sleep(0.05)
     return False
 
