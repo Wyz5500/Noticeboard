@@ -1,28 +1,59 @@
 # 冒险家工会任务平台原型
 
-零依赖单页原型，直接打开 `index.html` 即可使用；也可以在项目目录运行：
+这是一个零依赖的浏览器单页原型，用于演示冒险家工会的任务发布、接取、交付和验收流程。项目不需要构建工具、包管理器、后端服务、图片或网络字体。
+
+## 快速开始
+
+可以直接打开 `index.html`，也可以在项目根目录启动静态服务器：
 
 ```bash
 python3 -m http.server 8000
 ```
 
-然后访问 `http://localhost:8000`。
+然后访问 <http://localhost:8000>。
 
-任务、当前身份和操作时间线保存在浏览器 `localStorage`。左下角可以切换身份，右上角可以恢复初始演示数据。
+## 已实现功能
 
-状态机测试（macOS 自带 JavaScriptCore）：
+- 预置 4 项演示任务，支持查看任务详情、奖励、截止时间和操作时间线。
+- 支持 3 个演示身份（用户 A、用户 B、用户 C）切换；每个已知身份都可以发布任务。
+- 支持任务流程：`未开始` → `进行中` → `已完成`，发布者可以验收关闭，或重新打开后再次接取；重新打开的任务也可以由发布者直接关闭。
+- 任务操作权限由 `app-state.js` 统一判断：接取任务由任意已知身份执行，标记完成由当前接取者执行，验收、重新打开和关闭由任务发布者执行。
+- 任务页支持“全部任务 / 我的任务”、状态筛选和关键词搜索；筛选条件与搜索词会写入 URL hash，例如 `#tasks?scope=mine&filter=进行中&q=矿井`。
+- 顶部提供 10 种视觉风格切换：Swiss International、Neo-Brutalism、Bauhaus、Y2K / Cyber、Retro Terminal、Memphis、Editorial Magazine、Glassmorphism、Japanese Minimalism 和 Pixel / Retro Game UI。
+- 响应式布局支持桌面和窄屏浏览，任务详情使用抽屉，发布任务使用弹窗。
+
+## 数据与持久化
+
+浏览器 `localStorage` 中保存两类数据：
+
+- `minecraft-guild-board-state`：任务数组和当前身份 ID。
+- `minecraft-guild-board-style`：当前视觉风格 ID。
+
+页面右上角的“重置演示数据”会恢复 4 项初始任务和用户 A 身份，不会重置已选择的视觉风格。不要在本地存储中保存凭据或其他秘密信息。
+
+“我的任务”根据任务操作时间线中的最后一位有效操作人进行归属，因此任务被发布者验收或关闭后，可能会从接取者的“我的任务”列表转移到发布者名下。
+
+## 项目结构
+
+| 文件或目录 | 用途 |
+| --- | --- |
+| `index.html` | 页面结构、导航、任务列表、详情抽屉、身份切换和发布任务弹窗 |
+| `app.js` | DOM 渲染、路由同步、表单提交和交互事件 |
+| `app-state.js` | 任务模型、权限、状态转换、时间线和任务数据持久化 |
+| `style-preferences.js` | 视觉风格注册、校验、读取、保存和 CSS 变量应用 |
+| `style-configs/*.js` | 各视觉风格的 CSS 变量配置；设计约束见 `style-configs/README.md` |
+| `styles.css` | 基础布局、组件样式、响应式规则和各风格装饰规则 |
+| `tests/state.test.js` | 任务状态机、权限、路由、筛选和任务持久化测试 |
+| `tests/style.test.js` | 风格注册、令牌、持久化、页面接线和主题样式测试 |
+
+## 测试与验证
+
+在项目根目录运行 macOS 自带的 JavaScriptCore 测试：
 
 ```bash
 osascript -l JavaScript tests/state.test.js
+osascript -l JavaScript tests/style.test.js
+git diff --check
 ```
 
-## 验证环境说明
-
-本次验证记录了以下环境限制：
-
-- 当前环境未安装 `node`，因此无法执行 `node --check`；JavaScript 语法与浏览器初始化改用 macOS JavaScriptCore (`osascript`) 检查。
-- 当前环境的 `tidy` 版本不完整支持 HTML5，并且会将 UTF-8 中文误判为字符编码错误，因此不作为本项目 HTML 校验依据；改用 Python 标准库 HTML 解析器检查入口文档。
-- 沙箱默认禁止监听本地端口。需要运行 `python3 -m http.server 8000 --bind 127.0.0.1` 时，必须授予本地服务权限；资源检查使用 `curl` 确认 `index.html`、`app.js`、`app-state.js` 和 `styles.css` 均可正常返回。
-- 当前环境未提供浏览器自动化工具，因此未执行真实浏览器截图级的点击、刷新和移动端手动检查。
-
-以上限制属于验证环境问题，不代表原型运行时的功能错误。
+前两个命令分别应输出 `state tests passed` 和 `style tests passed`。修改交互或样式后，还应在浏览器中检查空列表、长标题、移动端布局、身份切换、风格切换、刷新后的持久化，以及任务抽屉和发布弹窗的键盘关闭行为。

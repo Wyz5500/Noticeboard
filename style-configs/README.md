@@ -1,6 +1,6 @@
 # 风格配置设计说明
 
-本目录中的每个 JavaScript 文件代表一种视觉风格。目前包含 Swiss International、Neo-Brutalism、Bauhaus、Y2K / Cyber、Retro Terminal、Memphis、Editorial Magazine、Glassmorphism、Japanese Minimalism 和 Pixel / Retro Game UI。文件由 `index.html` 以固定顺序加载，在 `app.js` 初始化前调用 `GuildStyle.register` 注册配置。配置使用本地字体栈和 CSS 变量，不依赖构建工具、网络字体、图片或第三方库。
+本目录中的每个 JavaScript 文件代表一种视觉风格。目前包含 Swiss International、Neo-Brutalism、Bauhaus、Y2K / Cyber、Retro Terminal、Memphis、Editorial Magazine、Glassmorphism、Japanese Minimalism 和 Pixel / Retro Game UI，共 10 种。文件由 `index.html` 以固定顺序加载，在 `app.js` 初始化前调用 `GuildStyle.register` 注册配置。配置使用本地字体栈和 CSS 变量，不依赖构建工具、网络字体、图片或第三方库。
 
 ## 配置格式
 
@@ -54,12 +54,12 @@ GuildStyle.register({
 
 ## 验证
 
-在项目根目录运行：
+在项目根目录运行完整验证：
 
 ```bash
-osascript -l JavaScript tests/style.test.js
 osascript -l JavaScript tests/state.test.js
+osascript -l JavaScript tests/style.test.js
 git diff --check
 ```
 
-主题偏好保存在 `minecraft-guild-board-style`。缺失、非法或旧主题值会回退到 `swiss-international`；任务数据仍由 `app-state.js` 单独管理。
+主题偏好保存在 `minecraft-guild-board-style`。缺失、非法或旧主题值会回退到 `swiss-international`；任务数据和当前身份保存在 `minecraft-guild-board-state`，由 `app-state.js` 单独管理。修改主题不会重置任务数据。
