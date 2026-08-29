@@ -60,6 +60,13 @@ var GuildStyle = (function () {
     return normalized;
   }
 
+  function tokenDeclarations(styleId) {
+    var config = CONFIGS[normalize(styleId)];
+    return TOKEN_KEYS.map(function (tokenKey) {
+      return tokenKey + ': ' + config.tokens[tokenKey] + ';';
+    }).join('');
+  }
+
   function apply(styleId, target) {
     var normalized = normalize(styleId);
     var node = target;
@@ -70,9 +77,19 @@ var GuildStyle = (function () {
     }
     if (!node) return normalized;
     var style = node.style || node;
-    if (!style || typeof style.setProperty !== 'function') return normalized;
+    if (!style) return normalized;
+    if (typeof style.cssText === 'string') {
+      var previousCssText = style.cssText;
+      try {
+        style.cssText = tokenDeclarations(normalized);
+      } catch (error) {
+        try { style.cssText = previousCssText; } catch (restoreError) {}
+        throw error;
+      }
+      return normalized;
+    }
+    if (typeof style.setProperty !== 'function') return normalized;
     TOKEN_KEYS.forEach(function (tokenKey) {
-      if (typeof style.removeProperty === 'function') style.removeProperty(tokenKey);
       style.setProperty(tokenKey, CONFIGS[normalized].tokens[tokenKey]);
     });
     return normalized;

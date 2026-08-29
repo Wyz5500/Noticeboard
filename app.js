@@ -64,16 +64,23 @@
 
   function toggleProfileMenu() { setProfileMenuOpen(!elements.profileMenu.classList.contains('is-open')); }
 
-  function renderStyleControl() {
-    currentStyle = GuildStyle.apply(currentStyle, document.documentElement);
-    document.documentElement.setAttribute('data-style', currentStyle);
-    document.body.setAttribute('data-style', currentStyle);
-    elements.styleSelect.value = currentStyle;
+  function renderStyleControl(styleId) {
+    var appliedStyle = GuildStyle.apply(styleId, document.documentElement);
+    document.documentElement.setAttribute('data-style', appliedStyle);
+    document.body.setAttribute('data-style', appliedStyle);
+    elements.styleSelect.value = appliedStyle;
+    return appliedStyle;
   }
 
   function applyStyle(styleId) {
-    currentStyle = GuildStyle.save(styleId);
-    renderStyleControl();
+    var nextStyle = GuildStyle.normalize(styleId);
+    try {
+      currentStyle = renderStyleControl(nextStyle);
+      GuildStyle.save(currentStyle);
+    } catch (error) {
+      elements.styleSelect.value = currentStyle;
+      showToast('视觉风格切换失败，请重试');
+    }
   }
 
   function escapeHTML(value) {
@@ -390,6 +397,6 @@
     else if (elements.drawer.classList.contains('is-open')) closeDrawer();
   });
 
-  renderStyleControl();
+  currentStyle = renderStyleControl(currentStyle);
   render();
 }());

@@ -21,7 +21,7 @@ python3 -m http.server 8000
 - 任务操作权限由 `app-state.js` 统一判断：接取任务由任意已知身份执行，标记完成由当前接取者执行，验收、重新打开和关闭由任务发布者执行。
 - 任务页支持“全部任务 / 我的任务”、状态筛选和关键词搜索；筛选条件与搜索词会写入 URL hash，例如 `#tasks?scope=mine&filter=进行中&q=矿井`。
 - 右上角头像菜单提供 10 种视觉风格切换：Swiss International、Neo-Brutalism、Bauhaus、Y2K / Cyber、Retro Terminal、Memphis、Editorial Magazine、Glassmorphism、Japanese Minimalism 和 Pixel / Retro Game UI，并提供重置演示数据入口。
-- 响应式布局支持桌面和窄屏浏览，任务详情使用抽屉，发布任务使用弹窗。
+- 响应式布局支持桌面和窄屏浏览，任务详情使用覆盖顶栏的抽屉，发布任务使用弹窗。
 
 ## 数据与持久化
 

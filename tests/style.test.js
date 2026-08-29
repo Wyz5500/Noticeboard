@@ -116,6 +116,37 @@ assertEqual(fakeRoot.values['--radius-control'], '0', 'apply writes global contr
 assertEqual(GuildStyle.apply('glassmorphism', fakeRoot), 'glassmorphism', 'apply can replace a previously applied configuration');
 assertEqual(fakeRoot.values['--display-font'], GuildStyle.get('glassmorphism').tokens['--display-font'], 'apply replaces the previous font token');
 
+var batchedCssText = '';
+var batchedWrites = 0;
+var batchedStyle = {};
+Object.defineProperty(batchedStyle, 'cssText', {
+  get() { return batchedCssText; },
+  set(value) { batchedWrites += 1; batchedCssText = value; }
+});
+assertEqual(GuildStyle.apply('neo-brutalism', { style: batchedStyle }), 'neo-brutalism', 'apply supports a single CSS declaration update');
+assertEqual(batchedWrites, 1, 'apply batches theme variables into one CSS update');
+assert(batchedCssText.indexOf('--ink: #171717;') !== -1, 'the batched CSS update contains the selected theme tokens');
+
+var rollbackCssText = '--ink: old-color;';
+var rollbackAttempts = 0;
+var rollbackStyle = {};
+Object.defineProperty(rollbackStyle, 'cssText', {
+  get() { return rollbackCssText; },
+  set(value) {
+    rollbackAttempts += 1;
+    if (rollbackAttempts === 1) throw new Error('Safari style update failed');
+    rollbackCssText = value;
+  }
+});
+var rollbackFailed = false;
+try {
+  GuildStyle.apply('bauhaus', { style: rollbackStyle });
+} catch (error) {
+  rollbackFailed = true;
+}
+assert(rollbackFailed, 'apply reports a failed CSS update');
+assertEqual(rollbackCssText, '--ink: old-color;', 'apply restores the previous CSS declaration after failure');
+
 const page = readFile('index.html');
 const app = readFile('app.js');
 const styles = readFile('styles.css');
@@ -135,10 +166,15 @@ assert(page.indexOf('id="resetButton"') !== -1, 'the profile panel includes the 
 assert(page.indexOf('id="activeRole"') === -1, 'the topbar does not show a redundant role label');
 assert(page.indexOf('class="identity-switcher"') === -1, 'the standalone identity switcher is removed');
 assert(app.indexOf('var currentStyle = GuildStyle.load();') !== -1, 'the app loads the visual preference');
-assert(app.indexOf('GuildStyle.apply(currentStyle, document.documentElement);') !== -1, 'the app applies configuration tokens to the document root');
-assert(app.indexOf("document.documentElement.setAttribute('data-style', currentStyle);") !== -1, 'the app syncs the document root theme attribute');
-assert(app.indexOf("document.body.setAttribute('data-style', currentStyle);") !== -1, 'the app syncs the body theme attribute');
+assert(app.indexOf('GuildStyle.apply(styleId, document.documentElement);') !== -1, 'the app applies configuration tokens to the document root');
+assert(app.indexOf("document.documentElement.setAttribute('data-style', appliedStyle);") !== -1, 'the app syncs the document root theme attribute');
+assert(app.indexOf("document.body.setAttribute('data-style', appliedStyle);") !== -1, 'the app syncs the body theme attribute');
 assert(app.indexOf('applyStyle(event.target.value);') !== -1, 'style changes use the visual-only application flow');
+var applyStyleStart = app.indexOf('function applyStyle(styleId)');
+var renderNextStyle = app.indexOf('currentStyle = renderStyleControl(nextStyle);', applyStyleStart);
+var saveAppliedStyle = app.indexOf('GuildStyle.save(currentStyle);', applyStyleStart);
+assert(applyStyleStart !== -1 && renderNextStyle !== -1 && saveAppliedStyle > renderNextStyle, 'the app persists a style only after applying it');
+assert(app.indexOf('视觉风格切换失败，请重试') !== -1, 'the app reports style application failures');
 assert(app.indexOf('function setProfileMenuOpen(isOpen)') !== -1, 'the app centralizes profile menu open state');
 assert(app.indexOf("elements.profilePanel.setAttribute('aria-hidden', String(!isOpen));") !== -1, 'the app synchronizes profile panel accessibility state');
 assert(app.indexOf('elements.profileButton.focus();') !== -1, 'closing the profile panel restores focus to its trigger when needed');
@@ -173,6 +209,9 @@ assert(styles.indexOf("body[data-style='memphis'] .board-sidebar { padding: 20px
 assert(styles.indexOf("body[data-style='memphis'] .search-box { background: var(--white); border-color: var(--ink);") !== -1, 'Memphis gives the search box a readable solid background');
 assert(styles.indexOf("body[data-style='memphis'] .search-box input::placeholder { color: var(--muted); opacity: 1;") !== -1, 'Memphis keeps the search placeholder readable');
 assert(styles.indexOf("body[data-style='y2k-cyber'] .detail-drawer { background: var(--panel);") !== -1, 'Y2K keeps the detail drawer as bright as its task cards');
+assert(styles.indexOf('.drawer-backdrop { z-index: 50;') !== -1, 'the detail backdrop covers the fixed topbar');
+assert(styles.indexOf('.modal-backdrop { z-index: 20;') !== -1, 'the modal backdrop keeps its own layer');
+assert(styles.indexOf('.detail-drawer { position: fixed; z-index: 51;') !== -1, 'the detail drawer is above the topbar and other overlays');
 var drawerStart = styles.indexOf('.detail-drawer {');
 var drawerEnd = styles.indexOf('}', drawerStart);
 var openDrawerStart = styles.indexOf('.detail-drawer.is-open {');
