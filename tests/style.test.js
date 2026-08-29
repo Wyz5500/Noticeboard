@@ -157,6 +157,7 @@ assert(page.indexOf('style-configs/skeuomorphism.js') === -1, 'the Skeuomorphism
 assert(page.indexOf('style-configs/art-deco.js') === -1, 'the Art Deco configuration is removed from the page');
 assert(page.indexOf('<button class="avatar-button" id="profileButton"') !== -1, 'the topbar includes a letter avatar button');
 assert(page.indexOf('aria-controls="profilePanel"') !== -1, 'the avatar button points to the profile panel');
+assert(page.indexOf('class="brand-mark"') === -1, 'the topbar does not render a redundant brand logo');
 assert(page.indexOf('<div class="profile-panel" id="profilePanel"') !== -1, 'the page includes the profile panel');
 assert(page.indexOf('<label class="style-switcher" for="styleSelect">') !== -1, 'the profile panel includes a style switcher');
 assert(page.indexOf('<label class="profile-field" for="identitySelect">') !== -1, 'the profile panel includes an identity switcher');
