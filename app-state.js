@@ -143,13 +143,10 @@ var GuildState = (function () {
   function canAct(task, action, user) {
     if (!task || !user) return false;
     if (action === 'accept') {
-      return user.role === 'adventurer' && (
-        (task.status === STATUS.NOT_STARTED && !task.assignee) ||
-        (task.status === STATUS.REOPENED && task.assignee && task.assignee.id === user.id)
-      );
+      return (task.status === STATUS.NOT_STARTED && !task.assignee) || task.status === STATUS.REOPENED;
     }
     if (action === 'complete') {
-      return user.role === 'adventurer' && task.status === STATUS.IN_PROGRESS &&
+      return task.status === STATUS.IN_PROGRESS &&
         task.assignee && task.assignee.id === user.id;
     }
     if (action === 'approve' || action === 'reopen') {
@@ -171,7 +168,7 @@ var GuildState = (function () {
     var next = copy(current);
     next.updatedAt = now;
     if (action === 'accept') {
-      next.assignee = next.assignee || copy(user);
+      next.assignee = copy(user);
       next.status = STATUS.IN_PROGRESS;
       next.timeline.push(event('接取任务', user, now, current.status === STATUS.REOPENED ? '重新开始执行任务' : '开始执行任务'));
     } else if (action === 'complete') {
@@ -225,6 +222,49 @@ var GuildState = (function () {
     return state;
   }
 
+  function filterTasks(tasks, scope, filter, user) {
+    return tasks.filter(function (task) {
+      var matchesScope = scope !== 'mine' || (user && task.assignee && task.assignee.id === user.id);
+      var matchesFilter = !filter || filter === '全部' ||
+        (filter === STATUS.IN_PROGRESS && (task.status === STATUS.IN_PROGRESS || task.status === STATUS.REOPENED)) ||
+        task.status === filter;
+      return matchesScope && matchesFilter;
+    });
+  }
+
+  function filterOptions() {
+    return ['全部', STATUS.NOT_STARTED, STATUS.IN_PROGRESS, STATUS.COMPLETED, STATUS.REOPENED, STATUS.CLOSED];
+  }
+
+  function taskRouteHash(filter, scope, query) {
+    var hash = '#tasks?scope=' + (scope || 'all') + '&filter=' + (filter || '全部');
+    if (query) hash += '&q=' + encodeURIComponent(query);
+    return hash;
+  }
+
+  function resetTaskRoute() {
+    return taskRouteHash('全部', 'all');
+  }
+
+  function parseTaskRoute(hash) {
+    var source = String(hash || '').replace(/^#/, '');
+    var parts = source.split('?');
+    var params = {};
+    (parts[1] || '').split('&').forEach(function (pair) {
+      if (!pair) return;
+      var values = pair.split('=');
+      var key = decodeURIComponent(values[0] || '');
+      var value = decodeURIComponent(values.slice(1).join('=') || '');
+      params[key] = value;
+    });
+    return {
+      view: parts[0] === 'tasks' ? 'tasks' : 'home',
+      scope: params.scope === 'mine' ? 'mine' : 'all',
+      filter: params.filter || '全部',
+      query: params.q || ''
+    };
+  }
+
   return {
     STORAGE_KEY: STORAGE_KEY,
     STATUS: STATUS,
@@ -237,6 +277,11 @@ var GuildState = (function () {
     getUser: getUser,
     load: load,
     save: save,
-    reset: reset
+    reset: reset,
+    filterTasks: filterTasks,
+    filterOptions: filterOptions,
+    taskRouteHash: taskRouteHash,
+    resetTaskRoute: resetTaskRoute,
+    parseTaskRoute: parseTaskRoute
   };
 }());

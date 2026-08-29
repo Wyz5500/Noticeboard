@@ -22,6 +22,7 @@ eval(readFile('app-state.js'));
 
 const publisher = GuildState.USERS.publisher;
 const adventurerA = GuildState.USERS.adventurerA;
+const adventurerB = GuildState.USERS.adventurerB;
 const now = '2026-08-29T12:00:00.000Z';
 
 function taskWith(status) {
@@ -71,5 +72,49 @@ try {
   rejected = true;
 }
 assert(rejected, 'an adventurer cannot approve a task');
+
+let reopenedForReplacement = taskWith();
+reopenedForReplacement = GuildState.applyAction([reopenedForReplacement], reopenedForReplacement.id, 'accept', adventurerA, now);
+reopenedForReplacement = GuildState.applyAction(reopenedForReplacement, reopenedForReplacement[0].id, 'complete', adventurerA, now);
+reopenedForReplacement = GuildState.applyAction(reopenedForReplacement, reopenedForReplacement[0].id, 'reopen', publisher, now);
+reopenedForReplacement = GuildState.applyAction(reopenedForReplacement, reopenedForReplacement[0].id, 'accept', adventurerB, now);
+assertEqual(reopenedForReplacement[0].assignee.id, adventurerB.id, 'any adventurer can accept a reopened task and replace the assignee');
+assertEqual(reopenedForReplacement[0].timeline.length, 5, 'reaccepting preserves the complete prior timeline');
+assertEqual(reopenedForReplacement[0].timeline[3].action, '重新打开', 'reopening remains in the timeline before reacceptance');
+
+let publisherTask = taskWith();
+publisherTask = GuildState.applyAction([publisherTask], publisherTask.id, 'accept', publisher, now);
+publisherTask = GuildState.applyAction(publisherTask, publisherTask[0].id, 'complete', publisher, now);
+publisherTask = GuildState.applyAction(publisherTask, publisherTask[0].id, 'approve', publisher, now);
+assertEqual(publisherTask[0].status, GuildState.STATUS.CLOSED, 'publisher can accept, complete, and approve their own task');
+
+assertEqual(GuildState.taskRouteHash('进行中'), '#tasks?scope=all&filter=进行中', 'status shortcut creates the expected task route hash');
+
+const route = GuildState.parseTaskRoute('#tasks?scope=all&filter=进行中');
+assertEqual(route.view, 'tasks', 'task route parses its view');
+assertEqual(route.scope, 'all', 'task route parses its scope');
+assertEqual(route.filter, '进行中', 'task route parses its status filter');
+assertEqual(GuildState.resetTaskRoute(), '#tasks?scope=all&filter=全部', 'reset returns to the default all-task route');
+
+const seededTasks = GuildState.createSeedTasks();
+const globalActive = GuildState.filterTasks(seededTasks, 'all', GuildState.STATUS.IN_PROGRESS, adventurerA);
+assertEqual(globalActive.length, 1, 'global status filtering returns all matching tasks');
+assertEqual(globalActive[0].id, 'task-outpost', 'global status filtering does not depend on current identity');
+const myTasks = GuildState.filterTasks(seededTasks, 'mine', '全部', adventurerA);
+assertEqual(myTasks.length, 2, 'my task filtering only returns tasks assigned to current user');
+assert(myTasks.every(task => task.assignee.id === adventurerA.id), 'my task filtering matches the current assignee');
+const myCompleted = GuildState.filterTasks(seededTasks, 'mine', GuildState.STATUS.COMPLETED, adventurerA);
+assertEqual(myCompleted.length, 0, 'my completed filtering excludes another adventurer\'s completed task');
+assertEqual(GuildState.filterOptions('mine').join('|'), ['全部', '未开始', '进行中', '已完成', '重新打开', '关闭'].join('|'), 'my task filters include every assigned task status');
+
+let reopenedOverview = taskWith();
+reopenedOverview = GuildState.applyAction([reopenedOverview], reopenedOverview.id, 'accept', adventurerA, now);
+reopenedOverview = GuildState.applyAction(reopenedOverview, reopenedOverview[0].id, 'complete', adventurerA, now);
+reopenedOverview = GuildState.applyAction(reopenedOverview, reopenedOverview[0].id, 'reopen', publisher, now);
+const activeOverview = GuildState.filterTasks(reopenedOverview, 'all', GuildState.STATUS.IN_PROGRESS, adventurerA);
+assertEqual(activeOverview.length, 1, 'active filtering includes reopened tasks');
+
+const styles = readFile('styles.css');
+assert(styles.indexOf('.filter-button[hidden] { display: none; }') !== -1, 'hidden mine-task filters are removed from the visible filter list');
 
 console.log('state tests passed');

@@ -10,13 +10,17 @@
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <a class="brand" href="#top" aria-label="冒险家工会首页">
+        <a class="brand" href="#home" aria-label="冒险家工会首页">
           <span class="brand-mark" aria-hidden="true">AG</span>
           <span>
             <span class="brand-name">冒险家工会</span>
             <span class="brand-caption">ADVENTURERS GUILD</span>
           </span>
         </a>
+        <nav class="view-nav" aria-label="主要视图">
+          <a class="view-nav-link is-active" href="#home" data-view="home" aria-current="page">首页</a>
+          <a class="view-nav-link" href="#tasks?scope=all&amp;filter=全部" data-view="tasks">任务页</a>
+        </nav>
         <div class="topbar-meta">
           <span class="role-chip" id="activeRole">任务发布者</span>
           <button class="text-button" id="resetButton" type="button">重置演示数据</button>
@@ -24,43 +28,58 @@
       </header>
 
       <main id="top">
-        <section class="hero-section">
-          <div>
-            <p class="eyebrow">任务公告板 <span>/</span> QUEST BOARD</p>
-            <h1>把每一次冒险，<br /><em>变成可完成的委托。</em></h1>
-            <p class="hero-copy">发布委托、组队出发、回到公会交付成果。每一步都留下记录。</p>
-          </div>
-          <div class="hero-index" aria-label="页面索引">
-            <span class="hero-index-label">BOARD</span>
-            <span class="hero-index-number">01</span>
-          </div>
-        </section>
-
-        <section class="stats-row" aria-label="任务统计">
-          <div class="stat-card"><span class="stat-label">全部任务</span><strong id="statTotal">0</strong><span class="stat-foot">BOARD TOTAL</span></div>
-          <div class="stat-card"><span class="stat-label">进行中</span><strong id="statActive">0</strong><span class="stat-foot">IN PROGRESS</span></div>
-          <div class="stat-card"><span class="stat-label">待验收</span><strong id="statReview">0</strong><span class="stat-foot">AWAITING REVIEW</span></div>
-          <div class="stat-card"><span class="stat-label">已关闭</span><strong id="statClosed">0</strong><span class="stat-foot">ARCHIVED</span></div>
-        </section>
-
-        <section class="board-layout" aria-label="任务列表">
-          <aside class="board-sidebar">
-            <div class="section-kicker">浏览方式 <span>FILTER BY</span></div>
-            <nav class="filter-list" id="filterList" aria-label="任务状态筛选">
-              <button class="filter-button is-active" type="button" data-filter="全部"><span>全部任务</span><span class="filter-count" data-count="全部">0</span></button>
-              <button class="filter-button" type="button" data-filter="未开始"><span>未开始</span><span class="filter-count" data-count="未开始">0</span></button>
-              <button class="filter-button" type="button" data-filter="进行中"><span>进行中</span><span class="filter-count" data-count="进行中">0</span></button>
-              <button class="filter-button" type="button" data-filter="已完成"><span>待验收</span><span class="filter-count" data-count="已完成">0</span></button>
-              <button class="filter-button" type="button" data-filter="重新打开"><span>重新打开</span><span class="filter-count" data-count="重新打开">0</span></button>
-              <button class="filter-button" type="button" data-filter="关闭"><span>已关闭</span><span class="filter-count" data-count="关闭">0</span></button>
-            </nav>
-            <div class="sidebar-note">
-              <span class="note-symbol">↗</span>
-              <p>每一项委托都属于冒险家工会。请在行动前确认截止时间与任务要求。</p>
+        <section class="view-section is-active" id="homeView" data-view-section="home">
+          <section class="hero-section">
+            <div>
+              <p class="eyebrow">冒险家工会 <span>/</span> GUILD HOME</p>
+              <h1>把每一次冒险，<br /><em>变成可完成的委托。</em></h1>
+              <p class="hero-copy">发布委托、组队出发、回到公会交付成果。每一步都留下记录。</p>
             </div>
-          </aside>
+            <div class="hero-index" aria-label="页面索引">
+              <span class="hero-index-label">BOARD</span>
+              <span class="hero-index-number">01</span>
+            </div>
+          </section>
 
-          <div class="board-content">
+          <section class="home-stats" aria-label="任务统计与状态速查">
+            <div class="section-kicker">任务状态速查 <span>STATUS OVERVIEW</span></div>
+            <div class="stats-row">
+              <button class="stat-card" type="button" data-status-shortcut="全部"><span class="stat-label">全部任务</span><strong id="statTotal">0</strong><span class="stat-foot">BOARD TOTAL</span><span class="stat-arrow" aria-hidden="true">↗</span></button>
+              <button class="stat-card" type="button" data-status-shortcut="进行中"><span class="stat-label">进行中</span><strong id="statActive">0</strong><span class="stat-foot">IN PROGRESS</span><span class="stat-arrow" aria-hidden="true">↗</span></button>
+              <button class="stat-card" type="button" data-status-shortcut="已完成"><span class="stat-label">已完成</span><strong id="statReview">0</strong><span class="stat-foot">AWAITING REVIEW</span><span class="stat-arrow" aria-hidden="true">↗</span></button>
+              <button class="stat-card" type="button" data-status-shortcut="关闭"><span class="stat-label">已关闭</span><strong id="statClosed">0</strong><span class="stat-foot">ARCHIVED</span><span class="stat-arrow" aria-hidden="true">↗</span></button>
+            </div>
+          </section>
+        </section>
+
+        <section class="view-section" id="tasksView" data-view-section="tasks">
+          <section class="tasks-intro">
+            <p class="eyebrow">任务公告板 <span>/</span> QUEST BOARD</p>
+            <h2>找到下一项<br /><em>值得出发的委托。</em></h2>
+          </section>
+          <section class="board-layout" aria-label="任务列表">
+            <aside class="board-sidebar">
+              <div class="section-kicker">任务范围 <span>VIEW BY</span></div>
+              <div class="scope-switcher" id="scopeSwitcher" role="group" aria-label="任务范围">
+                <button class="scope-button is-active" type="button" data-scope="all" aria-pressed="true">全部任务</button>
+                <button class="scope-button" type="button" data-scope="mine" aria-pressed="false">我的任务</button>
+              </div>
+              <div class="section-kicker filter-heading">状态筛选 <span>FILTER BY</span></div>
+              <nav class="filter-list" id="filterList" aria-label="任务状态筛选">
+                <button class="filter-button is-active" type="button" data-filter="全部" aria-pressed="true"><span>全部任务</span><span class="filter-count" data-count="全部">0</span></button>
+                <button class="filter-button" type="button" data-filter="未开始" aria-pressed="false"><span>未开始</span><span class="filter-count" data-count="未开始">0</span></button>
+                <button class="filter-button" type="button" data-filter="进行中" aria-pressed="false"><span>进行中</span><span class="filter-count" data-count="进行中">0</span></button>
+                <button class="filter-button" type="button" data-filter="已完成" aria-pressed="false"><span>已完成</span><span class="filter-count" data-count="已完成">0</span></button>
+                <button class="filter-button" type="button" data-filter="重新打开" aria-pressed="false"><span>重新打开</span><span class="filter-count" data-count="重新打开">0</span></button>
+                <button class="filter-button" type="button" data-filter="关闭" aria-pressed="false"><span>已关闭</span><span class="filter-count" data-count="关闭">0</span></button>
+              </nav>
+              <div class="sidebar-note">
+                <span class="note-symbol">↗</span>
+                <p>每一项委托都属于冒险家工会。请在行动前确认截止时间与任务要求。</p>
+              </div>
+            </aside>
+
+            <div class="board-content">
             <div class="board-toolbar">
               <div>
                 <div class="section-kicker">当前委托 <span id="resultLabel">ALL QUESTS</span></div>
@@ -76,7 +95,8 @@
               </div>
             </div>
             <div class="task-grid" id="taskGrid"></div>
-          </div>
+            </div>
+          </section>
         </section>
       </main>
 

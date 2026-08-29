@@ -2,18 +2,24 @@
   'use strict';
 
   var state = GuildState.load();
-  var activeFilter = '全部';
-  var searchTerm = '';
+  var route = GuildState.parseTaskRoute(window.location.hash || '#home');
+  var activeScope = route.scope;
+  var activeFilter = route.filter;
+  var searchTerm = route.query || '';
   var selectedTaskId = null;
   var toastTimer;
 
   var elements = {
     activeRole: document.getElementById('activeRole'),
     resetButton: document.getElementById('resetButton'),
+    viewNav: document.querySelector('.view-nav'),
+    homeView: document.getElementById('homeView'),
+    tasksView: document.getElementById('tasksView'),
     statTotal: document.getElementById('statTotal'),
     statActive: document.getElementById('statActive'),
     statReview: document.getElementById('statReview'),
     statClosed: document.getElementById('statClosed'),
+    scopeSwitcher: document.getElementById('scopeSwitcher'),
     filterList: document.getElementById('filterList'),
     resultLabel: document.getElementById('resultLabel'),
     resultCount: document.getElementById('resultCount'),
@@ -68,13 +74,37 @@
       '</article>';
   }
 
+  function isKnownFilter(filter, scope) {
+    return GuildState.filterOptions(scope).indexOf(filter) !== -1;
+  }
+
+  function normalizeRoute() {
+    if (!isKnownFilter(activeFilter, activeScope)) {
+      activeFilter = '全部';
+      if (route.view === 'tasks') window.history.replaceState(null, '', GuildState.taskRouteHash(activeFilter, activeScope, searchTerm));
+    }
+  }
+
   function visibleTasks() {
     var term = searchTerm.trim().toLowerCase();
-    return state.tasks.filter(function (task) {
-      var matchesFilter = activeFilter === '全部' || task.status === activeFilter;
+    return GuildState.filterTasks(state.tasks, activeScope, activeFilter, currentUser()).filter(function (task) {
       var searchable = [task.title, task.type, task.description, task.publisher.name, task.assignee ? task.assignee.name : ''].join(' ').toLowerCase();
-      return matchesFilter && (!term || searchable.indexOf(term) !== -1);
+      return !term || searchable.indexOf(term) !== -1;
     });
+  }
+
+  function scopedTasks() {
+    return GuildState.filterTasks(state.tasks, activeScope, '全部', currentUser());
+  }
+
+  function updateHash() {
+    var hash = GuildState.taskRouteHash(activeFilter, activeScope, searchTerm);
+    if (window.location.hash !== hash) window.location.hash = hash;
+  }
+
+  function setSearchHash() {
+    var hash = GuildState.taskRouteHash(activeFilter, activeScope, searchTerm);
+    window.history.replaceState(null, '', hash);
   }
 
   function renderIdentity() {
@@ -90,31 +120,63 @@
   }
 
   function renderStats() {
-    var count = function (status) { return state.tasks.filter(function (task) { return task.status === status; }).length; };
+    var count = function (status) { return GuildState.filterTasks(state.tasks, 'all', status, currentUser()).length; };
     elements.statTotal.textContent = state.tasks.length;
-    elements.statActive.textContent = count(GuildState.STATUS.IN_PROGRESS) + count(GuildState.STATUS.REOPENED);
+    elements.statActive.textContent = count(GuildState.STATUS.IN_PROGRESS);
     elements.statReview.textContent = count(GuildState.STATUS.COMPLETED);
     elements.statClosed.textContent = count(GuildState.STATUS.CLOSED);
+    var taskPool = scopedTasks();
     Array.prototype.forEach.call(elements.filterList.querySelectorAll('[data-count]'), function (item) {
       var filter = item.getAttribute('data-count');
-      item.textContent = filter === '全部' ? state.tasks.length : count(filter);
+      item.textContent = GuildState.filterTasks(taskPool, 'all', filter, currentUser()).length;
     });
+  }
+
+  function renderControls() {
+    Array.prototype.forEach.call(elements.scopeSwitcher.querySelectorAll('[data-scope]'), function (item) {
+      var isActive = item.getAttribute('data-scope') === activeScope;
+      item.classList.toggle('is-active', isActive);
+      item.setAttribute('aria-pressed', String(isActive));
+    });
+    Array.prototype.forEach.call(elements.filterList.querySelectorAll('.filter-button'), function (item) {
+      var isActive = item.getAttribute('data-filter') === activeFilter;
+      item.classList.toggle('is-active', isActive);
+      item.hidden = GuildState.filterOptions(activeScope).indexOf(item.getAttribute('data-filter')) === -1;
+      item.setAttribute('aria-pressed', String(isActive));
+    });
+    elements.searchInput.value = searchTerm;
   }
 
   function renderTasks() {
     var tasks = visibleTasks();
-    elements.resultLabel.textContent = activeFilter === '全部' ? 'ALL QUESTS' : activeFilter.toUpperCase();
+    elements.resultLabel.textContent = activeScope === 'mine' ? 'MY QUESTS' : (activeFilter === '全部' ? 'ALL QUESTS' : activeFilter.toUpperCase());
     elements.resultCount.textContent = tasks.length + ' 项任务' + (searchTerm ? ' · 搜索结果' : '');
     if (!tasks.length) {
-      elements.taskGrid.innerHTML = '<div class="empty-state"><strong>这里暂时没有任务</strong><p>换一个筛选条件，或发布一项新的冒险委托。</p></div>';
+      var emptyCopy = activeScope === 'mine' ? '当前身份还没有符合条件的任务。' : '换一个筛选条件，或发布一项新的冒险委托。';
+      elements.taskGrid.innerHTML = '<div class="empty-state"><strong>这里暂时没有任务</strong><p>' + emptyCopy + '</p></div>';
       return;
     }
     elements.taskGrid.innerHTML = tasks.map(taskCard).join('');
   }
 
+  function renderView() {
+    var isTasks = route.view === 'tasks';
+    elements.homeView.classList.toggle('is-active', !isTasks);
+    elements.tasksView.classList.toggle('is-active', isTasks);
+    Array.prototype.forEach.call(elements.viewNav.querySelectorAll('[data-view]'), function (item) {
+      var isActive = item.getAttribute('data-view') === route.view;
+      item.classList.toggle('is-active', isActive);
+      if (isActive) item.setAttribute('aria-current', 'page');
+      else item.removeAttribute('aria-current');
+    });
+  }
+
   function render() {
+    normalizeRoute();
     renderIdentity();
     renderStats();
+    renderControls();
+    renderView();
     renderTasks();
     if (selectedTaskId) renderDrawer();
   }
@@ -128,7 +190,7 @@
   function actionButtons(task) {
     var user = currentUser();
     var buttons = [];
-    if (GuildState.canAct(task, 'accept', user)) buttons.push('<button class="primary-button" data-action="accept" type="button">' + (task.status === GuildState.STATUS.REOPENED ? '继续执行任务' : '接取任务') + ' <span>↗</span></button>');
+    if (GuildState.canAct(task, 'accept', user)) buttons.push('<button class="primary-button" data-action="accept" type="button">' + (task.status === GuildState.STATUS.REOPENED ? '重新接取任务' : '接取任务') + ' <span>↗</span></button>');
     if (GuildState.canAct(task, 'complete', user)) buttons.push('<button class="primary-button" data-action="complete" type="button">标记为已完成 <span>↗</span></button>');
     if (GuildState.canAct(task, 'approve', user)) buttons.push('<button class="primary-button" data-action="approve" type="button">验收通过并关闭 <span>↗</span></button>');
     if (GuildState.canAct(task, 'reopen', user)) buttons.push('<button class="secondary-button" data-action="reopen" type="button">验收不通过，重新打开</button>');
@@ -184,15 +246,41 @@
 
   function persist() { GuildState.save(state); }
 
+  function syncRoute() {
+    route = GuildState.parseTaskRoute(window.location.hash || '#home');
+    activeScope = route.scope;
+    activeFilter = route.filter;
+    searchTerm = route.query || '';
+    render();
+  }
+
   elements.taskType.innerHTML = GuildState.TYPES.map(function (type) { return '<option value="' + escapeHTML(type) + '">' + escapeHTML(type) + '</option>'; }).join('');
+  elements.homeView.addEventListener('click', function (event) {
+    var shortcut = event.target.closest('[data-status-shortcut]');
+    if (!shortcut) return;
+    activeScope = 'all';
+    activeFilter = shortcut.getAttribute('data-status-shortcut');
+    searchTerm = '';
+    updateHash();
+  });
+  elements.scopeSwitcher.addEventListener('click', function (event) {
+    var button = event.target.closest('[data-scope]');
+    if (!button) return;
+    activeScope = button.getAttribute('data-scope');
+    if (!isKnownFilter(activeFilter, activeScope)) activeFilter = '全部';
+    updateHash();
+  });
   elements.filterList.addEventListener('click', function (event) {
     var button = event.target.closest('[data-filter]');
-    if (!button) return;
+    if (!button || button.hidden) return;
     activeFilter = button.getAttribute('data-filter');
-    Array.prototype.forEach.call(elements.filterList.querySelectorAll('.filter-button'), function (item) { item.classList.toggle('is-active', item === button); });
+    updateHash();
+  });
+  elements.searchInput.addEventListener('input', function (event) {
+    searchTerm = event.target.value;
+    setSearchHash();
     renderTasks();
   });
-  elements.searchInput.addEventListener('input', function (event) { searchTerm = event.target.value; renderTasks(); });
   elements.taskGrid.addEventListener('click', function (event) {
     var card = event.target.closest('[data-task-id]');
     if (card) openDrawer(card.getAttribute('data-task-id'));
@@ -227,10 +315,11 @@
   elements.resetButton.addEventListener('click', function () {
     if (!window.confirm('确定要恢复初始演示任务吗？当前本地任务会被清除。')) return;
     state = GuildState.reset();
+    activeScope = 'all';
     activeFilter = '全部';
     searchTerm = '';
-    elements.searchInput.value = '';
-    Array.prototype.forEach.call(elements.filterList.querySelectorAll('.filter-button'), function (item) { item.classList.toggle('is-active', item.getAttribute('data-filter') === activeFilter); });
+    route = GuildState.parseTaskRoute(GuildState.resetTaskRoute());
+    window.location.hash = GuildState.resetTaskRoute();
     closeDrawer();
     render();
     showToast('演示数据已恢复');
@@ -243,12 +332,12 @@
       state.tasks = [task].concat(state.tasks);
       persist();
       closeModal();
-      activeFilter = '全部';
       render();
       openDrawer(task.id);
       showToast('新任务已发布');
     } catch (error) { elements.formError.textContent = error.message; }
   });
+  window.addEventListener('hashchange', syncRoute);
   document.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape') return;
     if (elements.modal.classList.contains('is-open')) closeModal();
