@@ -22,14 +22,21 @@
           <a class="view-nav-link" href="#tasks?scope=all&amp;filter=全部" data-view="tasks">任务页</a>
         </nav>
         <div class="topbar-meta">
-          <span class="role-chip" id="activeRole">普通用户</span>
-          <label class="style-switcher" for="styleSelect">
-            <span class="style-caption">视觉风格 <small>STYLE</small></span>
-            <select id="styleSelect" aria-label="选择视觉风格"></select>
-          </label>
-          <button class="text-button" id="resetButton" type="button">重置演示数据</button>
+          <div class="profile-menu" id="profileMenu">
+            <button class="avatar-button" id="profileButton" type="button" aria-label="打开个人菜单" aria-haspopup="dialog" aria-expanded="false" aria-controls="profilePanel"><span id="avatarInitial" aria-hidden="true">用</span></button>
+          </div>
         </div>
       </header>
+
+      <div class="profile-panel" id="profilePanel" role="dialog" aria-labelledby="profileName" aria-hidden="true" hidden>
+        <div class="profile-heading"><span class="profile-caption">当前用户</span><strong id="profileName">用户 A</strong></div>
+        <label class="profile-field" for="identitySelect"><span>切换当前用户</span><select id="identitySelect" aria-label="切换当前用户"></select></label>
+        <label class="style-switcher" for="styleSelect">
+          <span class="style-caption">视觉风格 <small>STYLE</small></span>
+          <select id="styleSelect" aria-label="选择视觉风格"></select>
+        </label>
+        <button class="text-button profile-reset" id="resetButton" type="button">重置演示数据</button>
+      </div>
 
       <main>
         <section class="view-section is-active" id="homeView" data-view-section="home">
@@ -104,13 +111,6 @@
         </section>
       </main>
 
-      <div class="identity-switcher">
-        <span class="identity-dot" aria-hidden="true"></span>
-        <label for="identitySelect">
-          <span class="identity-caption">当前用户名</span>
-          <select id="identitySelect" aria-label="切换当前用户"></select>
-        </label>
-      </div>
     </div>
 
     <div class="drawer-backdrop" id="drawerBackdrop"></div>

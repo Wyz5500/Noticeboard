@@ -28,7 +28,7 @@ const now = '2026-08-29T12:00:00.000Z';
 
 demoUsers.forEach(user => {
   assertEqual(user.role, 'user', 'every demo identity is a regular user');
-  assertEqual(user.roleLabel, '普通用户', 'every demo identity uses the regular user label');
+  assertEqual(Object.prototype.hasOwnProperty.call(user, 'roleLabel'), false, 'demo identities do not carry a redundant role label');
   const published = GuildState.createTask({
     title: '统一身份任务',
     type: '探索',
@@ -37,6 +37,7 @@ demoUsers.forEach(user => {
     dueDate: '2026-09-01'
   }, user, now);
   assertEqual(published.publisher.id, user.id, 'task records the actual publishing user');
+  assertEqual(published.timeline[0].actorRole, user.role, 'task timeline retains the actor role for compatibility');
 });
 
 demoUsers.forEach(user => {
@@ -198,7 +199,13 @@ assert(app.indexOf("var myTasks = GuildState.filterTasks(state.tasks, 'mine', '�
 assert(app.indexOf("activeScope = 'mine';") !== -1, 'home stat shortcuts use the mine scope');
 
 const page = readFile('index.html');
-assert(page.indexOf('id="activeRole">普通用户</span>') !== -1, 'the page uses the regular user identity label');
+assert(page.indexOf('id="profileMenu"') !== -1, 'the page includes a profile menu container');
+assert(page.indexOf('id="profileButton"') !== -1, 'the page includes a profile menu button');
+assert(page.indexOf('aria-haspopup="dialog"') !== -1, 'the profile button exposes its panel relationship');
+assert(page.indexOf('id="profilePanel"') !== -1, 'the page includes a profile menu panel');
+assert(page.indexOf('role="dialog"') !== -1, 'the profile panel uses dialog semantics for its form controls');
+assert(page.indexOf('id="activeRole"') === -1, 'the redundant role label is removed from the page');
+assert(page.indexOf('class="identity-switcher"') === -1, 'the standalone identity switcher is removed from the page');
 assert(page.indexOf('<span class="stat-label">我的任务</span>') !== -1, 'the total home stat is labeled as my tasks');
 assert(page.indexOf('<div class="app-shell" id="top">') !== -1, 'the top anchor points to the page shell');
 assert(page.indexOf('<header class="topbar" id="home">') !== -1, 'the home anchor points to the topbar');

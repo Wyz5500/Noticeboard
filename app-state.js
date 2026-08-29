@@ -10,9 +10,9 @@ var GuildState = (function () {
   };
 
   var USERS = {
-    userA: { id: 'guild-master', name: '用户 A', role: 'user', roleLabel: '普通用户' },
-    userB: { id: 'adventurer-a', name: '用户 B', role: 'user', roleLabel: '普通用户' },
-    userC: { id: 'adventurer-b', name: '用户 C', role: 'user', roleLabel: '普通用户' }
+    userA: { id: 'guild-master', name: '用户 A', role: 'user' },
+    userB: { id: 'adventurer-a', name: '用户 B', role: 'user' },
+    userC: { id: 'adventurer-b', name: '用户 C', role: 'user' }
   };
 
   var TYPES = ['探索', '采集', '护送', '悬赏', '建造'];

@@ -11,7 +11,11 @@
   var currentStyle = GuildStyle.load();
 
   var elements = {
-    activeRole: document.getElementById('activeRole'),
+    profileMenu: document.getElementById('profileMenu'),
+    profileButton: document.getElementById('profileButton'),
+    profilePanel: document.getElementById('profilePanel'),
+    avatarInitial: document.getElementById('avatarInitial'),
+    profileName: document.getElementById('profileName'),
     resetButton: document.getElementById('resetButton'),
     styleSelect: document.getElementById('styleSelect'),
     viewNav: document.querySelector('.view-nav'),
@@ -43,6 +47,22 @@
   };
 
   function currentUser() { return GuildState.getUser(state.currentUserId); }
+
+  function setProfileMenuOpen(isOpen) {
+    elements.profileMenu.classList.toggle('is-open', isOpen);
+    elements.profileButton.setAttribute('aria-expanded', String(isOpen));
+    elements.profilePanel.setAttribute('aria-hidden', String(!isOpen));
+    elements.profilePanel.hidden = !isOpen;
+  }
+
+  function closeProfileMenu() {
+    var focusInsidePanel = elements.profilePanel.contains(document.activeElement);
+    var wasOpen = elements.profileMenu.classList.contains('is-open');
+    setProfileMenuOpen(false);
+    if (wasOpen && focusInsidePanel) elements.profileButton.focus();
+  }
+
+  function toggleProfileMenu() { setProfileMenuOpen(!elements.profileMenu.classList.contains('is-open')); }
 
   function renderStyleControl() {
     currentStyle = GuildStyle.apply(currentStyle, document.documentElement);
@@ -123,7 +143,9 @@
 
   function renderIdentity() {
     var user = currentUser();
-    elements.activeRole.textContent = user.roleLabel;
+    elements.avatarInitial.textContent = user.name.trim().charAt(0).toUpperCase();
+    elements.profileName.textContent = user.name;
+    elements.profileButton.setAttribute('aria-label', '当前用户：' + user.name + '，打开个人菜单');
     elements.identitySelect.innerHTML = Object.keys(GuildState.USERS).map(function (key) {
       var item = GuildState.USERS[key];
       return '<option value="' + escapeHTML(item.id) + '" ' + (item.id === user.id ? 'selected' : '') + '>' + escapeHTML(item.name) + '</option>';
@@ -321,6 +343,10 @@
   elements.closeModalButton.addEventListener('click', closeModal);
   elements.cancelModalButton.addEventListener('click', closeModal);
   elements.modalBackdrop.addEventListener('click', closeModal);
+  elements.profileButton.addEventListener('click', toggleProfileMenu);
+  document.addEventListener('click', function (event) {
+    if (!event.target.closest('#profileMenu') && !event.target.closest('#profilePanel')) closeProfileMenu();
+  });
   elements.identitySelect.addEventListener('change', function (event) {
     state.currentUserId = event.target.value;
     persist();
@@ -332,6 +358,7 @@
   });
   elements.resetButton.addEventListener('click', function () {
     if (!window.confirm('确定要恢复初始演示任务吗？当前本地任务会被清除。')) return;
+    closeProfileMenu();
     state = GuildState.reset();
     activeScope = 'all';
     activeFilter = '全部';
@@ -358,7 +385,8 @@
   window.addEventListener('hashchange', syncRoute);
   document.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape') return;
-    if (elements.modal.classList.contains('is-open')) closeModal();
+    if (elements.profileMenu.classList.contains('is-open')) closeProfileMenu();
+    else if (elements.modal.classList.contains('is-open')) closeModal();
     else if (elements.drawer.classList.contains('is-open')) closeDrawer();
   });
 
