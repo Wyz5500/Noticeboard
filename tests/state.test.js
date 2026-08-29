@@ -117,4 +117,9 @@ assertEqual(activeOverview.length, 1, 'active filtering includes reopened tasks'
 const styles = readFile('styles.css');
 assert(styles.indexOf('.filter-button[hidden] { display: none; }') !== -1, 'hidden mine-task filters are removed from the visible filter list');
 
+const page = readFile('index.html');
+assert(page.indexOf('<div class="app-shell" id="top">') !== -1, 'the top anchor points to the page shell');
+assert(page.indexOf('<header class="topbar" id="home">') !== -1, 'the home anchor points to the topbar');
+assert(page.indexOf('<main id="top">') === -1, 'the main content is not used as the top anchor');
+
 console.log('state tests passed');
