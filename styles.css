@@ -26,14 +26,14 @@
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
+html, body { overflow-x: hidden; }
 body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body-font); font-size: 14px; transition: background-color .2s, color .2s; }
 button, input, textarea, select { font: inherit; }
 button, select { cursor: pointer; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 .app-shell { min-height: 100vh; padding: 0 32px 120px; }
-.topbar { position: relative; isolation: isolate; height: 86px; max-width: var(--max-width); margin: 0 auto; display: flex; align-items: center; justify-content: space-between; border-bottom: 0; }
-.topbar::before { position: absolute; z-index: -1; top: 0; bottom: 0; left: 50%; width: 100vw; content: ''; transform: translateX(-50%); background: var(--panel); border-bottom: var(--border-width) solid var(--line); }
+.topbar { position: relative; isolation: isolate; height: 86px; max-width: var(--max-width); margin: 0 auto; display: flex; align-items: center; justify-content: space-between; border-bottom: var(--border-width) solid var(--line); background: var(--panel); box-shadow: 0 0 0 100vmax var(--panel); clip-path: inset(0 -100vmax); }
 .brand { display: inline-flex; align-items: center; gap: 12px; color: var(--ink); text-decoration: none; }
 .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border: var(--border-width) solid var(--ink); font: 700 11px/1 var(--meta-font); letter-spacing: -.06em; transition: background-color .16s, color .16s, border-radius .16s; }
 .brand-name, .brand-caption { display: block; }
@@ -136,9 +136,9 @@ h1 em { font-style: normal; color: var(--muted); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
 .drawer-backdrop, .modal-backdrop { position: fixed; z-index: 20; inset: 0; background: var(--backdrop); opacity: 0; visibility: hidden; transition: opacity .2s, visibility .2s; }
-.detail-drawer { position: fixed; z-index: 21; top: 0; right: 0; bottom: 0; width: min(520px, 100vw); background: var(--paper); transform: translateX(100%); transition: transform .24s ease; box-shadow: var(--shadow-drawer); overflow-y: auto; }
+.detail-drawer { position: fixed; z-index: 21; top: 0; right: 0; bottom: 0; width: min(520px, 100vw); background: var(--paper); transform: translateX(100%); transition: transform .24s ease; box-shadow: none; overflow-y: auto; }
 .drawer-backdrop.is-open, .modal-backdrop.is-open { opacity: 1; visibility: visible; }
-.detail-drawer.is-open { transform: translateX(0); }
+.detail-drawer.is-open { transform: translateX(0); box-shadow: var(--shadow-drawer); }
 .drawer-inner { padding: 30px; }
 .drawer-header { display: flex; justify-content: space-between; gap: 18px; padding-bottom: 25px; border-bottom: var(--border-width) solid var(--line); }
 .drawer-header h2 { max-width: 390px; margin: 13px 0 0; font-size: 31px; line-height: 1.1; letter-spacing: -.06em; }
@@ -227,15 +227,17 @@ body[data-style='editorial-magazine'] .task-card { background: transparent; bord
 body[data-style='editorial-magazine'] .task-card:hover { background: var(--white); transform: none; }
 
 body[data-style='glassmorphism'] { background: linear-gradient(135deg, #b6c7f0 0%, #e7d9ef 48%, #b7e7e1 100%); }
-body[data-style='glassmorphism'] .topbar { background: transparent; }
-body[data-style='glassmorphism'] .topbar::before { background: var(--panel); }
 body[data-style='glassmorphism'] .task-card, body[data-style='glassmorphism'] .task-modal, body[data-style='glassmorphism'] .detail-drawer, body[data-style='glassmorphism'] .empty-state { background: var(--panel); }
 body[data-style='glassmorphism'] .task-card:hover { transform: translateY(-4px); box-shadow: var(--shadow); }
 body[data-style='glassmorphism'] .brand-mark { border-radius: 50%; background: var(--accent); color: var(--accent-contrast); }
 @supports ((backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px))) {
-  body[data-style='y2k-cyber'] .topbar::before, body[data-style='y2k-cyber'] .task-card, body[data-style='y2k-cyber'] .task-modal, body[data-style='y2k-cyber'] .detail-drawer, body[data-style='y2k-cyber'] .empty-state,
-  body[data-style='glassmorphism'] .topbar::before, body[data-style='glassmorphism'] .task-card, body[data-style='glassmorphism'] .task-modal, body[data-style='glassmorphism'] .detail-drawer, body[data-style='glassmorphism'] .empty-state {
+  body[data-style='y2k-cyber'] .task-card, body[data-style='y2k-cyber'] .task-modal, body[data-style='y2k-cyber'] .detail-drawer, body[data-style='y2k-cyber'] .empty-state,
+  body[data-style='glassmorphism'] .task-card, body[data-style='glassmorphism'] .task-modal, body[data-style='glassmorphism'] .detail-drawer, body[data-style='glassmorphism'] .empty-state {
     background: rgba(255, 255, 255, .46);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+  }
+  body[data-style='y2k-cyber'] .topbar, body[data-style='glassmorphism'] .topbar {
     -webkit-backdrop-filter: blur(14px);
     backdrop-filter: blur(14px);
   }

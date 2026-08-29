@@ -56,6 +56,7 @@ const expectedTokenKeys = [
 
 assertEqual(GuildStyle.STORAGE_KEY !== 'minecraft-guild-board-state', true, 'style preference uses an independent storage key');
 assertEqual(GuildStyle.FALLBACK_STYLE_ID, 'swiss-international', 'Swiss International is the fallback style');
+assertEqual(GuildStyle.get('swiss-international').tokens['--shadow-drawer'], 'none', 'Swiss International does not use a drawer shadow');
 assertEqual(JSON.stringify(GuildStyle.OPTIONS.map(function (option) { return option.id; })), JSON.stringify(expectedIds), 'all new styles are registered in the intended order');
 assertEqual(GuildStyle.OPTIONS.length, 10, 'the style selector contains exactly ten styles');
 assertEqual(GuildStyle.TOKEN_KEYS.length, expectedTokenKeys.length, 'the registry defines the complete token contract');
@@ -134,10 +135,11 @@ assert(styles.indexOf('--radius-control:') !== -1, 'controls use a semantic radi
 assert(styles.indexOf('--radius-surface:') !== -1, 'surfaces use a semantic radius token');
 assert(styles.indexOf('border-radius: var(--radius-control)') !== -1, 'control shapes use the control radius token');
 assert(styles.indexOf('border-radius: var(--radius-surface)') !== -1, 'surface shapes use the surface radius token');
-assert(styles.indexOf('.topbar::before') !== -1, 'the topbar has a shared full-bleed background layer');
-assert(styles.indexOf('width: 100vw') !== -1, 'the topbar background reaches both viewport edges');
-assert(styles.indexOf("body[data-style='glassmorphism'] .topbar { background: transparent;") !== -1, 'Glassmorphism leaves the constrained topbar transparent');
-assert(styles.indexOf("body[data-style='glassmorphism'] .topbar::before") !== -1, 'Glassmorphism applies its surface to the shared full-bleed layer');
+assert(styles.indexOf('.topbar::before') === -1, 'the topbar does not use a bounded pseudo-element background');
+assert(styles.indexOf('background: var(--panel); box-shadow: 0 0 0 100vmax var(--panel); clip-path: inset(0 -100vmax);') !== -1, 'the topbar itself owns a borderless full-bleed background');
+assert(styles.indexOf('overflow-x: hidden') !== -1, 'the page clips full-bleed background expansion safely');
+assert(styles.indexOf("body[data-style='glassmorphism'] .topbar { background:") === -1, 'Glassmorphism does not replace the shared topbar background');
+assert(styles.indexOf("body[data-style='glassmorphism'] .topbar::before") === -1, 'Glassmorphism does not create a separate topbar background layer');
 assert(styles.indexOf('@media (prefers-reduced-motion: reduce)') !== -1, 'reduced motion is supported');
 assert(styles.indexOf(':focus-visible') !== -1, 'theme controls retain visible focus states');
 ['default', 'swiss', 'editorial', 'minimal', 'y2k', 'skeuomorphism', 'art-deco'].forEach(function (oldStyleId) {
@@ -149,6 +151,12 @@ assert(styles.indexOf("body[data-style='memphis'] .board-sidebar { padding: 20px
 assert(styles.indexOf("body[data-style='memphis'] .search-box { background: var(--white); border-color: var(--ink);") !== -1, 'Memphis gives the search box a readable solid background');
 assert(styles.indexOf("body[data-style='memphis'] .search-box input::placeholder { color: var(--muted); opacity: 1;") !== -1, 'Memphis keeps the search placeholder readable');
 assert(styles.indexOf("body[data-style='y2k-cyber'] .detail-drawer { background: var(--panel);") !== -1, 'Y2K keeps the detail drawer as bright as its task cards');
+var drawerStart = styles.indexOf('.detail-drawer {');
+var drawerEnd = styles.indexOf('}', drawerStart);
+var openDrawerStart = styles.indexOf('.detail-drawer.is-open {');
+var openDrawerEnd = styles.indexOf('}', openDrawerStart);
+assert(drawerStart !== -1 && styles.substring(drawerStart, drawerEnd).indexOf('box-shadow: none') !== -1, 'a closed drawer does not paint a viewport-edge shadow');
+assert(openDrawerStart !== -1 && styles.substring(openDrawerStart, openDrawerEnd).indexOf('box-shadow: var(--shadow-drawer)') !== -1, 'an open drawer keeps its intended shadow');
 expectedIds.forEach(function (styleId) {
   assert(styles.indexOf("data-style='" + styleId + "'") !== -1, styleId + ' has visual theme rules');
 });
