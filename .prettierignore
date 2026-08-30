@@ -1,0 +1,7 @@
+coverage/
+dist/
+node_modules/
+playwright-report/
+test-results/
+package-lock.json
+tests/e2e/__snapshots__/

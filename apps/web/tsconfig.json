@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "outDir": "../../dist/web",
+    "rootDir": "src",
+    "types": ["vitest/globals"]
+  },
+  "include": ["src/**/*.ts"]
+}

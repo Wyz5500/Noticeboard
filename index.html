@@ -17,33 +17,87 @@
           </span>
         </a>
         <nav class="view-nav" aria-label="主要视图">
-          <a class="view-nav-link is-active" href="#home" data-view="home" aria-current="page">首页</a>
-          <a class="view-nav-link" href="#tasks?scope=all&amp;filter=全部" data-view="tasks">任务页</a>
+          <a
+            class="view-nav-link is-active"
+            href="#home"
+            data-view="home"
+            aria-current="page"
+            >首页</a
+          >
+          <a
+            class="view-nav-link"
+            href="#tasks?scope=all&amp;filter=全部"
+            data-view="tasks"
+            >任务页</a
+          >
         </nav>
         <div class="topbar-meta">
           <div class="profile-menu" id="profileMenu">
-            <button class="avatar-button" id="profileButton" type="button" aria-label="打开个人菜单" aria-haspopup="dialog" aria-expanded="false" aria-controls="profilePanel"><span id="avatarInitial" aria-hidden="true">用</span></button>
+            <button
+              class="avatar-button"
+              id="profileButton"
+              type="button"
+              aria-label="打开个人菜单"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-controls="profilePanel"
+            >
+              <span id="avatarInitial" aria-hidden="true">用</span>
+            </button>
           </div>
         </div>
       </header>
 
-      <div class="profile-panel" id="profilePanel" role="dialog" aria-labelledby="profileName" aria-hidden="true" hidden>
-        <div class="profile-heading"><span class="profile-caption">当前用户</span><strong id="profileName">用户 A</strong></div>
-        <label class="profile-field" for="identitySelect"><span>切换当前用户</span><select id="identitySelect" class="profile-select" aria-label="切换当前用户"></select></label>
+      <div
+        class="profile-panel"
+        id="profilePanel"
+        role="dialog"
+        aria-labelledby="profileName"
+        aria-hidden="true"
+        hidden
+      >
+        <div class="profile-heading">
+          <span class="profile-caption">当前用户</span
+          ><strong id="profileName">用户 A</strong>
+        </div>
+        <label class="profile-field" for="identitySelect"
+          ><span>切换当前用户</span
+          ><select
+            id="identitySelect"
+            class="profile-select"
+            aria-label="切换当前用户"
+          ></select
+        ></label>
         <label class="style-switcher" for="styleSelect">
           <span class="style-caption">视觉风格 <small>STYLE</small></span>
-          <select id="styleSelect" class="profile-select" aria-label="选择视觉风格"></select>
+          <select
+            id="styleSelect"
+            class="profile-select"
+            aria-label="选择视觉风格"
+          ></select>
         </label>
-        <button class="text-button profile-reset" id="resetButton" type="button">重置演示数据</button>
+        <button
+          class="text-button profile-reset"
+          id="resetButton"
+          type="button"
+        >
+          重置演示数据
+        </button>
       </div>
 
       <main>
-        <section class="view-section is-active" id="homeView" data-view-section="home">
+        <section
+          class="view-section is-active"
+          id="homeView"
+          data-view-section="home"
+        >
           <section class="hero-section">
             <div>
               <p class="eyebrow">冒险家工会 <span>/</span> GUILD HOME</p>
               <h1>把每一次冒险，<br /><em>变成可完成的委托。</em></h1>
-              <p class="hero-copy">发布委托、组队出发、回到公会交付成果。每一步都留下记录。</p>
+              <p class="hero-copy">
+                发布委托、组队出发、回到公会交付成果。每一步都留下记录。
+              </p>
             </div>
             <div class="hero-index" aria-label="页面索引">
               <span class="hero-index-label">BOARD</span>
@@ -52,12 +106,50 @@
           </section>
 
           <section class="home-stats" aria-label="任务统计与状态速查">
-            <div class="section-kicker">任务状态速查 <span>STATUS OVERVIEW</span></div>
+            <div class="section-kicker">
+              任务状态速查 <span>STATUS OVERVIEW</span>
+            </div>
             <div class="stats-row">
-              <button class="stat-card" type="button" data-status-shortcut="全部"><span class="stat-label">我的任务</span><strong id="statTotal">0</strong><span class="stat-foot">MY QUESTS</span><span class="stat-arrow" aria-hidden="true">↗</span></button>
-              <button class="stat-card" type="button" data-status-shortcut="进行中"><span class="stat-label">进行中</span><strong id="statActive">0</strong><span class="stat-foot">MY IN PROGRESS</span><span class="stat-arrow" aria-hidden="true">↗</span></button>
-              <button class="stat-card" type="button" data-status-shortcut="已完成"><span class="stat-label">已完成</span><strong id="statReview">0</strong><span class="stat-foot">MY AWAITING REVIEW</span><span class="stat-arrow" aria-hidden="true">↗</span></button>
-              <button class="stat-card" type="button" data-status-shortcut="关闭"><span class="stat-label">已关闭</span><strong id="statClosed">0</strong><span class="stat-foot">MY ARCHIVED</span><span class="stat-arrow" aria-hidden="true">↗</span></button>
+              <button
+                class="stat-card"
+                type="button"
+                data-status-shortcut="全部"
+              >
+                <span class="stat-label">我的任务</span
+                ><strong id="statTotal">0</strong
+                ><span class="stat-foot">MY QUESTS</span
+                ><span class="stat-arrow" aria-hidden="true">↗</span>
+              </button>
+              <button
+                class="stat-card"
+                type="button"
+                data-status-shortcut="进行中"
+              >
+                <span class="stat-label">进行中</span
+                ><strong id="statActive">0</strong
+                ><span class="stat-foot">MY IN PROGRESS</span
+                ><span class="stat-arrow" aria-hidden="true">↗</span>
+              </button>
+              <button
+                class="stat-card"
+                type="button"
+                data-status-shortcut="已完成"
+              >
+                <span class="stat-label">已完成</span
+                ><strong id="statReview">0</strong
+                ><span class="stat-foot">MY AWAITING REVIEW</span
+                ><span class="stat-arrow" aria-hidden="true">↗</span>
+              </button>
+              <button
+                class="stat-card"
+                type="button"
+                data-status-shortcut="关闭"
+              >
+                <span class="stat-label">已关闭</span
+                ><strong id="statClosed">0</strong
+                ><span class="stat-foot">MY ARCHIVED</span
+                ><span class="stat-arrow" aria-hidden="true">↗</span>
+              </button>
             </div>
           </section>
         </section>
@@ -70,87 +162,215 @@
           <section class="board-layout" aria-label="任务列表">
             <aside class="board-sidebar">
               <div class="section-kicker">任务范围 <span>VIEW BY</span></div>
-              <div class="scope-switcher" id="scopeSwitcher" role="group" aria-label="任务范围">
-                <button class="scope-button is-active" type="button" data-scope="all" aria-pressed="true">全部任务</button>
-                <button class="scope-button" type="button" data-scope="mine" aria-pressed="false">我的任务</button>
+              <div
+                class="scope-switcher"
+                id="scopeSwitcher"
+                role="group"
+                aria-label="任务范围"
+              >
+                <button
+                  class="scope-button is-active"
+                  type="button"
+                  data-scope="all"
+                  aria-pressed="true"
+                >
+                  全部任务
+                </button>
+                <button
+                  class="scope-button"
+                  type="button"
+                  data-scope="mine"
+                  aria-pressed="false"
+                >
+                  我的任务
+                </button>
               </div>
-              <div class="section-kicker filter-heading">状态筛选 <span>FILTER BY</span></div>
-              <nav class="filter-list" id="filterList" aria-label="任务状态筛选">
-                <button class="filter-button is-active" type="button" data-filter="全部" aria-pressed="true"><span>全部任务</span><span class="filter-count" data-count="全部">0</span></button>
-                <button class="filter-button" type="button" data-filter="未开始" aria-pressed="false"><span>未开始</span><span class="filter-count" data-count="未开始">0</span></button>
-                <button class="filter-button" type="button" data-filter="进行中" aria-pressed="false"><span>进行中</span><span class="filter-count" data-count="进行中">0</span></button>
-                <button class="filter-button" type="button" data-filter="已完成" aria-pressed="false"><span>已完成</span><span class="filter-count" data-count="已完成">0</span></button>
-                <button class="filter-button" type="button" data-filter="重新打开" aria-pressed="false"><span>重新打开</span><span class="filter-count" data-count="重新打开">0</span></button>
-                <button class="filter-button" type="button" data-filter="关闭" aria-pressed="false"><span>已关闭</span><span class="filter-count" data-count="关闭">0</span></button>
+              <div class="section-kicker filter-heading">
+                状态筛选 <span>FILTER BY</span>
+              </div>
+              <nav
+                class="filter-list"
+                id="filterList"
+                aria-label="任务状态筛选"
+              >
+                <button
+                  class="filter-button is-active"
+                  type="button"
+                  data-filter="全部"
+                  aria-pressed="true"
+                >
+                  <span>全部任务</span
+                  ><span class="filter-count" data-count="全部">0</span>
+                </button>
+                <button
+                  class="filter-button"
+                  type="button"
+                  data-filter="未开始"
+                  aria-pressed="false"
+                >
+                  <span>未开始</span
+                  ><span class="filter-count" data-count="未开始">0</span>
+                </button>
+                <button
+                  class="filter-button"
+                  type="button"
+                  data-filter="进行中"
+                  aria-pressed="false"
+                >
+                  <span>进行中</span
+                  ><span class="filter-count" data-count="进行中">0</span>
+                </button>
+                <button
+                  class="filter-button"
+                  type="button"
+                  data-filter="已完成"
+                  aria-pressed="false"
+                >
+                  <span>已完成</span
+                  ><span class="filter-count" data-count="已完成">0</span>
+                </button>
+                <button
+                  class="filter-button"
+                  type="button"
+                  data-filter="重新打开"
+                  aria-pressed="false"
+                >
+                  <span>重新打开</span
+                  ><span class="filter-count" data-count="重新打开">0</span>
+                </button>
+                <button
+                  class="filter-button"
+                  type="button"
+                  data-filter="关闭"
+                  aria-pressed="false"
+                >
+                  <span>已关闭</span
+                  ><span class="filter-count" data-count="关闭">0</span>
+                </button>
               </nav>
               <div class="sidebar-note">
                 <span class="note-symbol">↗</span>
-                <p>每一项委托都属于冒险家工会。请在行动前确认截止时间与任务要求。</p>
+                <p>
+                  每一项委托都属于冒险家工会。请在行动前确认截止时间与任务要求。
+                </p>
               </div>
             </aside>
 
             <div class="board-content">
-            <div class="board-toolbar">
-              <div>
-                <div class="section-kicker">当前委托 <span id="resultLabel">ALL QUESTS</span></div>
-                <p class="result-count" id="resultCount">0 项任务</p>
+              <div class="board-toolbar">
+                <div>
+                  <div class="section-kicker">
+                    当前委托 <span id="resultLabel">ALL QUESTS</span>
+                  </div>
+                  <p class="result-count" id="resultCount">0 项任务</p>
+                </div>
+                <div class="toolbar-actions">
+                  <label class="search-box">
+                    <span class="sr-only">搜索任务</span>
+                    <span aria-hidden="true">⌕</span>
+                    <input
+                      id="searchInput"
+                      type="search"
+                      placeholder="搜索任务、类型或描述"
+                    />
+                  </label>
+                  <button
+                    class="primary-button"
+                    id="newTaskButton"
+                    type="button"
+                  >
+                    <span>＋</span> 发布新任务
+                  </button>
+                </div>
               </div>
-              <div class="toolbar-actions">
-                <label class="search-box">
-                  <span class="sr-only">搜索任务</span>
-                  <span aria-hidden="true">⌕</span>
-                  <input id="searchInput" type="search" placeholder="搜索任务、类型或描述" />
-                </label>
-                <button class="primary-button" id="newTaskButton" type="button"><span>＋</span> 发布新任务</button>
-              </div>
-            </div>
-            <div class="task-grid" id="taskGrid"></div>
+              <div class="task-grid" id="taskGrid"></div>
             </div>
           </section>
         </section>
       </main>
-
     </div>
 
     <div class="drawer-backdrop" id="drawerBackdrop"></div>
-    <aside class="detail-drawer" id="detailDrawer" aria-labelledby="drawerTitle" aria-hidden="true">
+    <aside
+      class="detail-drawer"
+      id="detailDrawer"
+      aria-labelledby="drawerTitle"
+      aria-hidden="true"
+    >
       <div class="drawer-inner" id="drawerInner"></div>
     </aside>
 
     <div class="modal-backdrop" id="modalBackdrop"></div>
-    <section class="task-modal" id="taskModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-hidden="true">
+    <section
+      class="task-modal"
+      id="taskModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modalTitle"
+      aria-hidden="true"
+    >
       <div class="modal-header">
         <div>
           <p class="eyebrow">NEW COMMISSION <span>/</span> 发布委托</p>
           <h2 id="modalTitle">发布一项新任务</h2>
         </div>
-        <button class="icon-button" id="closeModalButton" type="button" aria-label="关闭发布任务窗口">×</button>
+        <button
+          class="icon-button"
+          id="closeModalButton"
+          type="button"
+          aria-label="关闭发布任务窗口"
+        >
+          ×
+        </button>
       </div>
       <form id="taskForm" class="task-form">
-        <label class="field field-wide"><span>任务标题 <b>*</b></span><input name="title" required maxlength="80" placeholder="例如：寻找遗失的地图碎片" /></label>
-        <label class="field"><span>任务类型 <b>*</b></span><select name="type" id="taskType" required></select></label>
-        <label class="field"><span>截止时间 <b>*</b></span><input name="dueDate" type="date" required /></label>
-        <label class="field field-wide"><span>任务描述 <b>*</b></span><textarea name="description" required maxlength="500" rows="4" placeholder="说明目的地、完成标准与注意事项"></textarea></label>
-        <label class="field field-wide"><span>奖励 <b>*</b></span><input name="reward" required maxlength="120" placeholder="例如：30 金币 · 稀有材料包" /></label>
+        <label class="field field-wide"
+          ><span>任务标题 <b>*</b></span
+          ><input
+            name="title"
+            required
+            maxlength="80"
+            placeholder="例如：寻找遗失的地图碎片"
+        /></label>
+        <label class="field"
+          ><span>任务类型 <b>*</b></span
+          ><select name="type" id="taskType" required></select
+        ></label>
+        <label class="field"
+          ><span>截止时间 <b>*</b></span
+          ><input name="dueDate" type="date" required
+        /></label>
+        <label class="field field-wide"
+          ><span>任务描述 <b>*</b></span
+          ><textarea
+            name="description"
+            required
+            maxlength="500"
+            rows="4"
+            placeholder="说明目的地、完成标准与注意事项"
+          ></textarea>
+        </label>
+        <label class="field field-wide"
+          ><span>奖励 <b>*</b></span
+          ><input
+            name="reward"
+            required
+            maxlength="120"
+            placeholder="例如：30 金币 · 稀有材料包"
+        /></label>
         <p class="form-error" id="formError" role="alert"></p>
-        <div class="form-actions"><button class="quiet-button" id="cancelModalButton" type="button">取消</button><button class="primary-button" type="submit">发布任务 <span>↗</span></button></div>
+        <div class="form-actions">
+          <button class="quiet-button" id="cancelModalButton" type="button">
+            取消</button
+          ><button class="primary-button" type="submit">
+            发布任务 <span>↗</span>
+          </button>
+        </div>
       </form>
     </section>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-    <script src="app-state.js"></script>
-    <script src="style-preferences.js"></script>
-    <script src="style-configs/swiss-international.js"></script>
-    <script src="style-configs/neo-brutalism.js"></script>
-    <script src="style-configs/bauhaus.js"></script>
-    <script src="style-configs/y2k-cyber.js"></script>
-    <script src="style-configs/retro-terminal.js"></script>
-    <script src="style-configs/memphis.js"></script>
-    <script src="style-configs/editorial-magazine.js"></script>
-    <script src="style-configs/glassmorphism.js"></script>
-    <script src="style-configs/japanese-minimalism.js"></script>
-    <script src="style-configs/pixel-retro.js"></script>
-    <script src="app.js"></script>
+    <script type="module" src="main.js"></script>
   </body>
 </html>

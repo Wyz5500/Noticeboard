@@ -1,0 +1,236 @@
+/** Renders task cards, details, timelines, and action controls using safe DOM node creation. */
+import type { TaskAction, TaskResource } from '../core/api-types.js';
+import { createNode } from '../core/dom.js';
+import { availableActions } from './task-permissions.js';
+
+const ACTION_LABELS: Record<TaskAction, string> = {
+  accept: '接取任务',
+  complete: '标记为已完成',
+  approve: '验收通过并关闭',
+  reopen: '验收不通过，重新打开',
+  close: '直接关闭任务',
+};
+
+/** Formats an ISO timestamp using the same compact Chinese date language as the prototype. */
+function formatDate(value: string, includeTime: boolean): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return value;
+  const datePart = new Intl.DateTimeFormat('zh-CN', {
+    month: 'short',
+    day: 'numeric',
+  }).format(date);
+  if (!includeTime) return datePart;
+  const time = new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
+  return `${datePart} ${time}`;
+}
+
+/** Formats a date-only deadline without timezone drift. */
+function formatDueDate(value: string): string {
+  return formatDate(`${value}T12:00:00`, false);
+}
+
+/** Creates a labeled metadata pair used in task cards. */
+function cardMeta(
+  document: Document,
+  label: string,
+  value: string,
+): HTMLSpanElement {
+  const container = createNode(document, 'span', undefined, label);
+  container.append(createNode(document, 'strong', undefined, value));
+  return container;
+}
+
+/** Creates one keyboard-accessible task card with only text-node content. */
+export function renderTaskCard(
+  document: Document,
+  task: TaskResource,
+): HTMLElement {
+  const card = createNode(document, 'article', 'task-card');
+  card.dataset.taskId = task.id;
+  card.tabIndex = 0;
+  card.setAttribute('role', 'button');
+  card.setAttribute('aria-label', `查看任务：${task.title}`);
+
+  const top = createNode(document, 'div', 'task-card-top');
+  top.append(
+    createNode(document, 'span', 'task-type', `${task.typeLabel} / QUEST`),
+    createNode(
+      document,
+      'span',
+      `status-badge status-${task.statusLabel}`,
+      task.statusLabel,
+    ),
+  );
+  const footer = createNode(document, 'div', 'task-card-footer');
+  const metadata = createNode(document, 'div', 'task-card-meta');
+  metadata.append(
+    cardMeta(document, '发布者', task.publisher.name),
+    cardMeta(document, '截止', formatDueDate(task.dueDate)),
+    cardMeta(document, '接取者', task.assignee?.name ?? '未接取'),
+  );
+  footer.append(metadata, createNode(document, 'span', 'task-card-arrow', '↗'));
+  footer.lastElementChild?.setAttribute('aria-hidden', 'true');
+  card.append(
+    top,
+    createNode(document, 'h3', undefined, task.title),
+    createNode(document, 'p', 'task-summary', task.description),
+    footer,
+  );
+  return card;
+}
+
+/** Renders task cards or the preserved contextual empty state. */
+export function renderTaskGrid(
+  document: Document,
+  container: HTMLElement,
+  tasks: TaskResource[],
+  scope: 'all' | 'mine',
+): void {
+  if (tasks.length) {
+    container.replaceChildren(
+      ...tasks.map((task) => renderTaskCard(document, task)),
+    );
+    return;
+  }
+  const empty = createNode(document, 'div', 'empty-state');
+  empty.append(
+    createNode(document, 'strong', undefined, '这里暂时没有任务'),
+    createNode(
+      document,
+      'p',
+      undefined,
+      scope === 'mine'
+        ? '当前身份还没有符合条件的任务。'
+        : '换一个筛选条件，或发布一项新的冒险委托。',
+    ),
+  );
+  container.replaceChildren(empty);
+}
+
+/** Creates one task detail fact block. */
+function detailFact(
+  document: Document,
+  label: string,
+  value: string,
+  wide = false,
+): HTMLDivElement {
+  const fact = createNode(document, 'div', 'detail-fact');
+  if (wide) fact.style.gridColumn = '1 / -1';
+  fact.append(
+    createNode(document, 'span', undefined, label),
+    createNode(document, 'strong', undefined, value),
+  );
+  return fact;
+}
+
+/** Creates action buttons for the current actor without bypassing server-side authorization. */
+function actionControls(
+  document: Document,
+  task: TaskResource,
+  actorId: string,
+): HTMLElement {
+  const container = createNode(document, 'div', 'drawer-actions');
+  const actions = availableActions(task, actorId);
+  if (!actions.length) {
+    container.append(
+      createNode(
+        document,
+        'p',
+        'drawer-hint',
+        '当前身份在此任务状态下暂无可执行操作。',
+      ),
+    );
+    return container;
+  }
+  for (const action of actions) {
+    const primary =
+      action === 'accept' || action === 'complete' || action === 'approve';
+    const label =
+      action === 'accept' && task.status === 'reopened'
+        ? '重新接取任务'
+        : ACTION_LABELS[action];
+    const button = createNode(
+      document,
+      'button',
+      primary ? 'primary-button' : 'secondary-button',
+      label,
+    );
+    button.type = 'button';
+    button.dataset.action = action;
+    if (primary)
+      button.append(
+        document.createTextNode(' '),
+        createNode(document, 'span', undefined, '↗'),
+      );
+    container.append(button);
+  }
+  return container;
+}
+
+/** Creates the reverse-chronological activity timeline. */
+function timeline(document: Document, task: TaskResource): HTMLElement {
+  const section = createNode(document, 'section', 'timeline-section');
+  const title = createNode(document, 'div', 'timeline-title', '操作时间线 ');
+  title.append(createNode(document, 'span', undefined, '/ ACTIVITY LOG'));
+  const list = createNode(document, 'ol', 'timeline');
+  for (const event of task.timeline.slice().reverse()) {
+    const item = createNode(document, 'li');
+    item.append(
+      createNode(document, 'span', 'timeline-action', event.actionLabel),
+      createNode(
+        document,
+        'span',
+        'timeline-meta',
+        `${event.actor.name} · ${formatDate(event.at, true)}`,
+      ),
+      createNode(document, 'span', 'timeline-detail', event.detail),
+    );
+    list.append(item);
+  }
+  section.append(title, list);
+  return section;
+}
+
+/** Renders the complete selected task detail drawer using only safe nodes. */
+export function renderTaskDrawer(
+  document: Document,
+  container: HTMLElement,
+  task: TaskResource,
+  actorId: string,
+): void {
+  const header = createNode(document, 'div', 'drawer-header');
+  const heading = createNode(document, 'div');
+  const eyebrow = createNode(document, 'p', 'eyebrow', `${task.typeLabel} `);
+  eyebrow.append(
+    createNode(document, 'span', undefined, '/'),
+    document.createTextNode(' QUEST DETAIL'),
+  );
+  const title = createNode(document, 'h2', undefined, task.title);
+  title.id = 'drawerTitle';
+  heading.append(eyebrow, title);
+  const close = createNode(document, 'button', 'icon-button', '×');
+  close.type = 'button';
+  close.dataset.closeDrawer = '';
+  close.setAttribute('aria-label', '关闭任务详情');
+  header.append(heading, close);
+
+  const facts = createNode(document, 'div', 'detail-facts');
+  facts.append(
+    detailFact(document, '当前状态', task.statusLabel),
+    detailFact(document, '截止时间', formatDueDate(task.dueDate)),
+    detailFact(document, '任务发布者', task.publisher.name),
+    detailFact(document, '当前接取者', task.assignee?.name ?? '未接取'),
+    detailFact(document, '任务奖励', task.reward, true),
+  );
+  container.replaceChildren(
+    header,
+    createNode(document, 'p', 'drawer-description', task.description),
+    facts,
+    actionControls(document, task, actorId),
+    timeline(document, task),
+  );
+}
