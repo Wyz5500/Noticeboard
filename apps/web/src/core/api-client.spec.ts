@@ -65,6 +65,24 @@ describe('ApiClient', () => {
     });
   });
 
+  /** Proves bodyless demo reset requests do not advertise an empty JSON body. */
+  it('resets demo data without an empty JSON request body', async () => {
+    let request: RequestInit | undefined;
+    const client = new ApiClient('/api/v1', (_input, init) => {
+      request = init;
+      return Promise.resolve(jsonResponse({ reset: true }));
+    });
+
+    await client.resetDemo('guild-master');
+
+    expect(request).toEqual({
+      method: 'POST',
+      headers: {
+        'x-demo-user-id': 'guild-master',
+      },
+    });
+  });
+
   /** Proves conflict envelopes become typed errors that UI code can resynchronize after. */
   it('turns a server conflict envelope into ApiError', async () => {
     const client = new ApiClient('/api/v1', () =>

@@ -76,12 +76,13 @@ export class ApiClient {
     actorId: string,
     body?: unknown,
   ): Promise<T> {
+    const headers: Record<string, string> = {
+      'x-demo-user-id': actorId,
+    };
+    if (body !== undefined) headers['content-type'] = 'application/json';
     return this.request(path, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-demo-user-id': actorId,
-      },
+      headers,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   }
