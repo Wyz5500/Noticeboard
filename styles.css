@@ -329,7 +329,7 @@ h3 {
 h1 {
   max-width: 680px;
   margin: 18px 0 20px;
-  font-size: clamp(42px, 6vw, 82px);
+  font-size: clamp(42px, 5vw, 72px);
   line-height: 0.98;
   letter-spacing: -0.07em;
   font-weight: 400;
@@ -592,7 +592,7 @@ h1 em {
 }
 .task-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   padding-top: 20px;
 }
@@ -1286,6 +1286,9 @@ body[data-style='pixel-retro'] .task-card:hover {
   }
   .sidebar-note {
     display: none;
+  }
+  .task-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

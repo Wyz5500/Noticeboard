@@ -31,18 +31,28 @@ test.beforeEach(async ({ page, request }) => {
   await expect(page.locator('#taskGrid')).toBeAttached();
 });
 
-/** Proves navigation, hash synchronization, scope, status, and search remain client-side. */
-test('navigates and filters the in-memory task board', async ({ page }) => {
-  await expect(page.locator('#statTotal')).toHaveText('4');
+/** Proves navigation, mine-scoped statistics, status, and search remain client-side. */
+test('navigates and filters the in-memory task board', async ({
+  page,
+  isMobile,
+}) => {
+  await expect(page.locator('#statTotal')).toHaveText('5');
   await expect(page.locator('.stat-card')).toHaveCount(6);
   await expect(page.locator('.stat-label')).toHaveText([
-    '全部任务',
+    '我的任务',
     '未开始',
     '进行中',
     '已完成',
     '重新打开',
     '已关闭',
   ]);
+  await expect(page.locator('.stat-foot').first()).toHaveText('MY QUESTS');
+  const desktopStatusColumns = await page
+    .locator('.stats-row')
+    .evaluate(
+      (row) => getComputedStyle(row).gridTemplateColumns.split(' ').length,
+    );
+  expect(desktopStatusColumns).toBe(isMobile ? 2 : 6);
   const statPaddings = await page
     .locator('.stat-card')
     .evaluateAll((cards) =>
@@ -52,18 +62,49 @@ test('navigates and filters the in-memory task board', async ({ page }) => {
   await page.locator('.stat-card').nth(1).click();
   await expect(
     page.evaluate(() => decodeURI(window.location.hash)),
-  ).resolves.toBe('#tasks?scope=all&filter=未开始');
+  ).resolves.toBe('#tasks?scope=mine&filter=未开始');
+  await page.goto('/#tasks?scope=all&filter=全部&q=北境');
+  await page.locator('.brand').click();
+  await page.locator('.stat-card').first().click();
+  await expect(
+    page.evaluate(() => decodeURI(window.location.hash)),
+  ).resolves.toBe('#tasks?scope=mine&filter=全部');
   await page.getByRole('link', { name: '任务页' }).click();
   await expect(
     page.evaluate(() => decodeURI(window.location.hash)),
   ).resolves.toBe('#tasks?scope=all&filter=全部');
-  await expect(page.locator('.task-card')).toHaveCount(4);
-  await page.getByRole('button', { name: '进行中 1' }).click();
-  await expect(page.locator('.task-card')).toHaveCount(1);
+  await expect(page.locator('.task-card')).toHaveCount(12);
+  const desktopTaskColumns = await page
+    .locator('.task-grid')
+    .evaluate(
+      (grid) => getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+    );
+  expect(desktopTaskColumns).toBe(isMobile ? 1 : 3);
+  await page.getByRole('button', { name: '进行中 3' }).click();
+  await expect(page.locator('.task-card')).toHaveCount(3);
   await page.locator('#searchInput').fill('北境');
   await expect(page.locator('.task-card h3')).toHaveText('北境哨站补给护送');
   await page.getByRole('button', { name: '我的任务' }).click();
   await expect(page).toHaveURL(/scope=mine/);
+});
+
+/** Proves the task grid collapses from three desktop columns to two tablet and one mobile column. */
+test('uses responsive task-grid columns', async ({ page }) => {
+  await page.goto('/#tasks?scope=all&filter=全部');
+
+  const columnsAt = async (width: number): Promise<number> => {
+    await page.setViewportSize({ width, height: 915 });
+    return page
+      .locator('.task-grid')
+      .evaluate(
+        (grid) => getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+      );
+  };
+
+  await expect(page.locator('.task-card')).toHaveCount(12);
+  await expect.poll(() => columnsAt(1440)).toBe(3);
+  await expect.poll(() => columnsAt(840)).toBe(2);
+  await expect.poll(() => columnsAt(620)).toBe(1);
 });
 
 /** Proves the mobile two-column status grid keeps its middle vertical separators. */

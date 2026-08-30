@@ -225,7 +225,7 @@ describe('task application use cases', () => {
     await expect(new GetTask(query).execute('read-1')).resolves.toBe(model);
   });
 
-  it('resets exactly the four original demo tasks after validating the actor', async () => {
+  it('resets exactly twelve demo tasks after validating the actor', async () => {
     const repository = new MemoryTaskRepository();
     await publish(repository);
     const reset = new ResetDemoTasks(
@@ -243,6 +243,28 @@ describe('task application use cases', () => {
       'task-outpost',
       'task-lanterns',
       'task-starfire',
+      'task-village',
+      'task-quarry',
+      'task-beacon',
+      'task-harbor',
+      'task-grove',
+      'task-portal',
+      'task-nether',
+      'task-bridge',
+    ]);
+    expect(repository.values().map((task) => task.status)).toEqual([
+      'not_started',
+      'in_progress',
+      'completed',
+      'closed',
+      'not_started',
+      'in_progress',
+      'in_progress',
+      'completed',
+      'completed',
+      'reopened',
+      'reopened',
+      'closed',
     ]);
   });
 });

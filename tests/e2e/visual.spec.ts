@@ -1,5 +1,5 @@
 /** Compares every preserved theme and major overlay state against the frozen prototype baseline. */
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const THEME_IDS = [
   'swiss-international',
@@ -13,6 +13,19 @@ const THEME_IDS = [
   'japanese-minimalism',
   'pixel-retro',
 ] as const;
+
+/** Waits for the modal's real CSS transition to finish before taking a stable screenshot. */
+async function waitForModalTransition(page: Page): Promise<void> {
+  await page
+    .locator('#taskModal, #modalBackdrop')
+    .evaluateAll(async (elements) => {
+      await Promise.all(
+        elements.flatMap((element) =>
+          element.getAnimations().map((animation) => animation.finished),
+        ),
+      );
+    });
+}
 
 /** Restores deterministic server or legacy local state before each visual scenario. */
 test.beforeEach(async ({ page, request }) => {
@@ -45,7 +58,7 @@ for (const themeId of THEME_IDS) {
     await page.keyboard.press('Escape');
 
     await page.getByRole('link', { name: '任务页' }).click();
-    await expect(page.locator('.task-card')).toHaveCount(4);
+    await expect(page.locator('.task-card')).toHaveCount(12);
     await expect(page).toHaveScreenshot(`${themeId}-tasks.png`, {
       fullPage: true,
     });
@@ -56,9 +69,11 @@ for (const themeId of THEME_IDS) {
     });
     await page.locator('[data-close-drawer]').click();
 
+    await page.evaluate(() => window.scrollTo(0, 0));
     await page.locator('#newTaskButton').click();
+    await waitForModalTransition(page);
     await expect(page).toHaveScreenshot(`${themeId}-modal.png`, {
-      fullPage: true,
+      fullPage: false,
     });
   });
 }

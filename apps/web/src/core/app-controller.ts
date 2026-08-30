@@ -303,9 +303,16 @@ export class AppController {
     );
   }
 
-  /** Renders all-task status overview and scope-relative filter counts. */
+  /** Renders current-user status overview and scope-relative filter counts. */
   private renderStats(): void {
-    const counts = taskCounts(this.tasks);
+    const mine = filterTasks(this.tasks, {
+      scope: 'mine',
+      filter: '全部',
+      query: '',
+      currentUserId: this.currentUserId,
+      knownUserIds: this.knownUserIds(),
+    });
+    const counts = taskCounts(mine);
     this.elements.statTotal.textContent = String(counts.total);
     this.elements.statNotStarted.textContent = String(counts.notStarted);
     this.elements.statActive.textContent = String(counts.inProgress);
@@ -505,7 +512,7 @@ export class AppController {
         : null;
     if (!target) return;
     this.navigateTasks(
-      'all',
+      'mine',
       (target.dataset.statusShortcut ?? '全部') as FilterLabel,
       '',
     );

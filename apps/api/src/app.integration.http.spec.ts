@@ -49,6 +49,14 @@ describeDatabase('application composition', () => {
       'task-outpost',
       'task-lanterns',
       'task-starfire',
+      'task-village',
+      'task-quarry',
+      'task-beacon',
+      'task-harbor',
+      'task-grove',
+      'task-portal',
+      'task-nether',
+      'task-bridge',
     ]);
 
     const created = await app.inject({

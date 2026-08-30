@@ -228,7 +228,21 @@ describeDatabase('PostgreSQL task repository contract', () => {
   /** Proves deployment seed initializes an empty database without overwriting durable tasks. */
   it('seeds only an empty task table', async () => {
     await dataSource.transaction(seedDemoData);
-    expect(await query.list()).toHaveLength(4);
+    expect((await query.list()).map((task) => task.id)).toEqual([
+      'task-herbs',
+      'task-outpost',
+      'task-lanterns',
+      'task-starfire',
+      'task-village',
+      'task-quarry',
+      'task-beacon',
+      'task-harbor',
+      'task-grove',
+      'task-portal',
+      'task-nether',
+      'task-bridge',
+    ]);
+    expect(await query.list()).toHaveLength(12);
 
     const existingIds = (await query.list()).map((task) => task.id);
     await dataSource.transaction(seedDemoData);
