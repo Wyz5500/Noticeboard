@@ -56,8 +56,10 @@ interface Elements {
   homeView: HTMLElement;
   tasksView: HTMLElement;
   statTotal: HTMLElement;
+  statNotStarted: HTMLElement;
   statActive: HTMLElement;
   statReview: HTMLElement;
+  statReopened: HTMLElement;
   statClosed: HTMLElement;
   scopeSwitcher: HTMLElement;
   filterList: HTMLElement;
@@ -94,8 +96,10 @@ function collectElements(document: Document): Elements {
     homeView: requiredElement(document, '#homeView'),
     tasksView: requiredElement(document, '#tasksView'),
     statTotal: requiredElement(document, '#statTotal'),
+    statNotStarted: requiredElement(document, '#statNotStarted'),
     statActive: requiredElement(document, '#statActive'),
     statReview: requiredElement(document, '#statReview'),
+    statReopened: requiredElement(document, '#statReopened'),
     statClosed: requiredElement(document, '#statClosed'),
     scopeSwitcher: requiredElement(document, '#scopeSwitcher'),
     filterList: requiredElement(document, '#filterList'),
@@ -299,16 +303,14 @@ export class AppController {
     );
   }
 
-  /** Renders current-user overview and scope-relative filter counts. */
+  /** Renders all-task status overview and scope-relative filter counts. */
   private renderStats(): void {
-    const counts = taskCounts(
-      this.tasks,
-      this.currentUserId,
-      this.knownUserIds(),
-    );
+    const counts = taskCounts(this.tasks);
     this.elements.statTotal.textContent = String(counts.total);
+    this.elements.statNotStarted.textContent = String(counts.notStarted);
     this.elements.statActive.textContent = String(counts.inProgress);
     this.elements.statReview.textContent = String(counts.completed);
+    this.elements.statReopened.textContent = String(counts.reopened);
     this.elements.statClosed.textContent = String(counts.closed);
     const scoped = filterTasks(this.tasks, {
       scope: this.route.scope,
@@ -503,7 +505,7 @@ export class AppController {
         : null;
     if (!target) return;
     this.navigateTasks(
-      'mine',
+      'all',
       (target.dataset.statusShortcut ?? '全部') as FilterLabel,
       '',
     );

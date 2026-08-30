@@ -131,28 +131,34 @@ describe('task filtering', () => {
     },
   );
 
-  /** Proves overview statistics use mine ownership and stable status codes. */
-  it('counts current-user task statuses', () => {
+  /** Proves overview statistics expose the complete task-board status set. */
+  it('counts every task-board status', () => {
     const tasks = [
       task(),
+      task({
+        id: 'task-not-started',
+        status: 'not_started',
+        statusLabel: '未开始',
+      }),
       task({
         id: 'task-completed',
         status: 'completed',
         statusLabel: '已完成',
       }),
+      task({
+        id: 'task-reopened',
+        status: 'reopened',
+        statusLabel: '重新打开',
+      }),
       task({ id: 'task-closed', status: 'closed', statusLabel: '关闭' }),
     ];
 
-    expect(
-      taskCounts(
-        tasks,
-        'adventurer-a',
-        new Set(['guild-master', 'adventurer-a']),
-      ),
-    ).toEqual({
-      total: 3,
+    expect(taskCounts(tasks)).toEqual({
+      total: 5,
+      notStarted: 1,
       inProgress: 1,
       completed: 1,
+      reopened: 1,
       closed: 1,
     });
   });

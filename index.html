@@ -115,9 +115,19 @@
                 type="button"
                 data-status-shortcut="全部"
               >
-                <span class="stat-label">我的任务</span
+                <span class="stat-label">全部任务</span
                 ><strong id="statTotal">0</strong
-                ><span class="stat-foot">MY QUESTS</span
+                ><span class="stat-foot">ALL QUESTS</span
+                ><span class="stat-arrow" aria-hidden="true">↗</span>
+              </button>
+              <button
+                class="stat-card"
+                type="button"
+                data-status-shortcut="未开始"
+              >
+                <span class="stat-label">未开始</span
+                ><strong id="statNotStarted">0</strong
+                ><span class="stat-foot">NOT STARTED</span
                 ><span class="stat-arrow" aria-hidden="true">↗</span>
               </button>
               <button
@@ -138,6 +148,16 @@
                 <span class="stat-label">已完成</span
                 ><strong id="statReview">0</strong
                 ><span class="stat-foot">MY AWAITING REVIEW</span
+                ><span class="stat-arrow" aria-hidden="true">↗</span>
+              </button>
+              <button
+                class="stat-card"
+                type="button"
+                data-status-shortcut="重新打开"
+              >
+                <span class="stat-label">重新打开</span
+                ><strong id="statReopened">0</strong
+                ><span class="stat-foot">REOPENED</span
                 ><span class="stat-arrow" aria-hidden="true">↗</span>
               </button>
               <button

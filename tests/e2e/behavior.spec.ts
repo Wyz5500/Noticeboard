@@ -33,7 +33,26 @@ test.beforeEach(async ({ page, request }) => {
 
 /** Proves navigation, hash synchronization, scope, status, and search remain client-side. */
 test('navigates and filters the in-memory task board', async ({ page }) => {
-  await expect(page.locator('#statTotal')).toHaveText('2');
+  await expect(page.locator('#statTotal')).toHaveText('4');
+  await expect(page.locator('.stat-card')).toHaveCount(6);
+  await expect(page.locator('.stat-label')).toHaveText([
+    '全部任务',
+    '未开始',
+    '进行中',
+    '已完成',
+    '重新打开',
+    '已关闭',
+  ]);
+  const statPaddings = await page
+    .locator('.stat-card')
+    .evaluateAll((cards) =>
+      cards.slice(0, 2).map((card) => getComputedStyle(card).paddingLeft),
+    );
+  expect(statPaddings[0]).toBe(statPaddings[1]);
+  await page.locator('.stat-card').nth(1).click();
+  await expect(
+    page.evaluate(() => decodeURI(window.location.hash)),
+  ).resolves.toBe('#tasks?scope=all&filter=未开始');
   await page.getByRole('link', { name: '任务页' }).click();
   await expect(
     page.evaluate(() => decodeURI(window.location.hash)),

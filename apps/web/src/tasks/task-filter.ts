@@ -58,23 +58,21 @@ export function filterTasks(
   });
 }
 
-/** Calculates home statistics from tasks whose newest valid actor is the current user. */
-export function taskCounts(
-  tasks: TaskResource[],
-  currentUserId: string,
-  knownUserIds: ReadonlySet<string>,
-): { total: number; inProgress: number; completed: number; closed: number } {
-  const mine = filterTasks(tasks, {
-    scope: 'mine',
-    filter: '全部',
-    query: '',
-    currentUserId,
-    knownUserIds,
-  });
+/** Calculates home statistics for every task-board status without changing task data. */
+export function taskCounts(tasks: TaskResource[]): {
+  total: number;
+  notStarted: number;
+  inProgress: number;
+  completed: number;
+  reopened: number;
+  closed: number;
+} {
   return {
-    total: mine.length,
-    inProgress: mine.filter((task) => task.status === 'in_progress').length,
-    completed: mine.filter((task) => task.status === 'completed').length,
-    closed: mine.filter((task) => task.status === 'closed').length,
+    total: tasks.length,
+    notStarted: tasks.filter((task) => task.status === 'not_started').length,
+    inProgress: tasks.filter((task) => task.status === 'in_progress').length,
+    completed: tasks.filter((task) => task.status === 'completed').length,
+    reopened: tasks.filter((task) => task.status === 'reopened').length,
+    closed: tasks.filter((task) => task.status === 'closed').length,
   };
 }
