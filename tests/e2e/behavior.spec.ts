@@ -114,7 +114,7 @@ test('uses responsive home status-grid columns', async ({ page }) => {
   await expect.poll(() => columnsAt(620)).toBe(2);
 });
 
-/** Proves the task grid keeps three desktop columns, two tablet columns, and one mobile column. */
+/** Proves the task grid reduces columns as the available desktop space narrows. */
 test('uses responsive task-grid columns', async ({ page }) => {
   await page.goto('/#tasks?scope=all&filter=全部');
 
@@ -129,8 +129,60 @@ test('uses responsive task-grid columns', async ({ page }) => {
 
   await expect(page.locator('.task-card')).toHaveCount(12);
   await expect.poll(() => columnsAt(1440)).toBe(3);
+  await expect.poll(() => columnsAt(1280)).toBe(3);
+  await expect.poll(() => columnsAt(1200)).toBe(2);
+  await expect.poll(() => columnsAt(1000)).toBe(2);
+  await expect.poll(() => columnsAt(900)).toBe(1);
   await expect.poll(() => columnsAt(840)).toBe(2);
   await expect.poll(() => columnsAt(620)).toBe(1);
+});
+
+/** Proves long task content grows its row and remains inside every card boundary. */
+test('keeps task-card content inside its card at narrow widths', async ({
+  page,
+}) => {
+  await page.goto('/#tasks?scope=all&filter=全部');
+  await page
+    .locator('.task-card')
+    .first()
+    .locator('h3')
+    .evaluate((heading) => {
+      heading.textContent =
+        '这是一项用于验证窄屏换行、长标题高度与卡片对齐方式的超长冒险家工会任务';
+    });
+  await page
+    .locator('.task-card')
+    .first()
+    .locator('.task-summary')
+    .evaluate((summary) => {
+      summary.textContent =
+        'unbroken-content-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    });
+
+  for (const width of [1000, 900, 840, 620, 412]) {
+    await page.setViewportSize({ width, height: 915 });
+    const cardsFit = await page.locator('.task-card').evaluateAll((cards) =>
+      cards.every((card) => {
+        const cardRect = card.getBoundingClientRect();
+        const descendantsFit = [...card.querySelectorAll('*')].every((node) => {
+          const rect = node.getBoundingClientRect();
+          return (
+            rect.left >= cardRect.left - 1 &&
+            rect.right <= cardRect.right + 1 &&
+            rect.top >= cardRect.top - 1 &&
+            rect.bottom <= cardRect.bottom + 1
+          );
+        });
+        return (
+          descendantsFit &&
+          card.scrollWidth <= card.clientWidth &&
+          card.scrollHeight <= card.clientHeight
+        );
+      }),
+    );
+
+    expect(cardsFit, `cards overflow at ${width}px`).toBe(true);
+  }
 });
 
 /** Proves the task board opens expanded and snaps the outer page between both title states. */
