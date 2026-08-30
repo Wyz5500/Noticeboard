@@ -95,6 +95,10 @@ interface IdentitySnapshot {
   sequence: number;
 }
 
+interface RequestSnapshot extends IdentitySnapshot {
+  routeSequence: number;
+}
+
 /** Resolves the preserved HTML shell once so contract drift fails during startup. */
 function collectElements(document: Document): Elements {
   return {
@@ -151,6 +155,7 @@ export class AppController {
   private currentUserId = '';
   private identityChangeSequence = 0;
   private routeChangeSequence = 0;
+  private adminRefreshSequence = 0;
   private currentStyleId = '';
   private route: RouteState;
   private selectedTaskId: string | null = null;
@@ -175,26 +180,41 @@ export class AppController {
     this.bindEvents();
     this.currentStyleId = loadStyleId(this.storage, this.styles);
     this.renderStyle(this.currentStyleId);
-    let identity: IdentitySnapshot | null = null;
+    let request: RequestSnapshot | null = null;
     try {
       this.users = await this.api.listDemoUsers();
       this.currentUserId = loadCurrentUserId(this.storage, this.knownUserIds());
-      identity = this.identitySnapshot();
-      const tasks = await this.loadTasksForCurrentUser(identity.actorId);
-      if (!this.isCurrentIdentity(identity)) return;
+      request = this.requestSnapshot();
+      const tasks = await this.loadTasksForCurrentUser(request.actorId);
+      if (!this.isCurrentRequest(request)) return;
       this.tasks = tasks;
       if (
         this.route.view === 'admin' &&
-        this.canForActor(identity.actorId, 'system.manage')
+        this.canForActor(request.actorId, 'system.manage')
       ) {
-        const overview = await this.api.getAdminOverview(identity.actorId);
-        if (!this.isCurrentIdentity(identity)) return;
-        this.adminOverview = overview;
+        try {
+          const overview = await this.api.getAdminOverview(request.actorId);
+          if (!this.isCurrentRequest(request)) return;
+          this.adminOverview = overview;
+        } catch (error) {
+          if (!this.isCurrentRequest(request)) return;
+          if (
+            error instanceof ApiError &&
+            (error.status === 401 || error.status === 403)
+          ) {
+            this.adminOverview = null;
+            await this.refreshAdminOverview(request, request.routeSequence);
+            return;
+          }
+          this.adminOverview = null;
+          if (!this.isCurrentRequest(request)) return;
+          this.showToast(this.errorMessage(error));
+        }
       }
-      if (!this.isCurrentIdentity(identity)) return;
+      if (!this.isCurrentRequest(request)) return;
       this.render();
     } catch (error) {
-      if (identity && !this.isCurrentIdentity(identity)) return;
+      if (request && !this.isCurrentRequest(request)) return;
       this.showToast(this.errorMessage(error));
       this.render();
     }
@@ -337,11 +357,27 @@ export class AppController {
     };
   }
 
+  /** Captures actor, identity generation, and route generation at request start. */
+  private requestSnapshot(): RequestSnapshot {
+    return {
+      ...this.identitySnapshot(),
+      routeSequence: this.routeChangeSequence,
+    };
+  }
+
   /** Rejects responses from an actor or identity generation that is no longer current. */
   private isCurrentIdentity(identity: IdentitySnapshot): boolean {
     return (
       identity.actorId === this.currentUserId &&
       identity.sequence === this.identityChangeSequence
+    );
+  }
+
+  /** Rejects asynchronous effects after either identity or route generation changes. */
+  private isCurrentRequest(request: RequestSnapshot): boolean {
+    return (
+      this.isCurrentIdentity(request) &&
+      request.routeSequence === this.routeChangeSequence
     );
   }
 
@@ -762,20 +798,20 @@ export class AppController {
     if (!button?.dataset.action || !task) return;
     const action = button.dataset.action as TaskAction;
     await this.gate.run(`task:${task.id}`, async () => {
-      const identity = this.identitySnapshot();
+      const request = this.requestSnapshot();
       try {
-        const updated = await this.api.actOnTask(identity.actorId, task.id, {
+        const updated = await this.api.actOnTask(request.actorId, task.id, {
           action,
           expectedVersion: task.version,
         });
-        if (!this.isCurrentIdentity(identity)) return;
+        if (!this.isCurrentRequest(request)) return;
         this.replaceTask(updated);
         this.render();
         this.showToast('任务状态已更新');
       } catch (error) {
-        if (!this.isCurrentIdentity(identity)) return;
-        await this.resynchronizeTasks(identity);
-        if (!this.isCurrentIdentity(identity)) return;
+        if (!this.isCurrentRequest(request)) return;
+        await this.resynchronizeTasks(request);
+        if (!this.isCurrentRequest(request)) return;
         this.showToast(this.errorMessage(error));
       }
     });
@@ -827,17 +863,17 @@ export class AppController {
   /** Loads the protected management overview when hash navigation enters admin. */
   private async handleRouteChange(): Promise<void> {
     this.route = parseHash(this.window.location.hash);
-    const routeSequence = ++this.routeChangeSequence;
-    const identity = this.identitySnapshot();
-    const isCurrentRouteRequest = (): boolean =>
-      routeSequence === this.routeChangeSequence &&
-      this.isCurrentIdentity(identity);
+    const request = {
+      ...this.requestSnapshot(),
+      routeSequence: ++this.routeChangeSequence,
+    };
+    const isCurrentRouteRequest = (): boolean => this.isCurrentRequest(request);
     if (
       this.route.view === 'admin' &&
-      this.canForActor(identity.actorId, 'system.manage')
+      this.canForActor(request.actorId, 'system.manage')
     ) {
       try {
-        const overview = await this.api.getAdminOverview(identity.actorId);
+        const overview = await this.api.getAdminOverview(request.actorId);
         if (!isCurrentRouteRequest()) return;
         this.adminOverview = overview;
       } catch (error) {
@@ -848,17 +884,19 @@ export class AppController {
         ) {
           this.adminOverview = null;
           try {
-            await this.refreshAdminOverview(identity, routeSequence);
+            await this.refreshAdminOverview(request, request.routeSequence);
           } catch (refreshError) {
             if (!isCurrentRouteRequest()) return;
             this.route = parseHash('#home');
-            this.window.location.hash = '#home';
+            this.window.history.replaceState(null, '', '#home');
+            ++this.routeChangeSequence;
             this.showToast(this.errorMessage(refreshError));
           }
           if (!isCurrentRouteRequest()) return;
           return;
         }
         if (!isCurrentRouteRequest()) return;
+        this.adminOverview = null;
         this.showToast(this.errorMessage(error));
       }
     }
@@ -873,11 +911,11 @@ export class AppController {
     )
       return;
     await this.gate.run('reset', async () => {
-      const identity = this.identitySnapshot();
-      let activeIdentity = identity;
+      const request = this.requestSnapshot();
+      let activeRequest = request;
       try {
-        await this.api.resetDemo(identity.actorId);
-        if (!this.isCurrentIdentity(identity)) return;
+        await this.api.resetDemo(request.actorId);
+        if (!this.isCurrentRequest(request)) return;
         const taskReader =
           this.users.find((user) => user.permissions?.includes('tasks.view')) ??
           this.users[0];
@@ -888,25 +926,29 @@ export class AppController {
         );
         const sequence = ++this.identityChangeSequence;
         this.currentUserId = actorId;
-        const nextIdentity = { actorId, sequence };
-        activeIdentity = nextIdentity;
+        this.route = parseHash('#tasks?scope=all&filter=全部');
+        this.window.history.replaceState(null, '', buildTaskHash(this.route));
+        const nextRequest = {
+          actorId,
+          sequence,
+          routeSequence: ++this.routeChangeSequence,
+        };
+        activeRequest = nextRequest;
         this.tasks = [];
         this.adminOverview = null;
         this.closeProfileMenu();
         this.closeDrawer();
-        this.route = parseHash('#tasks?scope=all&filter=全部');
-        this.window.location.hash = buildTaskHash(this.route);
         this.render();
         const tasks = await this.loadTasksForCurrentUser(actorId);
-        if (!this.isCurrentIdentity(nextIdentity)) return;
+        if (!this.isCurrentRequest(nextRequest)) return;
         this.tasks = tasks;
-        if (!this.isCurrentIdentity(nextIdentity)) return;
+        if (!this.isCurrentRequest(nextRequest)) return;
         this.render();
         this.showToast('演示数据已恢复');
       } catch (error) {
-        if (!this.isCurrentIdentity(activeIdentity)) return;
-        await this.resynchronizeTasks(activeIdentity);
-        if (!this.isCurrentIdentity(activeIdentity)) return;
+        if (!this.isCurrentRequest(activeRequest)) return;
+        await this.resynchronizeTasks(activeRequest);
+        if (!this.isCurrentRequest(activeRequest)) return;
         this.showToast(this.errorMessage(error));
       }
     });
@@ -916,7 +958,7 @@ export class AppController {
   private async createTask(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     await this.gate.run('create', async () => {
-      const identity = this.identitySnapshot();
+      const request = this.requestSnapshot();
       const form = new FormData(this.elements.taskForm);
       const command: CreateTaskRequest = {
         title: formText(form, 'title'),
@@ -926,17 +968,17 @@ export class AppController {
         dueDate: formText(form, 'dueDate'),
       };
       try {
-        const created = await this.api.createTask(identity.actorId, command);
-        if (!this.isCurrentIdentity(identity)) return;
+        const created = await this.api.createTask(request.actorId, command);
+        if (!this.isCurrentRequest(request)) return;
         this.tasks = [created, ...this.tasks];
         this.closeModal();
         this.render();
         this.openDrawer(created.id);
         this.showToast('新任务已发布');
       } catch (error) {
-        if (!this.isCurrentIdentity(identity)) return;
-        await this.resynchronizeTasks(identity);
-        if (!this.isCurrentIdentity(identity)) return;
+        if (!this.isCurrentRequest(request)) return;
+        await this.resynchronizeTasks(request);
+        if (!this.isCurrentRequest(request)) return;
         this.elements.formError.textContent = this.errorMessage(error);
       }
     });
@@ -952,16 +994,16 @@ export class AppController {
     await this.gate.run(
       `admin:${kind}:${form.dataset.adminId ?? 'new'}`,
       async () => {
-        const identity = this.identitySnapshot();
+        const request = this.requestSnapshot();
         try {
           if (kind === 'create-user') {
-            await this.api.createAdminUser(identity.actorId, {
+            await this.api.createAdminUser(request.actorId, {
               name: formText(values, 'name'),
               roleId: formText(values, 'roleId'),
             });
           } else if (kind === 'user') {
             await this.api.updateAdminUser(
-              identity.actorId,
+              request.actorId,
               form.dataset.adminId ?? '',
               {
                 name: formText(values, 'name'),
@@ -969,13 +1011,13 @@ export class AppController {
               },
             );
           } else if (kind === 'create-role') {
-            await this.api.createAdminRole(identity.actorId, {
+            await this.api.createAdminRole(request.actorId, {
               name: formText(values, 'name'),
               permissions: values.getAll('permissions') as PermissionCode[],
             });
           } else if (kind === 'role') {
             await this.api.updateAdminRole(
-              identity.actorId,
+              request.actorId,
               form.dataset.adminId ?? '',
               {
                 name: formText(values, 'name'),
@@ -983,12 +1025,15 @@ export class AppController {
               },
             );
           } else return;
-          if (!this.isCurrentIdentity(identity)) return;
-          await this.refreshAdminOverview(identity);
-          if (!this.isCurrentIdentity(identity)) return;
+          if (!this.isCurrentRequest(request)) return;
+          const refreshed = await this.refreshAdminOverview(
+            request,
+            request.routeSequence,
+          );
+          if (!refreshed || !this.isCurrentRequest(request)) return;
           this.showToast('管理信息已更新');
         } catch (error) {
-          if (!this.isCurrentIdentity(identity)) return;
+          if (!this.isCurrentRequest(request)) return;
           this.showToast(this.errorMessage(error));
         }
       },
@@ -1005,22 +1050,25 @@ export class AppController {
     const action = button.dataset.adminAction;
     const id = button.dataset.adminId;
     await this.gate.run(`admin:${action}:${id}`, async () => {
-      const identity = this.identitySnapshot();
+      const request = this.requestSnapshot();
       try {
         if (action === 'delete-user')
-          await this.api.deleteAdminUser(identity.actorId, id);
+          await this.api.deleteAdminUser(request.actorId, id);
         else if (action === 'restore-user')
-          await this.api.restoreAdminUser(identity.actorId, id);
+          await this.api.restoreAdminUser(request.actorId, id);
         else if (action === 'delete-role')
-          await this.api.deleteAdminRole(identity.actorId, id);
+          await this.api.deleteAdminRole(request.actorId, id);
         else if (action === 'restore-role')
-          await this.api.restoreAdminRole(identity.actorId, id);
-        if (!this.isCurrentIdentity(identity)) return;
-        await this.refreshAdminOverview(identity);
-        if (!this.isCurrentIdentity(identity)) return;
+          await this.api.restoreAdminRole(request.actorId, id);
+        if (!this.isCurrentRequest(request)) return;
+        const refreshed = await this.refreshAdminOverview(
+          request,
+          request.routeSequence,
+        );
+        if (!refreshed || !this.isCurrentRequest(request)) return;
         this.showToast('管理信息已更新');
       } catch (error) {
-        if (!this.isCurrentIdentity(identity)) return;
+        if (!this.isCurrentRequest(request)) return;
         this.showToast(this.errorMessage(error));
       }
     });
@@ -1028,61 +1076,75 @@ export class AppController {
 
   /** Re-reads admin state and falls back to the first manager if the current one lost access. */
   private async refreshAdminOverview(
-    identity = this.identitySnapshot(),
-    routeSequence?: number,
-  ): Promise<void> {
+    identity: IdentitySnapshot = this.identitySnapshot(),
+    routeSequence = this.routeChangeSequence,
+  ): Promise<boolean> {
+    const refreshSequence = (this.adminRefreshSequence ?? 0) + 1;
+    this.adminRefreshSequence = refreshSequence;
+    const request: RequestSnapshot = {
+      ...identity,
+      routeSequence,
+    };
     const isCurrentRequest = (): boolean =>
-      this.isCurrentIdentity(identity) &&
-      (routeSequence === undefined ||
-        routeSequence === this.routeChangeSequence);
-    const users = await this.api.listDemoUsers();
-    if (!isCurrentRequest()) return;
-    this.users = users;
-    if (!this.canForActor(identity.actorId, 'system.manage')) {
-      const fallback =
-        this.users.find(
-          (user) =>
-            user.id !== identity.actorId &&
-            (user.permissions?.includes('system.manage') ||
-              (user.permissions === undefined && user.role === 'system_admin')),
-        ) ??
-        this.users.find((user) => user.id !== identity.actorId) ??
-        this.users[0];
-      const actorId = saveCurrentUserId(
-        this.storage,
-        fallback?.id ?? '',
-        this.knownUserIds(),
-      );
-      const sequence = ++this.identityChangeSequence;
-      this.currentUserId = actorId;
-      this.adminOverview = null;
-      this.tasks = [];
-      this.closeProfileMenu();
-      this.closeDrawer();
-      this.route = parseHash('#home');
-      this.window.history.replaceState(null, '', '#home');
-      this.render();
-      const nextIdentity = { actorId, sequence };
-      const fallbackRouteSequence =
-        routeSequence === undefined ? undefined : ++this.routeChangeSequence;
-      const tasks = await this.loadTasksForCurrentUser(actorId);
-      if (
-        !this.isCurrentIdentity(nextIdentity) ||
-        (routeSequence !== undefined &&
-          fallbackRouteSequence !== this.routeChangeSequence)
-      )
-        return;
+      this.isCurrentRequest(request) &&
+      refreshSequence === this.adminRefreshSequence;
+    try {
+      const users = await this.api.listDemoUsers();
+      if (!isCurrentRequest()) return false;
+      this.users = users;
+      if (!this.canForActor(identity.actorId, 'system.manage')) {
+        const fallback =
+          this.users.find(
+            (user) =>
+              user.id !== identity.actorId &&
+              (user.permissions?.includes('system.manage') ||
+                (user.permissions === undefined &&
+                  user.role === 'system_admin')),
+          ) ??
+          this.users.find((user) => user.id !== identity.actorId) ??
+          this.users[0];
+        const actorId = saveCurrentUserId(
+          this.storage,
+          fallback?.id ?? '',
+          this.knownUserIds(),
+        );
+        const sequence = ++this.identityChangeSequence;
+        this.currentUserId = actorId;
+        this.adminOverview = null;
+        this.tasks = [];
+        this.closeProfileMenu();
+        this.closeDrawer();
+        this.route = parseHash('#home');
+        this.window.history.replaceState(null, '', '#home');
+        this.render();
+        const nextIdentity = { actorId, sequence };
+        const fallbackRouteSequence = ++this.routeChangeSequence;
+        const nextRequest = {
+          ...nextIdentity,
+          routeSequence: fallbackRouteSequence,
+        };
+        const tasks = await this.loadTasksForCurrentUser(actorId);
+        if (
+          !this.isCurrentRequest(nextRequest) ||
+          refreshSequence !== this.adminRefreshSequence
+        )
+          return false;
+        this.tasks = tasks;
+        this.render();
+        return true;
+      }
+      const overview = await this.api.getAdminOverview(request.actorId);
+      if (!isCurrentRequest()) return false;
+      this.adminOverview = overview;
+      const tasks = await this.loadTasksForCurrentUser(request.actorId);
+      if (!isCurrentRequest()) return false;
       this.tasks = tasks;
       this.render();
-      return;
+      return true;
+    } catch (error) {
+      if (!isCurrentRequest()) return false;
+      throw error;
     }
-    const overview = await this.api.getAdminOverview(identity.actorId);
-    if (!isCurrentRequest()) return;
-    this.adminOverview = overview;
-    const tasks = await this.loadTasksForCurrentUser(identity.actorId);
-    if (!isCurrentRequest()) return;
-    this.tasks = tasks;
-    this.render();
   }
 
   /** Closes the profile menu for clicks outside both trigger and floating panel. */
@@ -1108,12 +1170,12 @@ export class AppController {
 
   /** Reloads tasks for one captured identity after a failed mutation or conflict. */
   private async resynchronizeTasks(
-    identity = this.identitySnapshot(),
+    request: RequestSnapshot = this.requestSnapshot(),
   ): Promise<void> {
-    if (!this.isCurrentIdentity(identity)) return;
+    if (!this.isCurrentRequest(request)) return;
     try {
-      const tasks = await this.api.listTasks(identity.actorId);
-      if (!this.isCurrentIdentity(identity)) return;
+      const tasks = await this.api.listTasks(request.actorId);
+      if (!this.isCurrentRequest(request)) return;
       this.tasks = tasks;
       this.render();
     } catch {

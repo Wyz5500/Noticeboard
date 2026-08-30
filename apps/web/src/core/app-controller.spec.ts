@@ -306,7 +306,13 @@ describe('AppController administration refresh', () => {
       tasks: TaskResource[];
       currentUserId: string;
       storage: Storage;
-      window: { confirm: () => boolean; location: { hash: string } };
+      window: {
+        confirm: () => boolean;
+        location: { hash: string };
+        history: {
+          replaceState: (state: null, title: string, url: string) => void;
+        };
+      };
       route: unknown;
       elements: Record<string, unknown>;
       gate: {
@@ -332,7 +338,11 @@ describe('AppController administration refresh', () => {
       setItem: () => undefined,
       removeItem: () => undefined,
     } as unknown as Storage;
-    controller.window = { confirm: () => true, location: { hash: '' } };
+    controller.window = {
+      confirm: () => true,
+      location: { hash: '' },
+      history: { replaceState: () => undefined },
+    };
     controller.route = {};
     controller.elements = {};
     controller.gate = { run: (_key, operation) => operation() };
@@ -360,7 +370,13 @@ describe('AppController administration refresh', () => {
       identityChangeSequence: number;
       routeChangeSequence: number;
       storage: Storage;
-      window: { confirm: () => boolean; location: { hash: string } };
+      window: {
+        confirm: () => boolean;
+        location: { hash: string };
+        history: {
+          replaceState: (state: null, title: string, url: string) => void;
+        };
+      };
       route: unknown;
       elements: Record<string, unknown>;
       gate: {
@@ -388,7 +404,11 @@ describe('AppController administration refresh', () => {
       setItem: () => undefined,
       removeItem: () => undefined,
     } as unknown as Storage;
-    controller.window = { confirm: () => true, location: { hash: '' } };
+    controller.window = {
+      confirm: () => true,
+      location: { hash: '' },
+      history: { replaceState: () => undefined },
+    };
     controller.route = {};
     controller.elements = {};
     controller.gate = { run: (_key, operation) => operation() };
@@ -404,7 +424,7 @@ describe('AppController administration refresh', () => {
     const pending = controller.resetDemo();
     releaseReset({ reset: true });
     await new Promise<void>((resolve) => {
-      setImmediate(resolve);
+      queueMicrotask(resolve);
     });
 
     expect(controller.currentUserId).toBe(TASK_VIEWER.id);
@@ -415,6 +435,319 @@ describe('AppController administration refresh', () => {
 
     releaseTasks([]);
     await pending;
+  });
+
+  /** Ensures a reset completed after route departure cannot switch or notify the departed view. */
+  it('discards reset completion after the route changes', async () => {
+    let releaseReset!: (result: { reset: true }) => void;
+    const controller = Object.create(AppController.prototype) as {
+      api: Pick<ApiClient, 'resetDemo'>;
+      users: ActorResource[];
+      tasks: TaskResource[];
+      currentUserId: string;
+      adminOverview: unknown;
+      identityChangeSequence: number;
+      routeChangeSequence: number;
+      storage: Storage;
+      window: {
+        confirm: () => boolean;
+        location: { hash: string };
+        history: {
+          replaceState: (state: null, title: string, url: string) => void;
+        };
+      };
+      route: unknown;
+      elements: Record<string, unknown>;
+      gate: {
+        run: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
+      };
+      closeProfileMenu: () => void;
+      closeDrawer: () => void;
+      render: () => void;
+      showToast: (message: string) => void;
+      resetDemo: () => Promise<void>;
+    };
+    controller.api = {
+      resetDemo: () =>
+        new Promise((resolve) => {
+          releaseReset = resolve;
+        }),
+    };
+    controller.users = [RESET_ONLY_USER, TASK_VIEWER];
+    controller.tasks = [STALE_TASK];
+    controller.currentUserId = RESET_ONLY_USER.id;
+    controller.adminOverview = { users: [], roles: [], permissions: [] };
+    controller.identityChangeSequence = 0;
+    controller.routeChangeSequence = 0;
+    controller.storage = {
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    } as unknown as Storage;
+    controller.window = {
+      confirm: () => true,
+      location: { hash: '#home' },
+      history: { replaceState: () => undefined },
+    };
+    controller.route = { view: 'home' };
+    controller.elements = {};
+    controller.gate = { run: (_key, operation) => operation() };
+    controller.closeProfileMenu = vi.fn();
+    controller.closeDrawer = vi.fn();
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+
+    const pending = controller.resetDemo();
+    controller.routeChangeSequence = 1;
+    releaseReset({ reset: true });
+    await pending;
+
+    expect(controller.currentUserId).toBe(RESET_ONLY_USER.id);
+    expect(controller.tasks).toEqual([STALE_TASK]);
+    expect(controller.closeDrawer).not.toHaveBeenCalled();
+    expect(controller.render).not.toHaveBeenCalled();
+    expect(controller.showToast).not.toHaveBeenCalled();
+  });
+
+  /** Ensures the initial task request cannot render after startup has moved to another route. */
+  it('discards the initial task response after the route changes', async () => {
+    let releaseTasks!: (tasks: TaskResource[]) => void;
+    const controller = Object.create(AppController.prototype) as {
+      api: Pick<ApiClient, 'listDemoUsers' | 'listTasks'>;
+      styles: { normalize: (styleId: string | null) => string };
+      storage: Storage;
+      users: ActorResource[];
+      tasks: TaskResource[];
+      currentUserId: string;
+      adminOverview: unknown;
+      identityChangeSequence: number;
+      routeChangeSequence: number;
+      route: { view: string };
+      renderStaticOptions: () => void;
+      bindEvents: () => void;
+      renderStyle: (styleId: string) => void;
+      render: () => void;
+      start: () => Promise<void>;
+    };
+    controller.api = {
+      listDemoUsers: () => Promise.resolve([TASK_VIEWER]),
+      listTasks: () =>
+        new Promise((resolve) => {
+          releaseTasks = resolve;
+        }),
+    };
+    controller.styles = { normalize: () => 'swiss-international' };
+    controller.storage = {
+      getItem: (key: string) =>
+        key === 'minecraft-guild-board-user'
+          ? JSON.stringify({ currentUserId: TASK_VIEWER.id })
+          : null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    } as unknown as Storage;
+    controller.users = [];
+    controller.tasks = [STALE_TASK];
+    controller.currentUserId = '';
+    controller.adminOverview = null;
+    controller.identityChangeSequence = 0;
+    controller.routeChangeSequence = 0;
+    controller.route = { view: 'tasks' };
+    controller.renderStaticOptions = vi.fn();
+    controller.bindEvents = vi.fn();
+    controller.renderStyle = vi.fn();
+    controller.render = vi.fn();
+
+    const pending = controller.start();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    controller.routeChangeSequence = 1;
+    releaseTasks([]);
+    await pending;
+
+    expect(controller.tasks).toEqual([STALE_TASK]);
+    expect(controller.render).not.toHaveBeenCalled();
+  });
+
+  /** Ensures startup access loss uses the persisted administrator fallback flow. */
+  it('persists a fallback identity when startup admin access is denied', async () => {
+    const fallbackAdmin: ActorResource = {
+      ...CURRENT_USER,
+      id: 'startup-replacement-admin',
+      permissions: ['system.manage', 'tasks.view'],
+    };
+    const storedValues: string[] = [];
+    let directoryCall = 0;
+    const controller = Object.create(AppController.prototype) as {
+      api: Pick<ApiClient, 'listDemoUsers' | 'getAdminOverview'>;
+      styles: { normalize: (styleId: string | null) => string };
+      storage: Storage;
+      users: ActorResource[];
+      tasks: TaskResource[];
+      currentUserId: string;
+      adminOverview: unknown;
+      identityChangeSequence: number;
+      routeChangeSequence: number;
+      route: { view: string };
+      window: {
+        location: { hash: string };
+        history: {
+          replaceState: (state: null, title: string, url: string) => void;
+        };
+      };
+      renderStaticOptions: () => void;
+      bindEvents: () => void;
+      renderStyle: (styleId: string) => void;
+      closeProfileMenu: () => void;
+      closeDrawer: () => void;
+      render: () => void;
+      showToast: (message: string) => void;
+      start: () => Promise<void>;
+    };
+    controller.api = {
+      listDemoUsers: () =>
+        Promise.resolve(
+          directoryCall++ === 0 ? [CURRENT_USER] : [fallbackAdmin],
+        ),
+      getAdminOverview: () =>
+        Promise.reject(new ApiError(403, 'FORBIDDEN', '无权访问管理信息')),
+    };
+    controller.styles = { normalize: () => 'swiss-international' };
+    controller.storage = {
+      getItem: (key: string) =>
+        key === 'minecraft-guild-board-user'
+          ? JSON.stringify({ currentUserId: CURRENT_USER.id })
+          : null,
+      setItem: (_key: string, value: string) => storedValues.push(value),
+      removeItem: () => undefined,
+    } as unknown as Storage;
+    controller.users = [];
+    controller.tasks = [];
+    controller.currentUserId = '';
+    controller.adminOverview = null;
+    controller.identityChangeSequence = 0;
+    controller.routeChangeSequence = 0;
+    controller.route = { view: 'admin' };
+    controller.window = {
+      location: { hash: '#admin' },
+      history: { replaceState: () => undefined },
+    };
+    controller.renderStaticOptions = vi.fn();
+    controller.bindEvents = vi.fn();
+    controller.renderStyle = vi.fn();
+    controller.closeProfileMenu = vi.fn();
+    controller.closeDrawer = vi.fn();
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+
+    await controller.start();
+
+    expect(controller.currentUserId).toBe(fallbackAdmin.id);
+    expect(JSON.parse(storedValues.at(-1) ?? '{}')).toEqual({
+      currentUserId: fallbackAdmin.id,
+    });
+  });
+
+  /** Ensures an older same-identity admin refresh cannot replace a newer overview. */
+  it('discards an older same-identity admin refresh', async () => {
+    const directoryResolvers: Array<(users: ActorResource[]) => void> = [];
+    const overviewResolvers: Array<(overview: AdminOverviewResource) => void> =
+      [];
+    const firstOverview: AdminOverviewResource = {
+      users: [],
+      roles: [],
+      permissions: [],
+    };
+    const secondOverview: AdminOverviewResource = {
+      users: [],
+      roles: [],
+      permissions: [],
+    };
+    const controller = Object.create(AppController.prototype) as {
+      api: Pick<ApiClient, 'listDemoUsers' | 'getAdminOverview'>;
+      users: ActorResource[];
+      tasks: TaskResource[];
+      currentUserId: string;
+      adminOverview: AdminOverviewResource | null;
+      identityChangeSequence: number;
+      routeChangeSequence: number;
+      route: { view: string };
+      loadTasksForCurrentUser: () => Promise<TaskResource[]>;
+      render: () => void;
+      refreshAdminOverview: () => Promise<void>;
+    };
+    controller.api = {
+      listDemoUsers: () =>
+        new Promise((resolve) => directoryResolvers.push(resolve)),
+      getAdminOverview: () =>
+        new Promise((resolve) => overviewResolvers.push(resolve)),
+    };
+    controller.users = [CURRENT_USER];
+    controller.tasks = [];
+    controller.currentUserId = CURRENT_USER.id;
+    controller.adminOverview = null;
+    controller.identityChangeSequence = 0;
+    controller.routeChangeSequence = 0;
+    controller.route = { view: 'admin' };
+    controller.loadTasksForCurrentUser = () => Promise.resolve([]);
+    controller.render = vi.fn();
+
+    const firstRefresh = controller.refreshAdminOverview();
+    directoryResolvers[0]!([CURRENT_USER]);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    expect(overviewResolvers).toHaveLength(1);
+    const secondRefresh = controller.refreshAdminOverview();
+    directoryResolvers[1]!([CURRENT_USER]);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    expect(overviewResolvers).toHaveLength(2);
+    overviewResolvers[1]!(secondOverview);
+    await secondRefresh;
+    overviewResolvers[0]!(firstOverview);
+    await firstRefresh;
+
+    expect(controller.adminOverview).toBe(secondOverview);
+    expect(controller.render).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures a non-authorization admin load failure cannot render cached management data. */
+  it('clears cached admin data on a non-authorization route error', async () => {
+    const controller = Object.create(AppController.prototype) as {
+      api: Pick<ApiClient, 'getAdminOverview'>;
+      users: ActorResource[];
+      currentUserId: string;
+      adminOverview: AdminOverviewResource | null;
+      identityChangeSequence: number;
+      routeChangeSequence: number;
+      route: { view: string };
+      window: { location: { hash: string } };
+      render: () => void;
+      showToast: (message: string) => void;
+      handleRouteChange: () => Promise<void>;
+    };
+    controller.api = {
+      getAdminOverview: () =>
+        Promise.reject(new ApiError(500, 'SERVER_ERROR', '管理信息加载失败')),
+    };
+    controller.users = [CURRENT_USER];
+    controller.currentUserId = CURRENT_USER.id;
+    controller.adminOverview = {
+      users: [],
+      roles: [],
+      permissions: [],
+    };
+    controller.identityChangeSequence = 0;
+    controller.routeChangeSequence = 0;
+    controller.route = { view: 'admin' };
+    controller.window = { location: { hash: '#admin' } };
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+
+    await controller.handleRouteChange();
+
+    expect(controller.adminOverview).toBeNull();
+    expect(controller.render).toHaveBeenCalledOnce();
+    expect(controller.showToast).toHaveBeenCalledOnce();
   });
 
   /** Ensures route-triggered access loss persists the same safe identity fallback as admin refresh. */
