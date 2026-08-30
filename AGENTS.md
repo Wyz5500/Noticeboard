@@ -20,7 +20,7 @@
 ## 环境与验证前置条件
 
 - 项目固定使用 Node `24.20.0` 与 npm `11.19.1`。运行测试前先检查 `node --version` 和 `npm --version`；如果出现 `node:util` 缺少 `styleText` 的 Vitest/Rolldown 启动错误，通常是误用了 Node 18，切换到 Node 24 后再试，不要重装依赖。
-- 当前开发机的 Node 24 备用路径为 `/Users/wyz/.nvm/versions/node/v24.20.0/bin`。若终端未加载版本管理器，可用 `PATH=/Users/wyz/.nvm/versions/node/v24.20.0/bin:$PATH npm run verify` 临时指定正确运行时。
+- 若终端未加载版本管理器，请先将当前运行时切换到 Node `24.20.0`，再执行 `npm run verify`。
 - 行为、视觉和完整验证依赖本机 PostgreSQL `127.0.0.1:54329`。先确认 Docker/OrbStack 正常运行，然后执行 `docker compose up -d --wait postgres`；需要单独准备数据时使用项目已有的 `npm run db:migrate` 和 `npm run db:seed`，不要改用 SQLite。
 - 若出现 Docker socket `permission denied`（例如 OrbStack 的 `docker.sock`）或应用连接 PostgreSQL 时出现 `connect EPERM 127.0.0.1:54329`，这是执行环境没有 Docker socket/本机端口权限，不是应用故障。切换到允许访问 Docker 与本机测试端口的终端/执行环境后，重跑原命令；在受限代理环境中按其权限流程申请放行。
 
