@@ -1,2 +1,3 @@
 # Local Codex hooks and runtime configuration
 /.codex/
+/.worktrees/
