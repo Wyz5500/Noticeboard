@@ -36,6 +36,13 @@ test('navigates and filters the in-memory task board', async ({
   page,
   isMobile,
 }) => {
+  await expect(page.locator('.home-stats')).toHaveAttribute(
+    'aria-label',
+    '个人任务概览',
+  );
+  await expect(page.locator('.home-stats .section-kicker')).toContainText(
+    '个人任务概览',
+  );
   await expect(page.locator('#statTotal')).toHaveText('5');
   await expect(page.locator('.stat-card')).toHaveCount(6);
   await expect(page.locator('.stat-label')).toHaveText([
@@ -52,7 +59,7 @@ test('navigates and filters the in-memory task board', async ({
     .evaluate(
       (row) => getComputedStyle(row).gridTemplateColumns.split(' ').length,
     );
-  expect(desktopStatusColumns).toBe(isMobile ? 2 : 6);
+  expect(desktopStatusColumns).toBe(isMobile ? 2 : 3);
   const statPaddings = await page
     .locator('.stat-card')
     .evaluateAll((cards) =>
@@ -88,7 +95,26 @@ test('navigates and filters the in-memory task board', async ({
   await expect(page).toHaveURL(/scope=mine/);
 });
 
-/** Proves the task grid collapses from three desktop columns to two tablet and one mobile column. */
+/** Proves the home status shortcuts use three desktop columns and preserve responsive breakpoints. */
+test('uses responsive home status-grid columns', async ({ page }) => {
+  await page.goto('/');
+
+  const columnsAt = async (width: number): Promise<number> => {
+    await page.setViewportSize({ width, height: 915 });
+    return page
+      .locator('.stats-row')
+      .evaluate(
+        (row) => getComputedStyle(row).gridTemplateColumns.split(' ').length,
+      );
+  };
+
+  await expect(page.locator('.stat-card')).toHaveCount(6);
+  await expect.poll(() => columnsAt(1440)).toBe(3);
+  await expect.poll(() => columnsAt(840)).toBe(3);
+  await expect.poll(() => columnsAt(620)).toBe(2);
+});
+
+/** Proves the task grid keeps three desktop columns, two tablet columns, and one mobile column. */
 test('uses responsive task-grid columns', async ({ page }) => {
   await page.goto('/#tasks?scope=all&filter=全部');
 

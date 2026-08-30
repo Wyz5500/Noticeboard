@@ -366,7 +366,7 @@ h1 em {
 }
 .stats-row {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   border-bottom: var(--border-width) solid var(--line);
 }
 .stat-card {
@@ -386,6 +386,12 @@ h1 em {
 }
 .stat-card:last-child {
   border-right: 0;
+}
+.stat-card:nth-child(3n) {
+  border-right: 0;
+}
+.stat-card:nth-child(-n + 3) {
+  border-bottom: var(--border-width) solid var(--line);
 }
 .stat-card:hover {
   background: var(--panel);
