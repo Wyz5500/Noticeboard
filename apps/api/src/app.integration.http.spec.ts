@@ -39,11 +39,15 @@ describeDatabase('application composition', () => {
     const reset = await app.inject({
       method: 'POST',
       url: '/api/v1/demo/reset',
-      headers: { 'x-demo-user-id': 'guild-master' },
+      headers: { 'x-demo-user-id': 'guild-admin' },
     });
     expect(reset.statusCode).toBe(200);
 
-    const seeded = await app.inject({ method: 'GET', url: '/api/v1/tasks' });
+    const seeded = await app.inject({
+      method: 'GET',
+      url: '/api/v1/tasks',
+      headers: { 'x-demo-user-id': 'guild-master' },
+    });
     expect(seeded.json().map((task: { id: string }) => task.id)).toEqual([
       'task-herbs',
       'task-outpost',
@@ -96,5 +100,106 @@ describeDatabase('application composition', () => {
     const response = await app.inject({ method: 'GET', url: '/health/ready' });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ status: 'ready', database: 'up' });
+  });
+
+  /** Proves administrator CRUD, role occupancy conflicts, and ordinary-user denial through PostgreSQL. */
+  it('runs the authorization management flow through real adapters', async () => {
+    const ordinary = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/overview',
+      headers: { 'x-demo-user-id': 'guild-master' },
+    });
+    expect(ordinary.statusCode).toBe(403);
+
+    const overview = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/overview',
+      headers: { 'x-demo-user-id': 'guild-admin' },
+    });
+    expect(overview.statusCode).toBe(200);
+    expect(overview.json().roles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'system_admin', builtin: true }),
+        expect.objectContaining({ code: 'user', builtin: true }),
+      ]),
+    );
+    expect(overview.json().permissions).toHaveLength(8);
+
+    const invalidBuiltinEdit = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/admin/roles/role-user',
+      headers: { 'x-demo-user-id': 'guild-admin' },
+      payload: { name: '不可修改的用户角色', permissions: ['tasks.view'] },
+    });
+    expect(invalidBuiltinEdit.statusCode).toBe(400);
+    expect(invalidBuiltinEdit.json()).toMatchObject({
+      error: { code: 'VALIDATION_FAILED' },
+    });
+
+    const roleName = `集成测试角色-${Date.now()}`;
+    const role = await app.inject({
+      method: 'POST',
+      url: '/api/v1/admin/roles',
+      headers: { 'x-demo-user-id': 'guild-admin' },
+      payload: { name: roleName },
+    });
+    expect(role.statusCode).toBe(201);
+    expect(role.json()).toMatchObject({ name: roleName, permissions: [] });
+
+    const missingRoleUser = await app.inject({
+      method: 'POST',
+      url: '/api/v1/admin/users',
+      headers: { 'x-demo-user-id': 'guild-admin' },
+      payload: { name: '不存在角色用户', roleId: 'role-does-not-exist' },
+    });
+    expect(missingRoleUser.statusCode).toBe(404);
+    expect(missingRoleUser.json()).toMatchObject({
+      error: { code: 'ROLE_NOT_FOUND' },
+    });
+
+    const user = await app.inject({
+      method: 'POST',
+      url: '/api/v1/admin/users',
+      headers: { 'x-demo-user-id': 'guild-admin' },
+      payload: { name: '集成测试用户', roleId: role.json().id as string },
+    });
+    expect(user.statusCode).toBe(201);
+
+    const occupied = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/admin/roles/${role.json().id as string}`,
+      headers: { 'x-demo-user-id': 'guild-admin' },
+    });
+    expect(occupied.statusCode).toBe(409);
+    expect(occupied.json()).toMatchObject({ error: { code: 'ROLE_IN_USE' } });
+
+    const deletedUser = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/admin/users/${user.json().id as string}`,
+      headers: { 'x-demo-user-id': 'guild-admin' },
+    });
+    expect(deletedUser.statusCode).toBe(204);
+
+    const reassignedUser = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/admin/users/${user.json().id as string}`,
+      headers: { 'x-demo-user-id': 'guild-admin' },
+      payload: { roleId: 'role-user' },
+    });
+    expect(reassignedUser.statusCode).toBe(200);
+
+    const deletedRole = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/admin/roles/${role.json().id as string}`,
+      headers: { 'x-demo-user-id': 'guild-admin' },
+    });
+    expect(deletedRole.statusCode).toBe(204);
+
+    const lastAdmin = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/admin/users/guild-admin',
+      headers: { 'x-demo-user-id': 'guild-admin' },
+    });
+    expect(lastAdmin.statusCode).toBe(409);
   });
 });

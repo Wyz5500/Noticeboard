@@ -7,6 +7,20 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { AppError } from '../common/application/app-error.js';
+import { AUTHORIZATION } from '../authorization/application/ports/authorization.port.js';
+import { AdminController } from '../authorization/presentation/admin.controller.js';
+import {
+  CreateAdminRole,
+  CreateAdminUser,
+  DeleteAdminRole,
+  DeleteAdminUser,
+  GetAdminOverview,
+  RestoreAdminRole,
+  RestoreAdminUser,
+  UpdateAdminRole,
+  UpdateAdminUser,
+} from '../authorization/application/use-cases/admin-use-cases.js';
+import { PermissionGuard } from '../authorization/presentation/permission.guard.js';
 import { configureHttpApplication } from '../common/presentation/configure-http-application.js';
 import { HealthController } from '../health/presentation/health.controller.js';
 import { HealthService } from '../health/application/health.service.js';
@@ -71,10 +85,29 @@ describe('HTTP API contract', () => {
   /** Boots the real controllers, guards, validation, error filter, and OpenAPI integration. */
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      controllers: [TasksController, DemoController, HealthController],
+      controllers: [
+        TasksController,
+        DemoController,
+        HealthController,
+        AdminController,
+      ],
       providers: [
         DemoUserGuard,
+        PermissionGuard,
         { provide: IDENTITY_DIRECTORY, useValue: IDENTITIES },
+        {
+          provide: AUTHORIZATION,
+          useValue: { hasPermission: () => Promise.resolve(true) },
+        },
+        { provide: GetAdminOverview, useValue: { execute: () => undefined } },
+        { provide: CreateAdminUser, useValue: { execute: () => undefined } },
+        { provide: UpdateAdminUser, useValue: { execute: () => undefined } },
+        { provide: DeleteAdminUser, useValue: { execute: () => undefined } },
+        { provide: RestoreAdminUser, useValue: { execute: () => undefined } },
+        { provide: CreateAdminRole, useValue: { execute: () => undefined } },
+        { provide: UpdateAdminRole, useValue: { execute: () => undefined } },
+        { provide: DeleteAdminRole, useValue: { execute: () => undefined } },
+        { provide: RestoreAdminRole, useValue: { execute: () => undefined } },
         { provide: ListDemoActors, useValue: new ListDemoActors(IDENTITIES) },
         {
           provide: ListTasks,
@@ -154,7 +187,11 @@ describe('HTTP API contract', () => {
 
   /** Proves read endpoints expose stable codes alongside current Chinese labels. */
   it('returns task codes and Chinese labels without ORM fields', async () => {
-    const response = await app.inject({ method: 'GET', url: '/api/v1/tasks' });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/tasks',
+      headers: { 'x-demo-user-id': 'guild-master' },
+    });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual([
@@ -323,6 +360,7 @@ describe('HTTP API contract', () => {
     const response = await app.inject({
       method: 'GET',
       url: '/api/v1/tasks/missing',
+      headers: { 'x-demo-user-id': 'guild-master' },
     });
 
     expect(response.statusCode).toBe(404);
@@ -375,6 +413,7 @@ describe('HTTP API contract', () => {
             parameters?: Array<{ name?: string }>;
             responses: Record<string, unknown>;
           };
+          delete?: { responses: Record<string, unknown> };
         }
       >;
       components: {
@@ -385,7 +424,28 @@ describe('HTTP API contract', () => {
       };
     }>();
     expect(document.paths).toHaveProperty('/api/v1/tasks');
+    expect(
+      document.paths['/api/v1/admin/users']?.post?.responses,
+    ).toHaveProperty('404');
+    expect(
+      document.paths['/api/v1/admin/users/{id}']?.delete?.responses,
+    ).toHaveProperty('204');
+    expect(
+      document.paths['/api/v1/admin/roles/{id}']?.delete?.responses,
+    ).toHaveProperty('204');
+    expect(document.paths['/api/v1/tasks']?.get?.responses).toHaveProperty(
+      '401',
+    );
+    expect(document.paths['/api/v1/tasks']?.get?.responses).toHaveProperty(
+      '403',
+    );
     expect(document.paths).toHaveProperty('/health/ready');
+    expect(
+      document.paths['/api/v1/demo/reset']?.post?.responses,
+    ).toHaveProperty('401');
+    expect(
+      document.paths['/api/v1/demo/reset']?.post?.responses,
+    ).toHaveProperty('403');
     expect(
       document.paths['/api/v1/tasks/{taskId}/actions']?.post?.parameters,
     ).toContainEqual(expect.objectContaining({ name: 'X-Demo-User-Id' }));
