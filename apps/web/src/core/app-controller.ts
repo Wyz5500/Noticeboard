@@ -192,12 +192,15 @@ export class AppController {
         this.route.view === 'admin' &&
         this.canForActor(request.actorId, 'system.manage')
       ) {
+        const adminRequestSequence = this.beginAdminRequest();
         try {
           const overview = await this.api.getAdminOverview(request.actorId);
-          if (!this.isCurrentRequest(request)) return;
+          if (!this.isCurrentAdminRequest(request, adminRequestSequence))
+            return;
           this.adminOverview = overview;
         } catch (error) {
-          if (!this.isCurrentRequest(request)) return;
+          if (!this.isCurrentAdminRequest(request, adminRequestSequence))
+            return;
           if (
             error instanceof ApiError &&
             (error.status === 401 || error.status === 403)
@@ -207,7 +210,8 @@ export class AppController {
             return;
           }
           this.adminOverview = null;
-          if (!this.isCurrentRequest(request)) return;
+          if (!this.isCurrentAdminRequest(request, adminRequestSequence))
+            return;
           this.showToast(this.errorMessage(error));
         }
       }
@@ -378,6 +382,24 @@ export class AppController {
     return (
       this.isCurrentIdentity(request) &&
       request.routeSequence === this.routeChangeSequence
+    );
+  }
+
+  /** Starts one shared management overview generation for every admin request. */
+  private beginAdminRequest(): number {
+    const sequence = (this.adminRefreshSequence ?? 0) + 1;
+    this.adminRefreshSequence = sequence;
+    return sequence;
+  }
+
+  /** Rejects an admin overview response from an older management generation. */
+  private isCurrentAdminRequest(
+    request: RequestSnapshot,
+    adminRequestSequence: number,
+  ): boolean {
+    return (
+      this.isCurrentRequest(request) &&
+      adminRequestSequence === this.adminRefreshSequence
     );
   }
 
@@ -845,8 +867,13 @@ export class AppController {
       if (!this.isCurrentIdentity(identity)) return;
       this.tasks = tasks;
       if (this.canForActor(actorId, 'system.manage')) {
+        const adminRequestSequence = this.beginAdminRequest();
         const overview = await this.api.getAdminOverview(actorId);
-        if (!this.isCurrentIdentity(identity)) return;
+        if (
+          !this.isCurrentIdentity(identity) ||
+          adminRequestSequence !== this.adminRefreshSequence
+        )
+          return;
         this.adminOverview = overview;
       }
       if (!this.isCurrentIdentity(identity)) return;
@@ -872,12 +899,15 @@ export class AppController {
       this.route.view === 'admin' &&
       this.canForActor(request.actorId, 'system.manage')
     ) {
+      const adminRequestSequence = this.beginAdminRequest();
+      const isCurrentAdminRouteRequest = (): boolean =>
+        this.isCurrentAdminRequest(request, adminRequestSequence);
       try {
         const overview = await this.api.getAdminOverview(request.actorId);
-        if (!isCurrentRouteRequest()) return;
+        if (!isCurrentAdminRouteRequest()) return;
         this.adminOverview = overview;
       } catch (error) {
-        if (!isCurrentRouteRequest()) return;
+        if (!isCurrentAdminRouteRequest()) return;
         if (
           error instanceof ApiError &&
           (error.status === 401 || error.status === 403)
@@ -890,6 +920,7 @@ export class AppController {
             this.route = parseHash('#home');
             this.window.history.replaceState(null, '', '#home');
             ++this.routeChangeSequence;
+            this.render();
             this.showToast(this.errorMessage(refreshError));
           }
           if (!isCurrentRouteRequest()) return;
@@ -1079,8 +1110,7 @@ export class AppController {
     identity: IdentitySnapshot = this.identitySnapshot(),
     routeSequence = this.routeChangeSequence,
   ): Promise<boolean> {
-    const refreshSequence = (this.adminRefreshSequence ?? 0) + 1;
-    this.adminRefreshSequence = refreshSequence;
+    const refreshSequence = this.beginAdminRequest();
     const request: RequestSnapshot = {
       ...identity,
       routeSequence,

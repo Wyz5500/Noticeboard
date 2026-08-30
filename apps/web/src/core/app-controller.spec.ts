@@ -750,6 +750,136 @@ describe('AppController administration refresh', () => {
     expect(controller.showToast).toHaveBeenCalledOnce();
   });
 
+  /** Ensures a direct route overview request cannot overwrite a newer admin refresh. */
+  it('discards a direct admin overview response after a newer refresh starts', async () => {
+    const overviewResolvers: Array<(overview: AdminOverviewResource) => void> =
+      [];
+    const staleOverview: AdminOverviewResource = {
+      users: [],
+      roles: [],
+      permissions: [],
+    };
+    const freshOverview: AdminOverviewResource = {
+      users: [],
+      roles: [],
+      permissions: [],
+    };
+    const controller = Object.create(AppController.prototype) as {
+      api: Pick<ApiClient, 'getAdminOverview' | 'listDemoUsers'>;
+      users: ActorResource[];
+      tasks: TaskResource[];
+      currentUserId: string;
+      adminOverview: AdminOverviewResource | null;
+      identityChangeSequence: number;
+      routeChangeSequence: number;
+      route: { view: string };
+      window: {
+        location: { hash: string };
+        history: {
+          replaceState: (state: null, title: string, url: string) => void;
+        };
+      };
+      loadTasksForCurrentUser: () => Promise<TaskResource[]>;
+      render: () => void;
+      handleRouteChange: () => Promise<void>;
+      refreshAdminOverview: (
+        identity: { actorId: string; sequence: number },
+        routeSequence: number,
+      ) => Promise<boolean>;
+    };
+    controller.api = {
+      getAdminOverview: () =>
+        new Promise((resolve) => overviewResolvers.push(resolve)),
+      listDemoUsers: () => Promise.resolve([CURRENT_USER]),
+    };
+    controller.users = [CURRENT_USER];
+    controller.tasks = [];
+    controller.currentUserId = CURRENT_USER.id;
+    controller.adminOverview = null;
+    controller.identityChangeSequence = 0;
+    controller.routeChangeSequence = 0;
+    controller.route = { view: 'home' };
+    controller.window = {
+      location: { hash: '#admin' },
+      history: { replaceState: () => undefined },
+    };
+    controller.loadTasksForCurrentUser = () => Promise.resolve([]);
+    controller.render = vi.fn();
+
+    const directRequest = controller.handleRouteChange();
+    const refreshRequest = controller.refreshAdminOverview(
+      { actorId: CURRENT_USER.id, sequence: 0 },
+      1,
+    );
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    expect(overviewResolvers).toHaveLength(2);
+    overviewResolvers[1]!(freshOverview);
+    await refreshRequest;
+    overviewResolvers[0]!(staleOverview);
+    await directRequest;
+
+    expect(controller.adminOverview).toBe(freshOverview);
+    expect(controller.render).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures a current fallback failure renders the home route after replacing the URL. */
+  it('renders home after the current admin fallback fails', async () => {
+    const controller = Object.create(AppController.prototype) as {
+      api: Pick<ApiClient, 'getAdminOverview' | 'listDemoUsers'>;
+      users: ActorResource[];
+      currentUserId: string;
+      adminOverview: AdminOverviewResource | null;
+      identityChangeSequence: number;
+      routeChangeSequence: number;
+      route: { view: string };
+      window: {
+        location: { hash: string };
+        history: {
+          replaceState: (state: null, title: string, url: string) => void;
+        };
+      };
+      render: () => void;
+      showToast: (message: string) => void;
+      handleRouteChange: () => Promise<void>;
+    };
+    controller.api = {
+      getAdminOverview: () =>
+        Promise.reject(new ApiError(403, 'FORBIDDEN', '无权访问管理信息')),
+      listDemoUsers: () =>
+        Promise.reject(new ApiError(500, 'SERVER_ERROR', '用户目录加载失败')),
+    };
+    controller.users = [CURRENT_USER];
+    controller.currentUserId = CURRENT_USER.id;
+    controller.adminOverview = {
+      users: [],
+      roles: [],
+      permissions: [],
+    };
+    controller.identityChangeSequence = 0;
+    controller.routeChangeSequence = 0;
+    controller.route = { view: 'admin' };
+    controller.window = {
+      location: { hash: '#admin' },
+      history: {
+        replaceState: (_state, _title, url) => {
+          controller.window.location.hash = url;
+        },
+      },
+    };
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+
+    await controller.handleRouteChange();
+
+    expect(controller.route.view).toBe('home');
+    expect(controller.window.location.hash).toBe('#home');
+    expect(controller.adminOverview).toBeNull();
+    expect(controller.render).toHaveBeenCalledOnce();
+    expect(controller.showToast).toHaveBeenCalledOnce();
+  });
+
   /** Ensures route-triggered access loss persists the same safe identity fallback as admin refresh. */
   it('persists a fallback identity when the admin route loses access', async () => {
     const fallbackAdmin: ActorResource = {
