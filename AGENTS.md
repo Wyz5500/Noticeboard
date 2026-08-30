@@ -26,6 +26,7 @@
 
 ## 测试与交付
 
+- Git 提交日志必须使用中文书写。
 - 遵循测试驱动：先写会失败的最小测试，再实现，再重构。
 - 领域/前端规则进单元测试；PostgreSQL 语义进仓储契约；HTTP/DTO/guard/OpenAPI/健康进 API 测试；跨页面交互进 Playwright 行为测试；外观进零像素视觉测试。
 - 主题契约见 `style-configs/README.md`，架构决策见 `docs/architecture.md`，运行方式见 `README.md`。
