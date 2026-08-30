@@ -20,7 +20,7 @@ python3 -m http.server 8000
 - 支持任务流程：`未开始` → `进行中` → `已完成`，发布者可以验收关闭，或重新打开后再次接取；重新打开的任务也可以由发布者直接关闭。
 - 任务操作权限由 `app-state.js` 统一判断：接取任务由任意已知身份执行，标记完成由当前接取者执行，验收、重新打开和关闭由任务发布者执行。
 - 任务页支持“全部任务 / 我的任务”、状态筛选和关键词搜索；筛选条件与搜索词会写入 URL hash，例如 `#tasks?scope=mine&filter=进行中&q=矿井`。
-- 右上角头像菜单提供 10 种视觉风格切换：Swiss International、Neo-Brutalism、Bauhaus、Y2K / Cyber、Retro Terminal、Memphis、Editorial Magazine、Glassmorphism、Japanese Minimalism 和 Pixel / Retro Game UI，并提供重置演示数据入口。
+- 右上角头像菜单提供 10 种视觉风格切换：瑞士国际、粗野主义、包豪斯、Y2K / 赛博、复古终端、孟菲斯、编辑杂志、玻璃拟态、日式极简和像素 / 复古游戏界面，并提供重置演示数据入口。
 - 响应式布局支持桌面和窄屏浏览，任务详情使用覆盖顶栏的抽屉，发布任务使用弹窗。
 
 ## 数据与持久化
@@ -33,6 +33,53 @@ python3 -m http.server 8000
 页面右上角头像菜单中的“重置演示数据”会恢复 4 项初始任务和用户 A 身份，不会重置已选择的视觉风格。不要在本地存储中保存凭据或其他秘密信息。
 
 “我的任务”根据任务操作时间线中的最后一位有效操作人进行归属，因此任务被发布者验收或关闭后，可能会从接取者的“我的任务”列表转移到发布者名下。
+
+## 未来技术路线
+
+当前项目仍是零依赖的浏览器单页原型，使用 JavaScript、`localStorage` 和 Python 静态服务器；当前没有 Node.js、NestJS、PostgreSQL 或 Docker 后端。
+
+未来引入后端，是为了将任务、身份、权限和状态从浏览器本地状态迁移为服务端能力，支持网页端、桌面端、移动端和其他客户端，并为未来数据库替换及桌面离线版保留架构空间。
+
+目标技术栈：
+
+- Node.js 24.x LTS
+- TypeScript 严格模式（strict）
+- NestJS + Fastify
+- REST + OpenAPI 3
+- 模块化单体
+- PostgreSQL
+- TypeORM 数据映射模式
+- Docker
+
+```text
+网页端 / 桌面端 / 移动端客户端
+              ↓ REST + OpenAPI
+NestJS + Fastify 后端
+              ↓
+领域层 / 应用层
+              ↓
+仓储端口 / 事务端口
+              ↓
+PostgreSQL
+```
+
+四层职责保持清晰：领域层负责核心业务规则；应用层负责业务用例协调；表现层负责 HTTP API、DTO 和校验；基础设施层负责数据库、ORM、迁移和外部服务。
+
+第一版使用 PostgreSQL，业务逻辑不直接依赖 TypeORM 或 PostgreSQL。未来桌面离线版可以在基础设施层增加 SQLite 适配器，但 SQLite 适配器不属于当前版本。
+
+客户端通过 REST/OpenAPI 访问后端，未来可以使用原生 TypeScript、Vue、React、桌面端或移动端；数据库实体不直接作为 API 响应。
+
+迁移顺序：
+
+1. 固定 Node.js 24.x LTS 和 TypeScript 工具链。
+2. 识别并提取 `app-state.js` 中与浏览器环境无关的核心业务规则。
+3. 建立 PostgreSQL 数据模型和迁移。
+4. 建立 NestJS REST API。
+5. 将前端任务数据从 `localStorage` 切换到 API。
+6. 增加 Docker 部署。
+7. 在桌面离线需求明确后增加 SQLite 适配器。
+
+上述 Node.js、NestJS、PostgreSQL 和 Docker 内容属于未来技术路线，当前仓库尚未实现；当前原型的启动方式、测试方式和 `localStorage` 行为保持不变。
 
 ## 项目结构
 

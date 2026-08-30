@@ -1,6 +1,6 @@
 # 风格配置设计说明
 
-本目录中的每个 JavaScript 文件代表一种视觉风格。目前包含 Swiss International、Neo-Brutalism、Bauhaus、Y2K / Cyber、Retro Terminal、Memphis、Editorial Magazine、Glassmorphism、Japanese Minimalism 和 Pixel / Retro Game UI，共 10 种。文件由 `index.html` 以固定顺序加载，在 `app.js` 初始化前调用 `GuildStyle.register` 注册配置。配置使用本地字体栈和 CSS 变量，不依赖构建工具、网络字体、图片或第三方库。
+本目录中的每个 JavaScript 文件代表一种视觉风格。目前包含瑞士国际、粗野主义、包豪斯、Y2K / 赛博、复古终端、孟菲斯、编辑杂志、玻璃拟态、日式极简和像素 / 复古游戏界面，共 10 种。文件由 `index.html` 以固定顺序加载，在 `app.js` 初始化前调用 `GuildStyle.register` 注册配置。配置使用本地字体栈和 CSS 变量，不依赖构建工具、网络字体、图片或第三方库。
 
 ## 配置格式
 
@@ -9,7 +9,7 @@
 ```js
 GuildStyle.register({
   id: 'my-style',
-  label: 'My Style',
+  label: '我的风格',
   tokens: {
     '--ink': '#111111',
     '--muted': '#666666',
