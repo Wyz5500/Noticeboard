@@ -1060,7 +1060,7 @@ export class AppController {
       this.closeProfileMenu();
       this.closeDrawer();
       this.route = parseHash('#home');
-      this.window.location.hash = '#home';
+      this.window.history.replaceState(null, '', '#home');
       this.render();
       const nextIdentity = { actorId, sequence };
       const fallbackRouteSequence =

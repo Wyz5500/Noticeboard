@@ -119,7 +119,12 @@ describe('AppController administration refresh', () => {
       routeChangeSequence: number;
       storage: Storage;
       route: unknown;
-      window: { location: { hash: string } };
+      window: {
+        location: { hash: string };
+        history: {
+          replaceState: (state: null, title: string, url: string) => void;
+        };
+      };
       loadTasksForCurrentUser: () => Promise<TaskResource[]>;
       closeProfileMenu: () => void;
       closeDrawer: () => void;
@@ -148,7 +153,12 @@ describe('AppController administration refresh', () => {
       removeItem: () => undefined,
     } as unknown as Storage;
     controller.route = { view: 'admin' };
-    controller.window = { location: { hash: '#admin' } };
+    controller.window = {
+      location: { hash: '#admin' },
+      history: {
+        replaceState: () => undefined,
+      },
+    };
     controller.loadTasksForCurrentUser = () => Promise.resolve([]);
     controller.closeProfileMenu = vi.fn();
     controller.closeDrawer = vi.fn();
@@ -162,6 +172,96 @@ describe('AppController administration refresh', () => {
     });
     expect(overviewRequests).toEqual([]);
     expect(controller.identityChangeSequence).toBe(1);
+  });
+
+  /** Ensures the fallback's own URL update cannot discard its replacement task response. */
+  it('keeps replacement tasks when the admin fallback redirects to home', async () => {
+    const fallbackAdmin: ActorResource = {
+      ...CURRENT_USER,
+      id: 'redirect-replacement-admin',
+    };
+    const replacementTasks = [{ ...STALE_TASK, id: 'replacement-task' }];
+    let hash = '#admin';
+    const controller = Object.create(AppController.prototype) as {
+      api: Pick<ApiClient, 'listDemoUsers' | 'getAdminOverview'>;
+      users: ActorResource[];
+      tasks: TaskResource[];
+      currentUserId: string;
+      adminOverview: unknown;
+      identityChangeSequence: number;
+      routeChangeSequence: number;
+      storage: Storage;
+      route: unknown;
+      window: {
+        location: { hash: string };
+        history: {
+          replaceState: (state: null, title: string, url: string) => void;
+        };
+      };
+      loadTasksForCurrentUser: () => Promise<TaskResource[]>;
+      closeProfileMenu: () => void;
+      closeDrawer: () => void;
+      render: () => void;
+      refreshAdminOverview: (
+        identity: { actorId: string; sequence: number },
+        routeSequence: number,
+      ) => Promise<void>;
+    };
+    const location = {} as { hash: string };
+    Object.defineProperty(location, 'hash', {
+      get: () => hash,
+      set: (value: string) => {
+        hash = value;
+        queueMicrotask(() => {
+          controller.routeChangeSequence += 1;
+        });
+      },
+    });
+    controller.api = {
+      listDemoUsers: () => Promise.resolve([fallbackAdmin]),
+      getAdminOverview: () =>
+        Promise.resolve({ users: [], roles: [], permissions: [] }),
+    };
+    controller.users = [CURRENT_USER];
+    controller.tasks = [STALE_TASK];
+    controller.currentUserId = CURRENT_USER.id;
+    controller.adminOverview = {
+      users: [],
+      roles: [],
+      permissions: [],
+    };
+    controller.identityChangeSequence = 0;
+    controller.routeChangeSequence = 1;
+    controller.storage = {
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    } as unknown as Storage;
+    controller.route = { view: 'admin' };
+    controller.window = {
+      location,
+      history: {
+        replaceState: (_state, _title, url) => {
+          hash = url;
+        },
+      },
+    };
+    controller.loadTasksForCurrentUser = () =>
+      new Promise((resolve) => {
+        queueMicrotask(() => resolve(replacementTasks));
+      });
+    controller.closeProfileMenu = vi.fn();
+    controller.closeDrawer = vi.fn();
+    controller.render = vi.fn();
+
+    await controller.refreshAdminOverview(
+      { actorId: CURRENT_USER.id, sequence: 0 },
+      1,
+    );
+
+    expect(controller.window.history.replaceState).toBeDefined();
+    expect(controller.currentUserId).toBe(fallbackAdmin.id);
+    expect(controller.tasks).toEqual(replacementTasks);
+    expect(hash).toBe('#home');
   });
 
   /** Ensures removing tasks.view clears the previously loaded task snapshot. */
@@ -335,7 +435,12 @@ describe('AppController administration refresh', () => {
       identityChangeSequence: number;
       routeChangeSequence: number;
       storage: Storage;
-      window: { location: { hash: string } };
+      window: {
+        location: { hash: string };
+        history: {
+          replaceState: (state: null, title: string, url: string) => void;
+        };
+      };
       route: unknown;
       loadTasksForCurrentUser: () => Promise<TaskResource[]>;
       closeProfileMenu: () => void;
@@ -367,7 +472,14 @@ describe('AppController administration refresh', () => {
       setItem: (_key: string, value: string) => storedValues.push(value),
       removeItem: () => undefined,
     } as unknown as Storage;
-    controller.window = { location: { hash: '#admin' } };
+    controller.window = {
+      location: { hash: '#admin' },
+      history: {
+        replaceState: (_state, _title, url) => {
+          controller.window.location.hash = url;
+        },
+      },
+    };
     controller.route = {};
     controller.loadTasksForCurrentUser = () => Promise.resolve([]);
     controller.closeProfileMenu = vi.fn();
@@ -403,7 +515,12 @@ describe('AppController administration refresh', () => {
       identityChangeSequence: number;
       routeChangeSequence: number;
       route: { view: string };
-      window: { location: { hash: string } };
+      window: {
+        location: { hash: string };
+        history: {
+          replaceState: (state: null, title: string, url: string) => void;
+        };
+      };
       render: () => void;
       showToast: (message: string) => void;
       handleRouteChange: () => Promise<void>;
@@ -421,7 +538,14 @@ describe('AppController administration refresh', () => {
     controller.identityChangeSequence = 0;
     controller.routeChangeSequence = 0;
     controller.route = { view: 'home' };
-    controller.window = { location: { hash: '#admin' } };
+    controller.window = {
+      location: { hash: '#admin' },
+      history: {
+        replaceState: (_state, _title, url) => {
+          controller.window.location.hash = url;
+        },
+      },
+    };
     controller.render = vi.fn();
     controller.showToast = vi.fn();
 
@@ -514,7 +638,12 @@ describe('AppController administration refresh', () => {
       identityChangeSequence: number;
       routeChangeSequence: number;
       route: { view: string };
-      window: { location: { hash: string } };
+      window: {
+        location: { hash: string };
+        history: {
+          replaceState: (state: null, title: string, url: string) => void;
+        };
+      };
       canManage: () => boolean;
       handleRouteChange: () => Promise<void>;
       render: () => void;
@@ -529,7 +658,14 @@ describe('AppController administration refresh', () => {
     controller.identityChangeSequence = 0;
     controller.routeChangeSequence = 0;
     controller.route = { view: 'admin' };
-    controller.window = { location: { hash: '#admin' } };
+    controller.window = {
+      location: { hash: '#admin' },
+      history: {
+        replaceState: (_state, _title, url) => {
+          controller.window.location.hash = url;
+        },
+      },
+    };
     controller.canManage = () =>
       controller.users.some(
         (user) =>
