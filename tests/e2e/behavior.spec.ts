@@ -55,17 +55,13 @@ test('navigates and filters the in-memory task board', async ({
     '已关闭',
   ]);
   const desktopStatusColumns = await page
-    .locator('.stats-row')
+    .locator('.home-status-rail .stats-row')
     .evaluate(
       (row) => getComputedStyle(row).gridTemplateColumns.split(' ').length,
     );
-  expect(desktopStatusColumns).toBe(isMobile ? 2 : 3);
-  const statPaddings = await page
-    .locator('.stat-card')
-    .evaluateAll((cards) =>
-      cards.slice(0, 2).map((card) => getComputedStyle(card).paddingLeft),
-    );
-  expect(statPaddings[0]).toBe(statPaddings[1]);
+  expect(desktopStatusColumns).toBe(isMobile ? 2 : 1);
+  await expect(page.locator('.home-summary .stat-card')).toHaveCount(1);
+  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(5);
   await page.locator('.stat-card').nth(1).click();
   await expect(
     page.evaluate(() => decodeURI(window.location.hash)),
@@ -95,21 +91,129 @@ test('navigates and filters the in-memory task board', async ({
   await expect(page).toHaveURL(/scope=mine/);
 });
 
-/** Proves the home status shortcuts use three desktop columns and preserve responsive breakpoints. */
-test('uses responsive home status-grid columns', async ({ page }) => {
+/** Proves the action-first home overview keeps one primary summary and a separate status rail. */
+test('renders the action-first home overview layout', async ({ page }) => {
+  await page.goto('/');
+
+  await expect(page.locator('.home-layout')).toBeVisible();
+  await expect(page.locator('.home-summary .stat-card')).toHaveCount(1);
+  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(5);
+  await expect(page.locator('.home-primary-action')).toHaveAttribute(
+    'href',
+    '#tasks?scope=mine&filter=全部',
+  );
+  await expect(page.locator('.home-summary #statTotal')).toHaveText('5');
+  await expect(page.locator('#statTotalDescription')).toHaveText(
+    '你当前有 5 个委托任务待处理。',
+  );
+  await expect(page.locator('.home-status-rail #statNotStarted')).toHaveText(
+    '1',
+  );
+  await page.locator('.home-primary-action').click();
+  await expect(
+    page.evaluate(() => decodeURI(window.location.hash)),
+  ).resolves.toBe('#tasks?scope=mine&filter=全部');
+});
+
+/** Proves home summary copy stays inset from the divider and surrounding edges. */
+test('pads home summary content around its copy', async ({
+  page,
+  isMobile,
+}) => {
+  await page.goto('/');
+
+  const padding = await page
+    .locator('.home-summary .stat-card-total, .home-next-step')
+    .evaluateAll((elements) =>
+      elements.map((element) => {
+        const style = getComputedStyle(element);
+        return {
+          top: style.paddingTop,
+          left: style.paddingLeft,
+          right: style.paddingRight,
+          bottom: style.paddingBottom,
+        };
+      }),
+    );
+
+  expect(padding).toEqual(
+    isMobile
+      ? [
+          { top: '28px', left: '16px', right: '16px', bottom: '28px' },
+          { top: '28px', left: '16px', right: '16px', bottom: '28px' },
+        ]
+      : [
+          { top: '28px', left: '20px', right: '26px', bottom: '28px' },
+          { top: '28px', left: '28px', right: '26px', bottom: '28px' },
+        ],
+  );
+});
+
+/** Proves every home status arrow matches the task-card bottom-right treatment. */
+test('aligns home arrows to the bottom right of their cards', async ({
+  page,
+  isMobile,
+}) => {
+  await page.goto('/');
+
+  const taskCardArrowStyle = await page
+    .locator('.task-card-arrow')
+    .first()
+    .evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        color: style.color,
+        fontSize: style.fontSize,
+        lineHeight: style.lineHeight,
+      };
+    });
+  const arrows = await page
+    .locator('.home-layout .stat-arrow')
+    .evaluateAll((elements) =>
+      elements.map((element) => {
+        const style = getComputedStyle(element);
+        return {
+          position: style.position,
+          right: style.right,
+          bottom: style.bottom,
+          color: style.color,
+          fontSize: style.fontSize,
+          lineHeight: style.lineHeight,
+        };
+      }),
+    );
+
+  expect(arrows).toEqual([
+    {
+      position: 'absolute',
+      right: isMobile ? '16px' : '26px',
+      bottom: '28px',
+      ...taskCardArrowStyle,
+    },
+    ...Array.from({ length: 5 }, () => ({
+      position: 'absolute',
+      right: isMobile ? '15px' : '26px',
+      bottom: isMobile ? '14px' : '19px',
+      ...taskCardArrowStyle,
+    })),
+  ]);
+});
+
+/** Proves the action-first home status rail collapses to two columns on narrow screens. */
+test('uses responsive home status-rail columns', async ({ page }) => {
   await page.goto('/');
 
   const columnsAt = async (width: number): Promise<number> => {
     await page.setViewportSize({ width, height: 915 });
     return page
-      .locator('.stats-row')
+      .locator('.home-status-rail .stats-row')
       .evaluate(
         (row) => getComputedStyle(row).gridTemplateColumns.split(' ').length,
       );
   };
 
-  await expect(page.locator('.stat-card')).toHaveCount(6);
-  await expect.poll(() => columnsAt(1440)).toBe(3);
+  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(5);
+  await expect.poll(() => columnsAt(1440)).toBe(1);
   await expect.poll(() => columnsAt(840)).toBe(3);
   await expect.poll(() => columnsAt(620)).toBe(2);
 });
@@ -364,17 +468,17 @@ test('scrolls task cards without moving board chrome', async ({ page }) => {
   expect(after).toEqual(before);
 });
 
-/** Proves the mobile two-column status grid keeps its middle vertical separators. */
-test('keeps mobile status grid separators between both columns', async ({
+/** Proves the mobile two-column status rail keeps its middle vertical separators. */
+test('keeps mobile status rail separators between both columns', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 412, height: 915 });
   await page.reload();
 
   const borderWidths = await page
-    .locator('.stat-card')
+    .locator('.home-status-rail .stat-card')
     .evaluateAll((cards) =>
-      cards.slice(0, 5).map((card) => getComputedStyle(card).borderRightWidth),
+      cards.map((card) => getComputedStyle(card).borderRightWidth),
     );
 
   expect(borderWidths).toEqual(['1px', '0px', '1px', '0px', '1px']);

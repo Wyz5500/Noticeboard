@@ -57,6 +57,7 @@ interface Elements {
   homeView: HTMLElement;
   tasksView: HTMLElement;
   statTotal: HTMLElement;
+  statTotalDescription: HTMLElement;
   statNotStarted: HTMLElement;
   statActive: HTMLElement;
   statReview: HTMLElement;
@@ -99,6 +100,7 @@ function collectElements(document: Document): Elements {
     homeView: requiredElement(document, '#homeView'),
     tasksView: requiredElement(document, '#tasksView'),
     statTotal: requiredElement(document, '#statTotal'),
+    statTotalDescription: requiredElement(document, '#statTotalDescription'),
     statNotStarted: requiredElement(document, '#statNotStarted'),
     statActive: requiredElement(document, '#statActive'),
     statReview: requiredElement(document, '#statReview'),
@@ -323,6 +325,7 @@ export class AppController {
     });
     const counts = taskCounts(mine);
     this.elements.statTotal.textContent = String(counts.total);
+    this.elements.statTotalDescription.textContent = `你当前有 ${counts.total} 个委托任务待处理。`;
     this.elements.statNotStarted.textContent = String(counts.notStarted);
     this.elements.statActive.textContent = String(counts.inProgress);
     this.elements.statReview.textContent = String(counts.completed);

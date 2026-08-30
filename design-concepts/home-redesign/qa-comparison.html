@@ -1,0 +1,56 @@
+<!-- Compares the selected home redesign reference with its rendered desktop implementation. -->
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>方案一首页视觉对照</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        background: #e9e9e9;
+        color: #111;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+      }
+      main {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 24px;
+        max-width: 3000px;
+        margin: 0 auto;
+      }
+      figure {
+        margin: 0;
+      }
+      figcaption {
+        margin-bottom: 12px;
+        font-size: 18px;
+        font-weight: 700;
+      }
+      img {
+        display: block;
+        width: 100%;
+        height: auto;
+        background: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <figure>
+        <figcaption>源视觉稿 · 方案一</figcaption>
+        <img src="home-redesign-1.png" alt="方案一首页源视觉稿" />
+      </figure>
+      <figure>
+        <figcaption>实现截图 · Swiss 国际主题</figcaption>
+        <img
+          src="../../tests/e2e/visual.spec.ts-snapshots/swiss-international-home-chromium-desktop-darwin.png"
+          alt="方案一首页实现截图"
+        />
+      </figure>
+    </main>
+  </body>
+</html>

@@ -90,79 +90,110 @@
           id="homeView"
           data-view-section="home"
         >
-          <section class="hero-section">
-            <div>
-              <p class="eyebrow">冒险家工会 <span>/</span> 首页</p>
-              <h1>把每一次冒险，<br /><em>变成可完成的委托。</em></h1>
-              <p class="hero-copy">
-                发布委托、组队出发、回到公会交付成果。每一步都留下记录。
-              </p>
-            </div>
-            <div class="hero-index" aria-label="页面索引">
-              <span class="hero-index-label">公告板</span>
-              <span class="hero-index-number">01</span>
-            </div>
-          </section>
+          <div class="home-layout">
+            <div class="home-main">
+              <section class="hero-section">
+                <div>
+                  <p class="eyebrow">冒险家工会 <span>/</span> 首页</p>
+                  <h1>把每一次冒险，<br /><em>变成可完成的委托。</em></h1>
+                  <p class="hero-copy">
+                    发布委托、组队出发、回到公会交付成果。每一步都留下记录。
+                  </p>
+                </div>
+                <div class="hero-index" aria-label="页面索引">
+                  <span class="hero-index-label">公告板</span>
+                  <span class="hero-index-number">01</span>
+                </div>
+              </section>
 
-          <section class="home-stats" aria-label="个人任务概览">
-            <div class="section-kicker">个人任务概览 <span>状态概览</span></div>
-            <div class="stats-row">
-              <button
-                class="stat-card"
-                type="button"
-                data-status-shortcut="全部"
+              <section
+                class="home-stats home-summary"
+                aria-label="个人任务概览"
               >
-                <span class="stat-label">我的任务</span
-                ><strong id="statTotal">0</strong
-                ><span class="stat-arrow" aria-hidden="true">↗</span>
-              </button>
-              <button
-                class="stat-card"
-                type="button"
-                data-status-shortcut="未开始"
-              >
-                <span class="stat-label">未开始</span
-                ><strong id="statNotStarted">0</strong
-                ><span class="stat-arrow" aria-hidden="true">↗</span>
-              </button>
-              <button
-                class="stat-card"
-                type="button"
-                data-status-shortcut="进行中"
-              >
-                <span class="stat-label">进行中</span
-                ><strong id="statActive">0</strong
-                ><span class="stat-arrow" aria-hidden="true">↗</span>
-              </button>
-              <button
-                class="stat-card"
-                type="button"
-                data-status-shortcut="已完成"
-              >
-                <span class="stat-label">已完成</span
-                ><strong id="statReview">0</strong
-                ><span class="stat-arrow" aria-hidden="true">↗</span>
-              </button>
-              <button
-                class="stat-card"
-                type="button"
-                data-status-shortcut="重新打开"
-              >
-                <span class="stat-label">重新打开</span
-                ><strong id="statReopened">0</strong
-                ><span class="stat-arrow" aria-hidden="true">↗</span>
-              </button>
-              <button
-                class="stat-card"
-                type="button"
-                data-status-shortcut="关闭"
-              >
-                <span class="stat-label">已关闭</span
-                ><strong id="statClosed">0</strong
-                ><span class="stat-arrow" aria-hidden="true">↗</span>
-              </button>
+                <div class="section-kicker">
+                  个人任务概览 <span>状态概览</span>
+                </div>
+                <div class="home-summary-body">
+                  <button
+                    class="stat-card stat-card-total"
+                    type="button"
+                    data-status-shortcut="全部"
+                  >
+                    <span class="stat-label">我的任务</span
+                    ><strong id="statTotal">0</strong
+                    ><span
+                      id="statTotalDescription"
+                      class="stat-supporting-copy"
+                      >你当前有 0 个委托任务待处理。</span
+                    >
+                    <span class="stat-arrow" aria-hidden="true">↗</span>
+                  </button>
+                  <div class="home-next-step">
+                    <span class="home-next-step-label">下一步建议</span>
+                    <p>
+                      优先处理未开始的委托，推进进行中的任务，让冒险持续前进。
+                    </p>
+                    <a
+                      class="home-primary-action"
+                      href="#tasks?scope=mine&amp;filter=全部"
+                      >查看我的任务 <span aria-hidden="true">→</span></a
+                    >
+                  </div>
+                </div>
+              </section>
             </div>
-          </section>
+
+            <aside class="home-status-rail" aria-label="任务状态概览">
+              <div class="section-kicker">任务状态概览</div>
+              <div class="stats-row">
+                <button
+                  class="stat-card"
+                  type="button"
+                  data-status-shortcut="未开始"
+                >
+                  <span class="stat-label">未开始</span
+                  ><strong id="statNotStarted">0</strong
+                  ><span class="stat-arrow" aria-hidden="true">↗</span>
+                </button>
+                <button
+                  class="stat-card"
+                  type="button"
+                  data-status-shortcut="进行中"
+                >
+                  <span class="stat-label">进行中</span
+                  ><strong id="statActive">0</strong
+                  ><span class="stat-arrow" aria-hidden="true">↗</span>
+                </button>
+                <button
+                  class="stat-card"
+                  type="button"
+                  data-status-shortcut="已完成"
+                >
+                  <span class="stat-label">已完成</span
+                  ><strong id="statReview">0</strong
+                  ><span class="stat-arrow" aria-hidden="true">↗</span>
+                </button>
+                <button
+                  class="stat-card"
+                  type="button"
+                  data-status-shortcut="重新打开"
+                >
+                  <span class="stat-label">重新打开</span
+                  ><strong id="statReopened">0</strong
+                  ><span class="stat-arrow" aria-hidden="true">↗</span>
+                </button>
+                <button
+                  class="stat-card"
+                  type="button"
+                  data-status-shortcut="关闭"
+                >
+                  <span class="stat-label">已关闭</span
+                  ><strong id="statClosed">0</strong
+                  ><span class="stat-arrow" aria-hidden="true">↗</span>
+                </button>
+              </div>
+            </aside>
+          </div>
         </section>
 
         <section class="view-section" id="tasksView" data-view-section="tasks">
