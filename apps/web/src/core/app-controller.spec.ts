@@ -1,0 +1,347 @@
+/** Verifies controller state is refreshed when administrator permissions change. */
+import { describe, expect, it, vi } from 'vitest';
+
+import { ApiError, type ApiClient } from './api-client.js';
+import type { ActorResource, TaskResource } from './api-types.js';
+import { AppController } from './app-controller.js';
+
+const CURRENT_USER: ActorResource = {
+  id: 'guild-admin',
+  name: '公会管理员',
+  role: 'system_admin',
+  roleLabel: '系统管理员',
+  permissions: ['system.manage'],
+};
+
+const STALE_TASK = {
+  id: 'task-stale',
+} as TaskResource;
+
+const RESET_ONLY_USER: ActorResource = {
+  id: 'reset-only',
+  name: '重置用户',
+  role: 'resetter',
+  roleLabel: '重置角色',
+  permissions: ['demo.reset'],
+};
+
+const TASK_VIEWER: ActorResource = {
+  id: 'task-viewer',
+  name: '查看用户',
+  role: 'viewer',
+  roleLabel: '查看角色',
+  permissions: ['tasks.view'],
+};
+
+describe('AppController administration refresh', () => {
+  /** Ensures a deleted selection cannot inherit the first actor's identity or permissions. */
+  it('does not fall back to the first user when the selected identity is missing', () => {
+    const controller = Object.create(AppController.prototype) as {
+      users: ActorResource[];
+      currentUserId: string;
+      currentUser: () => ActorResource | null;
+    };
+    controller.users = [CURRENT_USER];
+    controller.currentUserId = 'deleted-admin';
+
+    expect(controller.currentUser()).toBeNull();
+  });
+
+  /** Ensures identity changes remove old protected data before starting a task request. */
+  it('clears protected snapshots and renders before loading the new identity', async () => {
+    let releaseTasks!: (tasks: TaskResource[]) => void;
+    const controller = Object.create(AppController.prototype) as {
+      elements: { identitySelect: { value: string } };
+      storage: Storage;
+      users: ActorResource[];
+      tasks: TaskResource[];
+      currentUserId: string;
+      adminOverview: unknown;
+      identityChangeSequence: number;
+      loadTasksForCurrentUser: () => Promise<TaskResource[]>;
+      canManage: () => boolean;
+      render: () => void;
+      showToast: (message: string) => void;
+      changeIdentity: () => Promise<void>;
+    };
+    controller.elements = { identitySelect: { value: TASK_VIEWER.id } };
+    controller.storage = {
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    } as unknown as Storage;
+    controller.users = [CURRENT_USER, TASK_VIEWER];
+    controller.tasks = [STALE_TASK];
+    controller.currentUserId = CURRENT_USER.id;
+    controller.adminOverview = {
+      users: [],
+      roles: [],
+      permissions: [],
+    };
+    controller.identityChangeSequence = 0;
+    controller.loadTasksForCurrentUser = () =>
+      new Promise((resolve) => {
+        releaseTasks = resolve;
+      });
+    controller.canManage = () => false;
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+
+    const pending = controller.changeIdentity();
+
+    expect(controller.tasks).toEqual([]);
+    expect(controller.adminOverview).toBeNull();
+    expect(controller.render).toHaveBeenCalledOnce();
+
+    releaseTasks([]);
+    await pending;
+  });
+
+  /** Ensures an administrator removed from the refreshed directory cannot receive an overview request. */
+  it('persists an administrator fallback without requesting the deleted actor overview', async () => {
+    const fallbackAdmin: ActorResource = {
+      ...CURRENT_USER,
+      id: 'replacement-admin',
+      name: '替补管理员',
+    };
+    const overviewRequests: string[] = [];
+    const storedValues: string[] = [];
+    const controller = Object.create(AppController.prototype) as {
+      api: Pick<ApiClient, 'listDemoUsers' | 'getAdminOverview'>;
+      users: ActorResource[];
+      tasks: TaskResource[];
+      currentUserId: string;
+      adminOverview: unknown;
+      identityChangeSequence: number;
+      storage: Storage;
+      route: unknown;
+      window: { location: { hash: string } };
+      loadTasksForCurrentUser: () => Promise<TaskResource[]>;
+      closeProfileMenu: () => void;
+      closeDrawer: () => void;
+      render: () => void;
+      refreshAdminOverview: () => Promise<void>;
+    };
+    controller.api = {
+      listDemoUsers: () => Promise.resolve([fallbackAdmin]),
+      getAdminOverview: (actorId) => {
+        overviewRequests.push(actorId);
+        return Promise.resolve({ users: [], roles: [], permissions: [] });
+      },
+    };
+    controller.users = [CURRENT_USER];
+    controller.tasks = [STALE_TASK];
+    controller.currentUserId = CURRENT_USER.id;
+    controller.adminOverview = {
+      users: [],
+      roles: [],
+      permissions: [],
+    };
+    controller.identityChangeSequence = 0;
+    controller.storage = {
+      setItem: (_key: string, value: string) => storedValues.push(value),
+      removeItem: () => undefined,
+    } as unknown as Storage;
+    controller.route = { view: 'admin' };
+    controller.window = { location: { hash: '#admin' } };
+    controller.loadTasksForCurrentUser = () => Promise.resolve([]);
+    controller.closeProfileMenu = vi.fn();
+    controller.closeDrawer = vi.fn();
+    controller.render = vi.fn();
+
+    await controller.refreshAdminOverview();
+
+    expect(controller.currentUserId).toBe(fallbackAdmin.id);
+    expect(JSON.parse(storedValues.at(-1) ?? '{}')).toEqual({
+      currentUserId: fallbackAdmin.id,
+    });
+    expect(overviewRequests).toEqual([]);
+    expect(controller.identityChangeSequence).toBe(1);
+  });
+
+  /** Ensures removing tasks.view clears the previously loaded task snapshot. */
+  it('reloads tasks after the current role loses task-read permission', async () => {
+    const controller = Object.create(AppController.prototype) as {
+      api: Pick<ApiClient, 'listDemoUsers' | 'getAdminOverview'>;
+      users: ActorResource[];
+      tasks: TaskResource[];
+      currentUserId: string;
+      adminOverview: unknown;
+      canManage: () => boolean;
+      loadTasksForCurrentUser: () => Promise<TaskResource[]>;
+      render: () => void;
+      refreshAdminOverview: () => Promise<void>;
+    };
+    const loadTasks = vi.fn(() => Promise.resolve([] as TaskResource[]));
+    controller.api = {
+      listDemoUsers: () => Promise.resolve([CURRENT_USER]),
+      getAdminOverview: () =>
+        Promise.resolve({ users: [], roles: [], permissions: [] }),
+    };
+    controller.users = [CURRENT_USER];
+    controller.tasks = [STALE_TASK];
+    controller.currentUserId = CURRENT_USER.id;
+    controller.adminOverview = null;
+    controller.canManage = () => true;
+    controller.loadTasksForCurrentUser = loadTasks;
+    controller.render = vi.fn();
+
+    await controller.refreshAdminOverview();
+
+    expect(loadTasks).toHaveBeenCalledOnce();
+    expect(controller.tasks).toEqual([]);
+  });
+
+  /** Ensures reset selects a task-readable identity before refreshing its result. */
+  it('refreshes reset results through an identity with tasks.view', async () => {
+    const requestedActors: string[] = [];
+    const controller = Object.create(AppController.prototype) as {
+      api: Pick<ApiClient, 'resetDemo' | 'listTasks'>;
+      users: ActorResource[];
+      tasks: TaskResource[];
+      currentUserId: string;
+      storage: Storage;
+      window: { confirm: () => boolean; location: { hash: string } };
+      route: unknown;
+      elements: Record<string, unknown>;
+      gate: {
+        run: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
+      };
+      closeProfileMenu: () => void;
+      closeDrawer: () => void;
+      render: () => void;
+      showToast: (message: string) => void;
+      resetDemo: () => Promise<void>;
+    };
+    controller.api = {
+      resetDemo: () => Promise.resolve({ reset: true }),
+      listTasks: (actorId) => {
+        requestedActors.push(actorId);
+        return Promise.resolve([]);
+      },
+    };
+    controller.users = [RESET_ONLY_USER, TASK_VIEWER];
+    controller.tasks = [STALE_TASK];
+    controller.currentUserId = RESET_ONLY_USER.id;
+    controller.storage = {
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    } as unknown as Storage;
+    controller.window = { confirm: () => true, location: { hash: '' } };
+    controller.route = {};
+    controller.elements = {};
+    controller.gate = { run: (_key, operation) => operation() };
+    controller.closeProfileMenu = vi.fn();
+    controller.closeDrawer = vi.fn();
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+
+    await controller.resetDemo();
+
+    expect(requestedActors).toEqual([TASK_VIEWER.id]);
+    expect(controller.currentUserId).toBe(TASK_VIEWER.id);
+  });
+
+  /** Ensures an earlier identity response cannot overwrite a later identity snapshot. */
+  it('discards out-of-order identity-switch responses', async () => {
+    const resolvers: Array<(tasks: TaskResource[]) => void> = [];
+    const controller = Object.create(AppController.prototype) as {
+      elements: { identitySelect: { value: string } };
+      storage: Storage;
+      users: ActorResource[];
+      tasks: TaskResource[];
+      currentUserId: string;
+      adminOverview: unknown;
+      identityChangeSequence: number;
+      api: Pick<ApiClient, 'listDemoUsers'>;
+      loadTasksForCurrentUser: () => Promise<TaskResource[]>;
+      canManage: () => boolean;
+      render: () => void;
+      showToast: (message: string) => void;
+      changeIdentity: () => Promise<void>;
+    };
+    const firstTasks = { ...STALE_TASK, id: 'task-first-identity' };
+    controller.elements = { identitySelect: { value: TASK_VIEWER.id } };
+    controller.storage = {
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    } as unknown as Storage;
+    controller.users = [RESET_ONLY_USER, TASK_VIEWER];
+    controller.tasks = [];
+    controller.currentUserId = RESET_ONLY_USER.id;
+    controller.adminOverview = null;
+    controller.identityChangeSequence = 0;
+    controller.api = {
+      listDemoUsers: () => Promise.resolve(controller.users),
+    };
+    controller.loadTasksForCurrentUser = () =>
+      new Promise((resolve) => resolvers.push(resolve));
+    controller.canManage = () => false;
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+
+    const firstSwitch = controller.changeIdentity();
+    controller.elements.identitySelect.value = RESET_ONLY_USER.id;
+    const secondSwitch = controller.changeIdentity();
+    resolvers[1]!([]);
+    await secondSwitch;
+    resolvers[0]!([firstTasks]);
+    await firstSwitch;
+
+    expect(controller.currentUserId).toBe(RESET_ONLY_USER.id);
+    expect(controller.tasks).toEqual([]);
+  });
+
+  /** Ensures a denied management refresh cannot leave protected overview data rendered. */
+  it('clears the cached admin view when overview access is denied', async () => {
+    const refreshedUser: ActorResource = {
+      ...CURRENT_USER,
+      role: 'user',
+      roleLabel: '用户',
+      permissions: ['tasks.view'],
+    };
+    const cachedOverview = {
+      users: [{ id: 'cached-user' }],
+      roles: [{ id: 'cached-role' }],
+      permissions: [],
+    };
+    const controller = Object.create(AppController.prototype) as {
+      api: Pick<ApiClient, 'listDemoUsers' | 'getAdminOverview'>;
+      users: ActorResource[];
+      currentUserId: string;
+      adminOverview: unknown;
+      route: { view: string };
+      window: { location: { hash: string } };
+      canManage: () => boolean;
+      handleRouteChange: () => Promise<void>;
+      render: () => void;
+      showToast: (message: string) => void;
+    };
+    controller.users = [CURRENT_USER];
+    controller.currentUserId = CURRENT_USER.id;
+    controller.adminOverview = cachedOverview;
+    controller.route = { view: 'admin' };
+    controller.window = { location: { hash: '#admin' } };
+    controller.canManage = () =>
+      controller.users.some(
+        (user) =>
+          user.id === controller.currentUserId &&
+          user.permissions?.includes('system.manage'),
+      );
+    controller.api = {
+      listDemoUsers: vi.fn(() => Promise.resolve([refreshedUser])),
+      getAdminOverview: vi.fn(() =>
+        Promise.reject(new ApiError(403, 'FORBIDDEN', '无权访问管理信息')),
+      ),
+    };
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+
+    await controller.handleRouteChange();
+
+    expect(controller.api.listDemoUsers).toHaveBeenCalledOnce();
+    expect(controller.adminOverview).toBeNull();
+    expect(controller.route.view).toBe('home');
+    expect(controller.window.location.hash).toBe('#home');
+    expect(controller.render).toHaveBeenCalledOnce();
+  });
+});

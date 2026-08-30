@@ -1,6 +1,8 @@
 /** Coordinates API state, hash routing, safe renderers, profile controls, and overlay interactions. */
 import type {
   ActorResource,
+  AdminOverviewResource,
+  PermissionCode,
   CreateTaskRequest,
   TaskAction,
   TaskResource,
@@ -23,6 +25,7 @@ import {
 } from '../profile/identity-preference.js';
 import { filterTasks, taskCounts } from '../tasks/task-filter.js';
 import { renderTaskDrawer, renderTaskGrid } from '../tasks/task-renderer.js';
+import { renderAdminView } from '../admin/admin-renderer.js';
 import { THEMES } from '../styles/configs/index.js';
 import {
   loadStyleId,
@@ -54,8 +57,10 @@ interface Elements {
   resetButton: HTMLButtonElement;
   styleSelect: HTMLSelectElement;
   viewNav: HTMLElement;
+  adminNavLink: HTMLAnchorElement;
   homeView: HTMLElement;
   tasksView: HTMLElement;
+  adminView: HTMLElement;
   statTotal: HTMLElement;
   statTotalDescription: HTMLElement;
   statNotStarted: HTMLElement;
@@ -85,6 +90,11 @@ interface Elements {
   toast: HTMLElement;
 }
 
+interface IdentitySnapshot {
+  actorId: string;
+  sequence: number;
+}
+
 /** Resolves the preserved HTML shell once so contract drift fails during startup. */
 function collectElements(document: Document): Elements {
   return {
@@ -97,8 +107,10 @@ function collectElements(document: Document): Elements {
     resetButton: requiredElement(document, '#resetButton'),
     styleSelect: requiredElement(document, '#styleSelect'),
     viewNav: requiredElement(document, '.view-nav'),
+    adminNavLink: requiredElement(document, '#adminNavLink'),
     homeView: requiredElement(document, '#homeView'),
     tasksView: requiredElement(document, '#tasksView'),
+    adminView: requiredElement(document, '#adminView'),
     statTotal: requiredElement(document, '#statTotal'),
     statTotalDescription: requiredElement(document, '#statTotalDescription'),
     statNotStarted: requiredElement(document, '#statNotStarted'),
@@ -135,7 +147,9 @@ export class AppController {
   private readonly gate = new RequestGate();
   private users: ActorResource[] = [];
   private tasks: TaskResource[] = [];
+  private adminOverview: AdminOverviewResource | null = null;
   private currentUserId = '';
+  private identityChangeSequence = 0;
   private currentStyleId = '';
   private route: RouteState;
   private selectedTaskId: string | null = null;
@@ -160,14 +174,26 @@ export class AppController {
     this.bindEvents();
     this.currentStyleId = loadStyleId(this.storage, this.styles);
     this.renderStyle(this.currentStyleId);
+    let identity: IdentitySnapshot | null = null;
     try {
-      [this.users, this.tasks] = await Promise.all([
-        this.api.listDemoUsers(),
-        this.api.listTasks(),
-      ]);
+      this.users = await this.api.listDemoUsers();
       this.currentUserId = loadCurrentUserId(this.storage, this.knownUserIds());
+      identity = this.identitySnapshot();
+      const tasks = await this.loadTasksForCurrentUser(identity.actorId);
+      if (!this.isCurrentIdentity(identity)) return;
+      this.tasks = tasks;
+      if (
+        this.route.view === 'admin' &&
+        this.canForActor(identity.actorId, 'system.manage')
+      ) {
+        const overview = await this.api.getAdminOverview(identity.actorId);
+        if (!this.isCurrentIdentity(identity)) return;
+        this.adminOverview = overview;
+      }
+      if (!this.isCurrentIdentity(identity)) return;
       this.render();
     } catch (error) {
+      if (identity && !this.isCurrentIdentity(identity)) return;
       this.showToast(this.errorMessage(error));
       this.render();
     }
@@ -197,8 +223,7 @@ export class AppController {
       passive: true,
     });
     this.window.addEventListener('hashchange', () => {
-      this.route = parseHash(this.window.location.hash);
-      this.render();
+      void this.handleRouteChange();
     });
     this.elements.homeView.addEventListener('click', (event) =>
       this.handleStatusShortcut(event),
@@ -217,6 +242,14 @@ export class AppController {
     );
     this.elements.taskGrid.addEventListener('keydown', (event) =>
       this.handleTaskKey(event),
+    );
+    this.elements.adminView.addEventListener(
+      'click',
+      (event) => void this.handleAdminClick(event),
+    );
+    this.elements.adminView.addEventListener(
+      'submit',
+      (event) => void this.handleAdminSubmit(event),
     );
     this.elements.drawerInner.addEventListener(
       'click',
@@ -243,8 +276,9 @@ export class AppController {
     this.document.addEventListener('click', (event) =>
       this.handleOutsideClick(event),
     );
-    this.elements.identitySelect.addEventListener('change', () =>
-      this.changeIdentity(),
+    this.elements.identitySelect.addEventListener(
+      'change',
+      () => void this.changeIdentity(),
     );
     this.elements.styleSelect.addEventListener('change', () =>
       this.changeStyle(),
@@ -267,13 +301,56 @@ export class AppController {
     return new Set(this.users.map((user) => user.id));
   }
 
-  /** Returns the selected actor or the first API actor as a transient startup fallback. */
+  /** Returns only the actor explicitly selected by the persisted identity ID. */
   private currentUser(): ActorResource | null {
-    return (
-      this.users.find((user) => user.id === this.currentUserId) ??
-      this.users[0] ??
-      null
+    return this.users.find((user) => user.id === this.currentUserId) ?? null;
+  }
+
+  /** Checks one actor's effective permission without consulting mutable identity state. */
+  private canForActor(actorId: string, permission: PermissionCode): boolean {
+    const user = this.users.find((candidate) => candidate.id === actorId);
+    return Boolean(
+      user &&
+      (user.permissions?.includes(permission) ||
+        (user.permissions === undefined &&
+          user.role === 'system_admin' &&
+          permission === 'system.manage')),
     );
+  }
+
+  /** Checks the current in-memory role permission before exposing a browser action. */
+  private can(permission: PermissionCode): boolean {
+    return this.canForActor(this.currentUserId, permission);
+  }
+
+  /** Returns whether the selected active user may enter the management route. */
+  private canManage(): boolean {
+    return this.can('system.manage');
+  }
+
+  /** Captures the active actor and identity generation for one async workflow. */
+  private identitySnapshot(): IdentitySnapshot {
+    return {
+      actorId: this.currentUserId,
+      sequence: this.identityChangeSequence,
+    };
+  }
+
+  /** Rejects responses from an actor or identity generation that is no longer current. */
+  private isCurrentIdentity(identity: IdentitySnapshot): boolean {
+    return (
+      identity.actorId === this.currentUserId &&
+      identity.sequence === this.identityChangeSequence
+    );
+  }
+
+  /** Loads task data only for the captured identity with the task-read permission. */
+  private async loadTasksForCurrentUser(
+    actorId = this.currentUserId,
+  ): Promise<TaskResource[]> {
+    return this.canForActor(actorId, 'tasks.view')
+      ? this.api.listTasks(actorId)
+      : [];
   }
 
   /** Renders profile, statistics, route controls, view visibility, list, and selected drawer. */
@@ -283,6 +360,7 @@ export class AppController {
     this.renderControls();
     this.renderView();
     this.renderTasks();
+    this.renderAdmin();
     if (this.selectedTaskId) this.renderDrawer();
   }
 
@@ -312,6 +390,9 @@ export class AppController {
         return option;
       }),
     );
+    this.elements.adminNavLink.hidden = !this.canManage();
+    this.elements.newTaskButton.hidden = !this.can('tasks.create');
+    this.elements.resetButton.hidden = !this.can('demo.reset');
   }
 
   /** Renders current-user status overview and scope-relative filter counts. */
@@ -377,9 +458,18 @@ export class AppController {
   /** Shows the route-selected view and its matching navigation current state. */
   private renderView(): void {
     const tasksVisible = this.route.view === 'tasks';
+    const adminVisible = this.route.view === 'admin' && this.canManage();
     const enteringTasks = tasksVisible && this.renderedView !== 'tasks';
-    this.elements.homeView.classList.toggle('is-active', !tasksVisible);
+    this.elements.homeView.classList.toggle(
+      'is-active',
+      !tasksVisible && !adminVisible,
+    );
     this.elements.tasksView.classList.toggle('is-active', tasksVisible);
+    this.elements.adminView.classList.toggle('is-active', adminVisible);
+    if (this.route.view === 'admin' && !adminVisible) {
+      this.window.location.hash = '#home';
+      return;
+    }
     this.document.documentElement.classList.toggle(
       'tasks-scroll-mode',
       tasksVisible,
@@ -392,7 +482,7 @@ export class AppController {
       if (active) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     }
-    this.renderedView = this.route.view;
+    this.renderedView = this.route.view === 'admin' ? 'home' : this.route.view;
     if (enteringTasks) {
       this.measureTasksIntroCollapse();
     } else if (!tasksVisible) {
@@ -460,6 +550,19 @@ export class AppController {
     );
   }
 
+  /** Renders the loaded administrator overview or leaves the protected view empty. */
+  private renderAdmin(): void {
+    if (
+      this.route.view !== 'admin' ||
+      !this.adminOverview ||
+      !this.canManage()
+    ) {
+      this.elements.adminView.replaceChildren();
+      return;
+    }
+    renderAdminView(this.document, this.elements.adminView, this.adminOverview);
+  }
+
   /** Re-renders the selected drawer or closes it if a refresh removed the task. */
   private renderDrawer(): void {
     const task = this.tasks.find(
@@ -474,6 +577,7 @@ export class AppController {
       this.elements.drawerInner,
       task,
       this.currentUserId,
+      this.currentUser()?.permissions,
     );
     this.elements.drawer.classList.add('is-open');
     this.elements.drawerBackdrop.classList.add('is-open');
@@ -657,16 +761,20 @@ export class AppController {
     if (!button?.dataset.action || !task) return;
     const action = button.dataset.action as TaskAction;
     await this.gate.run(`task:${task.id}`, async () => {
+      const identity = this.identitySnapshot();
       try {
-        const updated = await this.api.actOnTask(this.currentUserId, task.id, {
+        const updated = await this.api.actOnTask(identity.actorId, task.id, {
           action,
           expectedVersion: task.version,
         });
+        if (!this.isCurrentIdentity(identity)) return;
         this.replaceTask(updated);
         this.render();
         this.showToast('任务状态已更新');
       } catch (error) {
-        await this.resynchronizeTasks();
+        if (!this.isCurrentIdentity(identity)) return;
+        await this.resynchronizeTasks(identity);
+        if (!this.isCurrentIdentity(identity)) return;
         this.showToast(this.errorMessage(error));
       }
     });
@@ -683,14 +791,74 @@ export class AppController {
   }
 
   /** Switches the current demo identity and persists only its ID. */
-  private changeIdentity(): void {
-    this.currentUserId = saveCurrentUserId(
+  private async changeIdentity(): Promise<void> {
+    const sequence = ++this.identityChangeSequence;
+    const actorId = saveCurrentUserId(
       this.storage,
       this.elements.identitySelect.value,
       this.knownUserIds(),
     );
+    this.currentUserId = actorId;
+    this.adminOverview = null;
+    this.tasks = [];
     this.render();
-    this.showToast('已切换当前身份');
+    const identity = { actorId, sequence };
+    try {
+      const tasks = await this.loadTasksForCurrentUser(actorId);
+      if (!this.isCurrentIdentity(identity)) return;
+      this.tasks = tasks;
+      if (this.canForActor(actorId, 'system.manage')) {
+        const overview = await this.api.getAdminOverview(actorId);
+        if (!this.isCurrentIdentity(identity)) return;
+        this.adminOverview = overview;
+      }
+      if (!this.isCurrentIdentity(identity)) return;
+      this.render();
+      this.showToast('已切换当前身份');
+    } catch (error) {
+      if (!this.isCurrentIdentity(identity)) return;
+      this.tasks = [];
+      this.render();
+      this.showToast(this.errorMessage(error));
+    }
+  }
+
+  /** Loads the protected management overview when hash navigation enters admin. */
+  private async handleRouteChange(): Promise<void> {
+    this.route = parseHash(this.window.location.hash);
+    const identity = this.identitySnapshot();
+    if (
+      this.route.view === 'admin' &&
+      this.canForActor(identity.actorId, 'system.manage')
+    ) {
+      try {
+        const overview = await this.api.getAdminOverview(identity.actorId);
+        if (!this.isCurrentIdentity(identity)) return;
+        this.adminOverview = overview;
+      } catch (error) {
+        if (!this.isCurrentIdentity(identity)) return;
+        if (
+          error instanceof ApiError &&
+          (error.status === 401 || error.status === 403)
+        ) {
+          this.adminOverview = null;
+          try {
+            const users = await this.api.listDemoUsers();
+            if (!this.isCurrentIdentity(identity)) return;
+            this.users = users;
+          } catch {
+            // Keep the existing identity list when the permission refresh also fails.
+          }
+          if (!this.isCurrentIdentity(identity)) return;
+          this.route = parseHash('#home');
+          this.window.location.hash = '#home';
+        }
+        if (!this.isCurrentIdentity(identity)) return;
+        this.showToast(this.errorMessage(error));
+      }
+    }
+    if (!this.isCurrentIdentity(identity)) return;
+    this.render();
   }
 
   /** Applies server reset, restores user A, and refreshes the in-memory snapshot once. */
@@ -700,22 +868,39 @@ export class AppController {
     )
       return;
     await this.gate.run('reset', async () => {
+      const identity = this.identitySnapshot();
+      let activeIdentity = identity;
       try {
-        await this.api.resetDemo(this.currentUserId);
-        this.tasks = await this.api.listTasks();
-        this.currentUserId = saveCurrentUserId(
+        await this.api.resetDemo(identity.actorId);
+        if (!this.isCurrentIdentity(identity)) return;
+        const taskReader =
+          this.users.find((user) => user.permissions?.includes('tasks.view')) ??
+          this.users[0];
+        const actorId = saveCurrentUserId(
           this.storage,
-          this.users[0]?.id ?? '',
+          taskReader?.id ?? '',
           this.knownUserIds(),
         );
+        const sequence = ++this.identityChangeSequence;
+        this.currentUserId = actorId;
+        const nextIdentity = { actorId, sequence };
+        activeIdentity = nextIdentity;
+        this.tasks = [];
+        this.adminOverview = null;
+        const tasks = await this.loadTasksForCurrentUser(actorId);
+        if (!this.isCurrentIdentity(nextIdentity)) return;
+        this.tasks = tasks;
         this.closeProfileMenu();
         this.closeDrawer();
         this.route = parseHash('#tasks?scope=all&filter=全部');
         this.window.location.hash = buildTaskHash(this.route);
+        if (!this.isCurrentIdentity(nextIdentity)) return;
         this.render();
         this.showToast('演示数据已恢复');
       } catch (error) {
-        await this.resynchronizeTasks();
+        if (!this.isCurrentIdentity(activeIdentity)) return;
+        await this.resynchronizeTasks(activeIdentity);
+        if (!this.isCurrentIdentity(activeIdentity)) return;
         this.showToast(this.errorMessage(error));
       }
     });
@@ -725,6 +910,7 @@ export class AppController {
   private async createTask(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     await this.gate.run('create', async () => {
+      const identity = this.identitySnapshot();
       const form = new FormData(this.elements.taskForm);
       const command: CreateTaskRequest = {
         title: formText(form, 'title'),
@@ -734,17 +920,151 @@ export class AppController {
         dueDate: formText(form, 'dueDate'),
       };
       try {
-        const created = await this.api.createTask(this.currentUserId, command);
+        const created = await this.api.createTask(identity.actorId, command);
+        if (!this.isCurrentIdentity(identity)) return;
         this.tasks = [created, ...this.tasks];
         this.closeModal();
         this.render();
         this.openDrawer(created.id);
         this.showToast('新任务已发布');
       } catch (error) {
-        await this.resynchronizeTasks();
+        if (!this.isCurrentIdentity(identity)) return;
+        await this.resynchronizeTasks(identity);
+        if (!this.isCurrentIdentity(identity)) return;
         this.elements.formError.textContent = this.errorMessage(error);
       }
     });
+  }
+
+  /** Handles safe admin creation and edit forms through one delegated submit path. */
+  private async handleAdminSubmit(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.dataset.adminForm) return;
+    const values = new FormData(form);
+    const kind = form.dataset.adminForm;
+    await this.gate.run(
+      `admin:${kind}:${form.dataset.adminId ?? 'new'}`,
+      async () => {
+        const identity = this.identitySnapshot();
+        try {
+          if (kind === 'create-user') {
+            await this.api.createAdminUser(identity.actorId, {
+              name: formText(values, 'name'),
+              roleId: formText(values, 'roleId'),
+            });
+          } else if (kind === 'user') {
+            await this.api.updateAdminUser(
+              identity.actorId,
+              form.dataset.adminId ?? '',
+              {
+                name: formText(values, 'name'),
+                roleId: formText(values, 'roleId'),
+              },
+            );
+          } else if (kind === 'create-role') {
+            await this.api.createAdminRole(identity.actorId, {
+              name: formText(values, 'name'),
+              permissions: values.getAll('permissions') as PermissionCode[],
+            });
+          } else if (kind === 'role') {
+            await this.api.updateAdminRole(
+              identity.actorId,
+              form.dataset.adminId ?? '',
+              {
+                name: formText(values, 'name'),
+                permissions: values.getAll('permissions') as PermissionCode[],
+              },
+            );
+          } else return;
+          if (!this.isCurrentIdentity(identity)) return;
+          await this.refreshAdminOverview(identity);
+          if (!this.isCurrentIdentity(identity)) return;
+          this.showToast('管理信息已更新');
+        } catch (error) {
+          if (!this.isCurrentIdentity(identity)) return;
+          this.showToast(this.errorMessage(error));
+        }
+      },
+    );
+  }
+
+  /** Handles admin lifecycle buttons while keeping destructive operations soft-delete only. */
+  private async handleAdminClick(event: Event): Promise<void> {
+    if (!(event.target instanceof Element)) return;
+    const button = event.target.closest<HTMLButtonElement>(
+      '[data-admin-action]',
+    );
+    if (!button?.dataset.adminAction || !button.dataset.adminId) return;
+    const action = button.dataset.adminAction;
+    const id = button.dataset.adminId;
+    await this.gate.run(`admin:${action}:${id}`, async () => {
+      const identity = this.identitySnapshot();
+      try {
+        if (action === 'delete-user')
+          await this.api.deleteAdminUser(identity.actorId, id);
+        else if (action === 'restore-user')
+          await this.api.restoreAdminUser(identity.actorId, id);
+        else if (action === 'delete-role')
+          await this.api.deleteAdminRole(identity.actorId, id);
+        else if (action === 'restore-role')
+          await this.api.restoreAdminRole(identity.actorId, id);
+        if (!this.isCurrentIdentity(identity)) return;
+        await this.refreshAdminOverview(identity);
+        if (!this.isCurrentIdentity(identity)) return;
+        this.showToast('管理信息已更新');
+      } catch (error) {
+        if (!this.isCurrentIdentity(identity)) return;
+        this.showToast(this.errorMessage(error));
+      }
+    });
+  }
+
+  /** Re-reads admin state and falls back to the first manager if the current one lost access. */
+  private async refreshAdminOverview(
+    identity = this.identitySnapshot(),
+  ): Promise<void> {
+    const users = await this.api.listDemoUsers();
+    if (!this.isCurrentIdentity(identity)) return;
+    this.users = users;
+    if (!this.canForActor(identity.actorId, 'system.manage')) {
+      const fallback =
+        this.users.find(
+          (user) =>
+            user.id !== identity.actorId &&
+            (user.permissions?.includes('system.manage') ||
+              (user.permissions === undefined && user.role === 'system_admin')),
+        ) ??
+        this.users.find((user) => user.id !== identity.actorId) ??
+        this.users[0];
+      const actorId = saveCurrentUserId(
+        this.storage,
+        fallback?.id ?? '',
+        this.knownUserIds(),
+      );
+      const sequence = ++this.identityChangeSequence;
+      this.currentUserId = actorId;
+      this.adminOverview = null;
+      this.tasks = [];
+      this.closeProfileMenu();
+      this.closeDrawer();
+      this.route = parseHash('#home');
+      this.window.location.hash = '#home';
+      this.render();
+      const nextIdentity = { actorId, sequence };
+      const tasks = await this.loadTasksForCurrentUser(actorId);
+      if (!this.isCurrentIdentity(nextIdentity)) return;
+      this.tasks = tasks;
+      this.render();
+      return;
+    }
+    const overview = await this.api.getAdminOverview(identity.actorId);
+    if (!this.isCurrentIdentity(identity)) return;
+    this.adminOverview = overview;
+    const tasks = await this.loadTasksForCurrentUser(identity.actorId);
+    if (!this.isCurrentIdentity(identity)) return;
+    this.tasks = tasks;
+    this.render();
   }
 
   /** Closes the profile menu for clicks outside both trigger and floating panel. */
@@ -768,10 +1088,15 @@ export class AppController {
       this.closeDrawer();
   }
 
-  /** Reloads tasks after any failed mutation or conflict, retaining visible UI filters. */
-  private async resynchronizeTasks(): Promise<void> {
+  /** Reloads tasks for one captured identity after a failed mutation or conflict. */
+  private async resynchronizeTasks(
+    identity = this.identitySnapshot(),
+  ): Promise<void> {
+    if (!this.isCurrentIdentity(identity)) return;
     try {
-      this.tasks = await this.api.listTasks();
+      const tasks = await this.api.listTasks(identity.actorId);
+      if (!this.isCurrentIdentity(identity)) return;
+      this.tasks = tasks;
       this.render();
     } catch {
       // The original command error remains the most useful message when refresh also fails.
