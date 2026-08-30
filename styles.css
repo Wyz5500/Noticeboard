@@ -1350,6 +1350,9 @@ body[data-style='pixel-retro'] .task-card:hover {
     padding-left: 15px;
     border-right: 0;
   }
+  .stat-card:nth-child(odd) {
+    border-right: var(--border-width) solid var(--line);
+  }
   .stat-card:nth-child(-n + 4) {
     border-bottom: var(--border-width) solid var(--line);
   }

@@ -66,6 +66,22 @@ test('navigates and filters the in-memory task board', async ({ page }) => {
   await expect(page).toHaveURL(/scope=mine/);
 });
 
+/** Proves the mobile two-column status grid keeps its middle vertical separators. */
+test('keeps mobile status grid separators between both columns', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 412, height: 915 });
+  await page.reload();
+
+  const borderWidths = await page
+    .locator('.stat-card')
+    .evaluateAll((cards) =>
+      cards.slice(0, 5).map((card) => getComputedStyle(card).borderRightWidth),
+    );
+
+  expect(borderWidths).toEqual(['1px', '0px', '1px', '0px', '1px']);
+});
+
 /** Proves create, accept, complete, reopen, replacement acceptance, and approval traverse the API. */
 test('completes a reopened task with a replacement assignee', async ({
   page,
