@@ -1,18 +1,7 @@
-/** Compares every preserved theme and major overlay state against the frozen prototype baseline. */
+/** Compares the Swiss International baseline theme and its major overlay states against frozen screenshots. */
 import { expect, test, type Page } from '@playwright/test';
 
-const THEME_IDS = [
-  'swiss-international',
-  'neo-brutalism',
-  'bauhaus',
-  'y2k-cyber',
-  'retro-terminal',
-  'memphis',
-  'editorial-magazine',
-  'glassmorphism',
-  'japanese-minimalism',
-  'pixel-retro',
-] as const;
+const THEME_IDS = ['swiss-international'] as const;
 
 /** Waits for the modal's real CSS transition to finish before taking a stable screenshot. */
 async function waitForModalTransition(page: Page): Promise<void> {

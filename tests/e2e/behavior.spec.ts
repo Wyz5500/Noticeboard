@@ -241,6 +241,47 @@ test('uses responsive task-grid columns', async ({ page }) => {
   await expect.poll(() => columnsAt(620)).toBe(1);
 });
 
+/** Proves one or two visible tasks keep the standard desktop card width instead of filling the row. */
+test('keeps sparse task-grid cards at the standard desktop width', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(
+    isMobile,
+    'Sparse desktop card sizing is covered by the desktop project.',
+  );
+  await page.setViewportSize({ width: 1440, height: 915 });
+  await page.goto('/#tasks?scope=all&filter=全部');
+
+  const standard = await page.locator('.task-grid').evaluate((grid) => ({
+    columns: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+    gridWidth: grid.clientWidth,
+    cardWidth: grid.querySelector<HTMLElement>('.task-card')?.clientWidth ?? 0,
+  }));
+
+  await page.goto('/#tasks?scope=all&filter=关闭');
+  await expect(page.locator('.task-card')).toHaveCount(2);
+  const twoCardLayout = await page.locator('.task-grid').evaluate((grid) => ({
+    columns: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+    gridWidth: grid.clientWidth,
+    cardWidth: grid.querySelector<HTMLElement>('.task-card')?.clientWidth ?? 0,
+  }));
+
+  await page.goto('/#tasks?scope=all&filter=全部&q=赤岩');
+  await expect(page.locator('.task-card')).toHaveCount(1);
+  const oneCardLayout = await page.locator('.task-grid').evaluate((grid) => ({
+    columns: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+    gridWidth: grid.clientWidth,
+    cardWidth: grid.querySelector<HTMLElement>('.task-card')?.clientWidth ?? 0,
+  }));
+
+  for (const layout of [twoCardLayout, oneCardLayout]) {
+    expect(layout.columns).toBe(standard.columns);
+    expect(Math.abs(layout.cardWidth - standard.cardWidth)).toBeLessThan(2);
+    expect(layout.cardWidth).toBeLessThan(layout.gridWidth / 2);
+  }
+});
+
 /** Proves long task content grows its row and remains inside every card boundary. */
 test('keeps task-card content inside its card at narrow widths', async ({
   page,
