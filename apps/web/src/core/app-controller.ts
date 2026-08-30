@@ -133,7 +133,6 @@ export class AppController {
   private currentStyleId = '';
   private route: RouteState;
   private selectedTaskId: string | null = null;
-  private toastTimer: number | undefined;
 
   /** Receives browser boundaries and the versioned API client from the entrypoint. */
   constructor(
@@ -724,15 +723,21 @@ export class AppController {
     return error instanceof ApiError ? error.message : '请求失败，请稍后重试';
   }
 
-  /** Shows a polite status toast and restarts its visibility timeout. */
+  /** Adds a polite status toast at the top of the independent notification stack. */
   private showToast(message: string): void {
-    if (this.toastTimer !== undefined)
-      this.window.clearTimeout(this.toastTimer);
-    this.elements.toast.textContent = message;
-    this.elements.toast.classList.add('is-visible');
-    this.toastTimer = this.window.setTimeout(
-      () => this.elements.toast.classList.remove('is-visible'),
-      2600,
+    const notification = createNode(
+      this.document,
+      'div',
+      'toast-item',
+      message,
     );
+    this.elements.toast.prepend(notification);
+    this.window.requestAnimationFrame(() =>
+      notification.classList.add('is-visible'),
+    );
+    this.window.setTimeout(() => {
+      notification.classList.remove('is-visible');
+      this.window.setTimeout(() => notification.remove(), 200);
+    }, 2600);
   }
 }

@@ -997,9 +997,18 @@ h1 em {
 }
 .toast {
   position: fixed;
-  z-index: 40;
-  right: 22px;
-  bottom: 22px;
+  top: 22px;
+  left: 50%;
+  z-index: 1000;
+  display: flex;
+  width: min(280px, calc(100vw - 44px));
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+.toast-item {
   max-width: 280px;
   padding: 12px 15px;
   border: var(--border-width) solid var(--accent);
@@ -1008,14 +1017,13 @@ h1 em {
   color: var(--accent-contrast);
   font-size: 12px;
   opacity: 0;
-  transform: translateY(8px);
-  pointer-events: none;
+  transform: translateY(-8px);
   box-shadow: var(--shadow);
   transition:
     opacity 0.2s,
     transform 0.2s;
 }
-.toast.is-visible {
+.toast-item.is-visible {
   opacity: 1;
   transform: translateY(0);
 }
@@ -1085,7 +1093,7 @@ body[data-style='y2k-cyber'] .profile-select {
   background-color: var(--white);
 }
 body[data-style='y2k-cyber'] .primary-button,
-body[data-style='y2k-cyber'] .toast {
+body[data-style='y2k-cyber'] .toast-item {
   box-shadow: 0 5px 14px rgba(19, 218, 202, 0.27);
 }
 
@@ -1408,8 +1416,8 @@ body[data-style='pixel-retro'] .task-card:hover {
     grid-column: auto;
   }
   .toast {
-    right: 12px;
-    bottom: 78px;
+    top: 12px;
+    width: min(280px, calc(100vw - 24px));
   }
 }
 

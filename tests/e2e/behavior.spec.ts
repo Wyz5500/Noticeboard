@@ -215,6 +215,35 @@ test('persists identity and visual style without local task data', async ({
   ).resolves.toBeNull();
 });
 
+/** Proves notifications stay at the top, use the highest layer, and stack newest first. */
+test('stacks notifications from the top', async ({ page }) => {
+  await page.locator('#profileButton').click();
+  await page.locator('#identitySelect').selectOption('adventurer-b');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.locator('#resetButton').click();
+
+  const notifications = page.locator('#toast .toast-item');
+  await expect(notifications).toHaveCount(2);
+  await expect(notifications).toHaveText(['演示数据已恢复', '已切换当前身份']);
+
+  const toastPosition = await page.locator('#toast').evaluate((toast) => ({
+    position: getComputedStyle(toast).position,
+    rect: toast.getBoundingClientRect().toJSON(),
+    viewportWidth: window.innerWidth,
+    zIndex: getComputedStyle(toast).zIndex,
+  }));
+  expect(toastPosition.position).toBe('fixed');
+  expect(toastPosition.rect.top).toBeLessThan(30);
+  expect(
+    Math.abs(
+      toastPosition.rect.left +
+        toastPosition.rect.width / 2 -
+        toastPosition.viewportWidth / 2,
+    ),
+  ).toBe(0);
+  expect(toastPosition.zIndex).toBe('1000');
+});
+
 /** Proves menu, modal, and drawer preserve outside-click and Escape closing behavior. */
 test('closes overlays with outside clicks and Escape priority', async ({
   page,
