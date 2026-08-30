@@ -133,6 +133,185 @@ test('uses responsive task-grid columns', async ({ page }) => {
   await expect.poll(() => columnsAt(620)).toBe(1);
 });
 
+/** Proves the task board opens expanded and snaps the outer page between both title states. */
+test('snaps the task page between expanded and collapsed title states', async ({
+  page,
+}) => {
+  await page.goto('/#tasks?scope=all&filter=全部');
+
+  const layoutState = () =>
+    page.evaluate(() => {
+      const topbar = document.querySelector<HTMLElement>('.topbar');
+      const intro = document.querySelector<HTMLElement>('.tasks-intro');
+      const board = document.querySelector<HTMLElement>('.board-layout');
+      if (!topbar || !intro || !board)
+        throw new Error('Task layout is missing');
+      return {
+        scrollY: window.scrollY,
+        topbarBottom: topbar.getBoundingClientRect().bottom,
+        introBottom: intro.getBoundingClientRect().bottom,
+        boardTop: board.getBoundingClientRect().top,
+      };
+    });
+
+  await expect
+    .poll(async () => (await layoutState()).boardTop)
+    .toBeGreaterThan(0);
+  const expanded = await layoutState();
+  expect(expanded.scrollY).toBe(0);
+  expect(expanded.introBottom).toBeGreaterThan(expanded.topbarBottom);
+  expect(expanded.boardTop).toBeGreaterThan(expanded.topbarBottom);
+
+  await page.locator('.board-sidebar').hover();
+  await page.mouse.wheel(0, 1000);
+  await expect
+    .poll(async () => (await layoutState()).scrollY)
+    .toBeGreaterThan(0);
+  const recollapsed = await layoutState();
+  expect(recollapsed.introBottom).toBeLessThanOrEqual(
+    recollapsed.topbarBottom + 3,
+  );
+  expect(recollapsed.boardTop).toBeCloseTo(recollapsed.topbarBottom, 0);
+
+  await page.mouse.wheel(0, -1000);
+  await expect.poll(async () => (await layoutState()).scrollY).toBe(0);
+  const reexpanded = await layoutState();
+  expect(reexpanded.introBottom).toBeGreaterThan(reexpanded.topbarBottom);
+  expect(reexpanded.boardTop).toBeGreaterThan(reexpanded.topbarBottom);
+});
+
+/** Proves entering the task page leaves the title visible and preserves smooth scrolling. */
+test('opens the task page expanded with smooth scrolling enabled', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto('/');
+  await page.getByRole('link', { name: '任务页' }).click();
+
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => getComputedStyle(document.documentElement).scrollBehavior,
+      ),
+    )
+    .toBe('smooth');
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const intro = document.querySelector<HTMLElement>('.tasks-intro');
+        const topbar = document.querySelector<HTMLElement>('.topbar');
+        if (!intro || !topbar) throw new Error('Task layout is missing');
+        return (
+          intro.getBoundingClientRect().bottom -
+          topbar.getBoundingClientRect().bottom
+        );
+      }),
+    )
+    .toBeGreaterThan(3);
+});
+
+/** Proves leaving and re-entering the task page keeps its title visible by default. */
+test('re-enters the task page with its intro expanded', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto('/');
+  await page.getByRole('link', { name: '任务页' }).click();
+  await expect(page.locator('.tasks-intro')).toBeVisible();
+
+  await page.getByRole('link', { name: '首页', exact: true }).click();
+  await expect(page.locator('#homeView')).toBeVisible();
+  await page.getByRole('link', { name: '任务页' }).click();
+
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => getComputedStyle(document.documentElement).scrollBehavior,
+      ),
+    )
+    .toBe('smooth');
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const intro = document.querySelector<HTMLElement>('.tasks-intro');
+        const topbar = document.querySelector<HTMLElement>('.topbar');
+        if (!intro || !topbar) throw new Error('Task layout is missing');
+        return (
+          intro.getBoundingClientRect().bottom -
+          topbar.getBoundingClientRect().bottom
+        );
+      }),
+    )
+    .toBeGreaterThan(3);
+});
+
+/** Proves arbitrary outer-page scrolling settles at the expanded or collapsed endpoint. */
+test('settles intermediate outer task-page scroll positions', async ({
+  page,
+}) => {
+  await page.goto('/#tasks?scope=all&filter=全部');
+  const collapsedScrollY = await page.evaluate(() => {
+    const topbar = document.querySelector<HTMLElement>('.topbar');
+    const board = document.querySelector<HTMLElement>('.board-layout');
+    if (!topbar || !board) throw new Error('Task layout is missing');
+    return Math.max(
+      0,
+      board.getBoundingClientRect().top +
+        window.scrollY -
+        topbar.getBoundingClientRect().height,
+    );
+  });
+  expect(collapsedScrollY).toBeGreaterThan(0);
+
+  await page.evaluate(
+    (scrollY) => window.scrollTo(0, scrollY / 2),
+    collapsedScrollY,
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (collapsedY) =>
+          Math.min(
+            Math.abs(window.scrollY),
+            Math.abs(window.scrollY - collapsedY),
+          ),
+        collapsedScrollY,
+      ),
+    )
+    .toBeLessThan(1);
+});
+
+/** Proves the task list scrolls independently while the board chrome stays in place. */
+test('scrolls task cards without moving board chrome', async ({ page }) => {
+  await page.goto('/#tasks?scope=all&filter=全部');
+
+  const before = await page
+    .locator('.board-sidebar, .board-toolbar')
+    .evaluateAll((elements) =>
+      elements.map((element) => element.getBoundingClientRect().top),
+    );
+  const listMetrics = await page.locator('#taskGrid').evaluate((grid) => ({
+    clientHeight: grid.clientHeight,
+    scrollHeight: grid.scrollHeight,
+    overflowY: getComputedStyle(grid).overflowY,
+  }));
+
+  expect(listMetrics.overflowY).toBe('auto');
+  expect(listMetrics.scrollHeight).toBeGreaterThan(listMetrics.clientHeight);
+  await page.locator('#taskGrid').evaluate((grid) => {
+    grid.scrollTop = grid.scrollHeight;
+  });
+  await expect
+    .poll(() => page.locator('#taskGrid').evaluate((grid) => grid.scrollTop))
+    .toBeGreaterThan(0);
+
+  const after = await page
+    .locator('.board-sidebar, .board-toolbar')
+    .evaluateAll((elements) =>
+      elements.map((element) => element.getBoundingClientRect().top),
+    );
+  expect(after).toEqual(before);
+});
+
 /** Proves the mobile two-column status grid keeps its middle vertical separators. */
 test('keeps mobile status grid separators between both columns', async ({
   page,

@@ -45,6 +45,7 @@ function formText(form: FormData, name: string): string {
 }
 
 interface Elements {
+  topbar: HTMLElement;
   profileMenu: HTMLElement;
   profileButton: HTMLButtonElement;
   profilePanel: HTMLElement;
@@ -67,6 +68,7 @@ interface Elements {
   resultCount: HTMLElement;
   searchInput: HTMLInputElement;
   newTaskButton: HTMLButtonElement;
+  boardLayout: HTMLElement;
   taskGrid: HTMLElement;
   identitySelect: HTMLSelectElement;
   drawer: HTMLElement;
@@ -85,6 +87,7 @@ interface Elements {
 /** Resolves the preserved HTML shell once so contract drift fails during startup. */
 function collectElements(document: Document): Elements {
   return {
+    topbar: requiredElement(document, '.topbar'),
     profileMenu: requiredElement(document, '#profileMenu'),
     profileButton: requiredElement(document, '#profileButton'),
     profilePanel: requiredElement(document, '#profilePanel'),
@@ -107,6 +110,7 @@ function collectElements(document: Document): Elements {
     resultCount: requiredElement(document, '#resultCount'),
     searchInput: requiredElement(document, '#searchInput'),
     newTaskButton: requiredElement(document, '#newTaskButton'),
+    boardLayout: requiredElement(document, '.board-layout'),
     taskGrid: requiredElement(document, '#taskGrid'),
     identitySelect: requiredElement(document, '#identitySelect'),
     drawer: requiredElement(document, '#detailDrawer'),
@@ -133,6 +137,9 @@ export class AppController {
   private currentStyleId = '';
   private route: RouteState;
   private selectedTaskId: string | null = null;
+  private renderedView: RouteState['view'] | null = null;
+  private tasksCollapsedScrollY = 0;
+  private taskPageScrollTimer: number | null = null;
 
   /** Receives browser boundaries and the versioned API client from the entrypoint. */
   constructor(
@@ -184,6 +191,9 @@ export class AppController {
 
   /** Attaches all preserved navigation, overlay, form, and keyboard interactions. */
   private bindEvents(): void {
+    this.window.addEventListener('scroll', () => this.handleTaskPageScroll(), {
+      passive: true,
+    });
     this.window.addEventListener('hashchange', () => {
       this.route = parseHash(this.window.location.hash);
       this.render();
@@ -364,8 +374,13 @@ export class AppController {
   /** Shows the route-selected view and its matching navigation current state. */
   private renderView(): void {
     const tasksVisible = this.route.view === 'tasks';
+    const enteringTasks = tasksVisible && this.renderedView !== 'tasks';
     this.elements.homeView.classList.toggle('is-active', !tasksVisible);
     this.elements.tasksView.classList.toggle('is-active', tasksVisible);
+    this.document.documentElement.classList.toggle(
+      'tasks-scroll-mode',
+      tasksVisible,
+    );
     for (const link of this.elements.viewNav.querySelectorAll<HTMLElement>(
       '[data-view]',
     )) {
@@ -374,6 +389,48 @@ export class AppController {
       if (active) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     }
+    this.renderedView = this.route.view;
+    if (enteringTasks) {
+      this.measureTasksIntroCollapse();
+    } else if (!tasksVisible) {
+      this.clearTaskPageScrollTimer();
+      this.tasksCollapsedScrollY = 0;
+    }
+  }
+
+  /** Caches the outer-page position where the task intro becomes fully hidden. */
+  private measureTasksIntroCollapse(): void {
+    const boardTop =
+      this.elements.boardLayout.getBoundingClientRect().top +
+      this.window.scrollY;
+    const topbarHeight = this.elements.topbar.getBoundingClientRect().height;
+    this.tasksCollapsedScrollY = Math.max(0, boardTop - topbarHeight);
+  }
+
+  /** Debounces outer task-page scrolling so only the nearest title endpoint remains visible. */
+  private handleTaskPageScroll(): void {
+    if (this.route.view !== 'tasks' || this.tasksCollapsedScrollY <= 0) return;
+    this.clearTaskPageScrollTimer();
+    this.taskPageScrollTimer = this.window.setTimeout(() => {
+      this.taskPageScrollTimer = null;
+      this.snapTaskPageScroll();
+    }, 80);
+  }
+
+  /** Snaps an interrupted outer task-page scroll to either the expanded or collapsed endpoint. */
+  private snapTaskPageScroll(): void {
+    const midpoint = this.tasksCollapsedScrollY / 2;
+    const target =
+      this.window.scrollY > midpoint ? this.tasksCollapsedScrollY : 0;
+    if (Math.abs(this.window.scrollY - target) < 1) return;
+    this.window.scrollTo({ top: target, behavior: 'auto' });
+  }
+
+  /** Cancels a pending outer task-page snap before leaving the task view. */
+  private clearTaskPageScrollTimer(): void {
+    if (this.taskPageScrollTimer === null) return;
+    this.window.clearTimeout(this.taskPageScrollTimer);
+    this.taskPageScrollTimer = null;
   }
 
   /** Filters and renders the in-memory task snapshot without network requests. */

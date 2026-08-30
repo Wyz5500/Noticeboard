@@ -26,6 +26,7 @@
     sans-serif;
   --meta-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --max-width: 1440px;
+  --topbar-offset: 86px;
 }
 
 * {
@@ -37,6 +38,9 @@ html {
 html,
 body {
   overflow-x: hidden;
+}
+html.tasks-scroll-mode .app-shell {
+  padding-bottom: 0;
 }
 body {
   margin: 0;
@@ -432,10 +436,22 @@ h1 em {
   font-style: normal;
 }
 .board-layout {
+  position: sticky;
+  top: var(--topbar-offset);
+  z-index: 10;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
   gap: 68px;
+  height: calc(100dvh - var(--topbar-offset));
+  min-height: 0;
   padding-top: 54px;
+  overflow: hidden;
+  background: var(--paper);
+  overflow-anchor: none;
+}
+.board-sidebar {
+  min-height: 0;
+  overflow-y: auto;
 }
 .section-kicker {
   font-size: 10px;
@@ -521,6 +537,11 @@ h1 em {
   font-size: 11px;
   line-height: 1.7;
 }
+.board-content {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
 .board-toolbar {
   min-height: 50px;
   display: flex;
@@ -528,6 +549,9 @@ h1 em {
   justify-content: space-between;
   gap: 20px;
   border-bottom: var(--border-width) solid var(--line);
+  position: relative;
+  z-index: 1;
+  background: var(--paper);
 }
 .result-count {
   margin: 12px 0 0;
@@ -592,10 +616,15 @@ h1 em {
   cursor: not-allowed;
 }
 .task-grid {
+  min-height: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
-  padding-top: 20px;
+  padding: 20px 6px 20px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  align-content: start;
+  overflow-anchor: none;
 }
 .task-card {
   min-height: 260px;
@@ -1254,6 +1283,9 @@ body[data-style='pixel-retro'] .task-card:hover {
 }
 
 @media (max-width: 840px) {
+  :root {
+    --topbar-offset: 86px;
+  }
   .app-shell {
     padding: 86px 20px 120px;
   }
@@ -1279,6 +1311,7 @@ body[data-style='pixel-retro'] .task-card:hover {
   }
   .board-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 32px;
     padding-top: 35px;
   }
@@ -1302,6 +1335,9 @@ body[data-style='pixel-retro'] .task-card:hover {
 }
 
 @media (max-width: 620px) {
+  :root {
+    --topbar-offset: 99px;
+  }
   .app-shell {
     padding: 102px 20px 120px;
   }

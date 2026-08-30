@@ -60,12 +60,12 @@ for (const themeId of THEME_IDS) {
     await page.getByRole('link', { name: '任务页' }).click();
     await expect(page.locator('.task-card')).toHaveCount(12);
     await expect(page).toHaveScreenshot(`${themeId}-tasks.png`, {
-      fullPage: true,
+      fullPage: false,
     });
 
     await page.locator('.task-card').first().click();
     await expect(page).toHaveScreenshot(`${themeId}-drawer.png`, {
-      fullPage: true,
+      fullPage: false,
     });
     await page.locator('[data-close-drawer]').click();
 
@@ -89,17 +89,17 @@ test('task board edge states @visual', async ({ page, isMobile }) => {
         '这是一项用于验证窄屏换行、长标题高度与卡片对齐方式的超长冒险家工会任务';
     });
   await expect(page).toHaveScreenshot('edge-long-title.png', {
-    fullPage: true,
+    fullPage: false,
   });
 
   if (!isMobile) {
     await page.locator('.task-card').first().hover();
-    await expect(page).toHaveScreenshot('edge-hover.png', { fullPage: true });
+    await expect(page).toHaveScreenshot('edge-hover.png', { fullPage: false });
   }
 
   await page.locator('#searchInput').focus();
-  await expect(page).toHaveScreenshot('edge-focus.png', { fullPage: true });
+  await expect(page).toHaveScreenshot('edge-focus.png', { fullPage: false });
 
   await page.locator('#searchInput').fill('绝对不存在的任务');
-  await expect(page).toHaveScreenshot('edge-empty.png', { fullPage: true });
+  await expect(page).toHaveScreenshot('edge-empty.png', { fullPage: false });
 });
