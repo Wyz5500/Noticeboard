@@ -3,7 +3,7 @@ import type { ThemeConfig } from '../style-registry.js';
 
 export const NEO_BRUTALISM = {
   id: 'neo-brutalism',
-  label: 'Neo-Brutalism',
+  label: '新粗野主义',
   tokens: {
     '--ink': '#171717',
     '--muted': '#3f3f3f',

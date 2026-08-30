@@ -3,7 +3,7 @@ import type { ThemeConfig } from '../style-registry.js';
 
 export const EDITORIAL_MAGAZINE = {
   id: 'editorial-magazine',
-  label: 'Editorial Magazine',
+  label: '编辑杂志',
   tokens: {
     '--ink': '#28231f',
     '--muted': '#786d63',

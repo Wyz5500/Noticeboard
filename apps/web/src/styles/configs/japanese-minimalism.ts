@@ -3,7 +3,7 @@ import type { ThemeConfig } from '../style-registry.js';
 
 export const JAPANESE_MINIMALISM = {
   id: 'japanese-minimalism',
-  label: 'Japanese Minimalism',
+  label: '日式极简',
   tokens: {
     '--ink': '#26302d',
     '--muted': '#68736d',

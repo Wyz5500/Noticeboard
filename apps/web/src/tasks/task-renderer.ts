@@ -57,7 +57,7 @@ export function renderTaskCard(
 
   const top = createNode(document, 'div', 'task-card-top');
   top.append(
-    createNode(document, 'span', 'task-type', `${task.typeLabel} / QUEST`),
+    createNode(document, 'span', 'task-type', `${task.typeLabel} / 任务`),
     createNode(
       document,
       'span',
@@ -175,7 +175,7 @@ function actionControls(
 function timeline(document: Document, task: TaskResource): HTMLElement {
   const section = createNode(document, 'section', 'timeline-section');
   const title = createNode(document, 'div', 'timeline-title', '操作时间线 ');
-  title.append(createNode(document, 'span', undefined, '/ ACTIVITY LOG'));
+  title.append(createNode(document, 'span', undefined, '/ 操作记录'));
   const list = createNode(document, 'ol', 'timeline');
   for (const event of task.timeline.slice().reverse()) {
     const item = createNode(document, 'li');
@@ -207,7 +207,7 @@ export function renderTaskDrawer(
   const eyebrow = createNode(document, 'p', 'eyebrow', `${task.typeLabel} `);
   eyebrow.append(
     createNode(document, 'span', undefined, '/'),
-    document.createTextNode(' QUEST DETAIL'),
+    document.createTextNode(' 任务详情'),
   );
   const title = createNode(document, 'h2', undefined, task.title);
   title.id = 'drawerTitle';

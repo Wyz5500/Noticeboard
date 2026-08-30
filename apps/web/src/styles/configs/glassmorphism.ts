@@ -3,7 +3,7 @@ import type { ThemeConfig } from '../style-registry.js';
 
 export const GLASSMORPHISM = {
   id: 'glassmorphism',
-  label: 'Glassmorphism',
+  label: '玻璃拟态',
   tokens: {
     '--ink': '#17243b',
     '--muted': '#5f6f86',

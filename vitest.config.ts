@@ -6,7 +6,7 @@ export default defineConfig({
     coverage: { reporter: ['text', 'html'] },
     environment: 'node',
     exclude: ['**/*.contract.spec.ts', '**/*.http.spec.ts', 'tests/e2e/**'],
-    include: ['apps/**/*.spec.ts'],
+    include: ['apps/**/*.spec.ts', 'tests/**/*.spec.ts'],
     restoreMocks: true,
   },
 });

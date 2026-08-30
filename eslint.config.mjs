@@ -21,7 +21,7 @@ export default tseslint.config(
       globals: { ...globals.browser, ...globals.node },
       parserOptions: {
         projectService: {
-          allowDefaultProject: ['*.ts', 'tests/e2e/*.ts'],
+          allowDefaultProject: ['*.ts', 'tests/*.ts', 'tests/e2e/*.ts'],
         },
         tsconfigRootDir: import.meta.dirname,
       },

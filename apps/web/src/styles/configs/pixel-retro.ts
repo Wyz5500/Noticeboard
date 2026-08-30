@@ -3,7 +3,7 @@ import type { ThemeConfig } from '../style-registry.js';
 
 export const PIXEL_RETRO = {
   id: 'pixel-retro',
-  label: 'Pixel / Retro Game UI',
+  label: '像素 / 复古游戏界面',
   tokens: {
     '--ink': '#f8f4d8',
     '--muted': '#a9aa83',

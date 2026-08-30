@@ -387,10 +387,10 @@ export class AppController {
     });
     this.elements.resultLabel.textContent =
       this.route.scope === 'mine'
-        ? 'MY QUESTS'
+        ? '我的任务'
         : this.route.filter === '全部'
-          ? 'ALL QUESTS'
-          : this.route.filter.toUpperCase();
+          ? '全部任务'
+          : this.route.filter;
     this.elements.resultCount.textContent = `${visible.length} 项任务${this.route.query ? ' · 搜索结果' : ''}`;
     renderTaskGrid(
       this.document,

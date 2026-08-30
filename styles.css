@@ -408,11 +408,6 @@ h1 em {
   font: 700 38px/1 var(--display-font);
   letter-spacing: -0.06em;
 }
-.stat-foot {
-  color: var(--muted);
-  font: 9px/1 var(--meta-font);
-  letter-spacing: 0.18em;
-}
 .stat-arrow {
   position: absolute;
   top: 22px;

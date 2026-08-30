@@ -3,7 +3,7 @@ import type { ThemeConfig } from '../style-registry.js';
 
 export const RETRO_TERMINAL = {
   id: 'retro-terminal',
-  label: 'Retro Terminal',
+  label: '复古终端',
   tokens: {
     '--ink': '#b8ff9c',
     '--muted': '#6abf69',

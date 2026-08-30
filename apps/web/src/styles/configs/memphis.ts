@@ -3,7 +3,7 @@ import type { ThemeConfig } from '../style-registry.js';
 
 export const MEMPHIS = {
   id: 'memphis',
-  label: 'Memphis',
+  label: '孟菲斯',
   tokens: {
     '--ink': '#251b35',
     '--muted': '#69587e',

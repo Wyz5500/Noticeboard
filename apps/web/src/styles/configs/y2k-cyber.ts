@@ -3,7 +3,7 @@ import type { ThemeConfig } from '../style-registry.js';
 
 export const Y2K_CYBER = {
   id: 'y2k-cyber',
-  label: 'Y2K / Cyber',
+  label: '千禧 / 赛博',
   tokens: {
     '--ink': '#12303c',
     '--muted': '#5b7180',

@@ -45,6 +45,7 @@ test('navigates and filters the in-memory task board', async ({
   );
   await expect(page.locator('#statTotal')).toHaveText('5');
   await expect(page.locator('.stat-card')).toHaveCount(6);
+  await expect(page.locator('.stat-foot')).toHaveCount(0);
   await expect(page.locator('.stat-label')).toHaveText([
     '我的任务',
     '未开始',
@@ -53,7 +54,6 @@ test('navigates and filters the in-memory task board', async ({
     '重新打开',
     '已关闭',
   ]);
-  await expect(page.locator('.stat-foot').first()).toHaveText('MY QUESTS');
   const desktopStatusColumns = await page
     .locator('.stats-row')
     .evaluate(

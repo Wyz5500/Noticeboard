@@ -3,7 +3,7 @@ import type { ThemeConfig } from '../style-registry.js';
 
 export const SWISS_INTERNATIONAL = {
   id: 'swiss-international',
-  label: 'Swiss International',
+  label: '瑞士国际',
   tokens: {
     '--ink': '#111111',
     '--muted': '#686868',

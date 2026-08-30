@@ -3,7 +3,7 @@ import type { ThemeConfig } from '../style-registry.js';
 
 export const BAUHAUS = {
   id: 'bauhaus',
-  label: 'Bauhaus',
+  label: '包豪斯',
   tokens: {
     '--ink': '#191919',
     '--muted': '#585858',
