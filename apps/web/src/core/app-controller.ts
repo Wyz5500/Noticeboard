@@ -150,6 +150,7 @@ export class AppController {
   private adminOverview: AdminOverviewResource | null = null;
   private currentUserId = '';
   private identityChangeSequence = 0;
+  private routeChangeSequence = 0;
   private currentStyleId = '';
   private route: RouteState;
   private selectedTaskId: string | null = null;
@@ -826,38 +827,42 @@ export class AppController {
   /** Loads the protected management overview when hash navigation enters admin. */
   private async handleRouteChange(): Promise<void> {
     this.route = parseHash(this.window.location.hash);
+    const routeSequence = ++this.routeChangeSequence;
     const identity = this.identitySnapshot();
+    const isCurrentRouteRequest = (): boolean =>
+      routeSequence === this.routeChangeSequence &&
+      this.isCurrentIdentity(identity);
     if (
       this.route.view === 'admin' &&
       this.canForActor(identity.actorId, 'system.manage')
     ) {
       try {
         const overview = await this.api.getAdminOverview(identity.actorId);
-        if (!this.isCurrentIdentity(identity)) return;
+        if (!isCurrentRouteRequest()) return;
         this.adminOverview = overview;
       } catch (error) {
-        if (!this.isCurrentIdentity(identity)) return;
+        if (!isCurrentRouteRequest()) return;
         if (
           error instanceof ApiError &&
           (error.status === 401 || error.status === 403)
         ) {
           this.adminOverview = null;
           try {
-            const users = await this.api.listDemoUsers();
-            if (!this.isCurrentIdentity(identity)) return;
-            this.users = users;
-          } catch {
-            // Keep the existing identity list when the permission refresh also fails.
+            await this.refreshAdminOverview(identity, routeSequence);
+          } catch (refreshError) {
+            if (!isCurrentRouteRequest()) return;
+            this.route = parseHash('#home');
+            this.window.location.hash = '#home';
+            this.showToast(this.errorMessage(refreshError));
           }
-          if (!this.isCurrentIdentity(identity)) return;
-          this.route = parseHash('#home');
-          this.window.location.hash = '#home';
+          if (!isCurrentRouteRequest()) return;
+          return;
         }
-        if (!this.isCurrentIdentity(identity)) return;
+        if (!isCurrentRouteRequest()) return;
         this.showToast(this.errorMessage(error));
       }
     }
-    if (!this.isCurrentIdentity(identity)) return;
+    if (!isCurrentRouteRequest()) return;
     this.render();
   }
 
@@ -887,13 +892,14 @@ export class AppController {
         activeIdentity = nextIdentity;
         this.tasks = [];
         this.adminOverview = null;
-        const tasks = await this.loadTasksForCurrentUser(actorId);
-        if (!this.isCurrentIdentity(nextIdentity)) return;
-        this.tasks = tasks;
         this.closeProfileMenu();
         this.closeDrawer();
         this.route = parseHash('#tasks?scope=all&filter=全部');
         this.window.location.hash = buildTaskHash(this.route);
+        this.render();
+        const tasks = await this.loadTasksForCurrentUser(actorId);
+        if (!this.isCurrentIdentity(nextIdentity)) return;
+        this.tasks = tasks;
         if (!this.isCurrentIdentity(nextIdentity)) return;
         this.render();
         this.showToast('演示数据已恢复');
@@ -1023,9 +1029,14 @@ export class AppController {
   /** Re-reads admin state and falls back to the first manager if the current one lost access. */
   private async refreshAdminOverview(
     identity = this.identitySnapshot(),
+    routeSequence?: number,
   ): Promise<void> {
+    const isCurrentRequest = (): boolean =>
+      this.isCurrentIdentity(identity) &&
+      (routeSequence === undefined ||
+        routeSequence === this.routeChangeSequence);
     const users = await this.api.listDemoUsers();
-    if (!this.isCurrentIdentity(identity)) return;
+    if (!isCurrentRequest()) return;
     this.users = users;
     if (!this.canForActor(identity.actorId, 'system.manage')) {
       const fallback =
@@ -1052,17 +1063,24 @@ export class AppController {
       this.window.location.hash = '#home';
       this.render();
       const nextIdentity = { actorId, sequence };
+      const fallbackRouteSequence =
+        routeSequence === undefined ? undefined : ++this.routeChangeSequence;
       const tasks = await this.loadTasksForCurrentUser(actorId);
-      if (!this.isCurrentIdentity(nextIdentity)) return;
+      if (
+        !this.isCurrentIdentity(nextIdentity) ||
+        (routeSequence !== undefined &&
+          fallbackRouteSequence !== this.routeChangeSequence)
+      )
+        return;
       this.tasks = tasks;
       this.render();
       return;
     }
     const overview = await this.api.getAdminOverview(identity.actorId);
-    if (!this.isCurrentIdentity(identity)) return;
+    if (!isCurrentRequest()) return;
     this.adminOverview = overview;
     const tasks = await this.loadTasksForCurrentUser(identity.actorId);
-    if (!this.isCurrentIdentity(identity)) return;
+    if (!isCurrentRequest()) return;
     this.tasks = tasks;
     this.render();
   }
