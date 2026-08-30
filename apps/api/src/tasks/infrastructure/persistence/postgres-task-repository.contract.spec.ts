@@ -1,7 +1,9 @@
 /** Exercises the task repository contract against the real PostgreSQL adapter. */
+import { setTimeout as delay } from 'node:timers/promises';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { DataSource } from 'typeorm';
+import type { DataSource, QueryRunner } from 'typeorm';
 
+import { PostgresAuthorization } from '../../../authorization/infrastructure/postgres-authorization.js';
 import { DEMO_ACTORS } from '../../../identity/domain/demo-actors.js';
 import { seedDemoAccounts } from '../../../identity/infrastructure/persistence/seed-demo-accounts.js';
 import { Task } from '../../domain/task.js';
@@ -13,6 +15,35 @@ import { seedDemoData } from './seed-demo-data.js';
 
 const DATABASE_URL = process.env.DATABASE_URL_TEST;
 const describeDatabase = DATABASE_URL ? describe : describe.skip;
+const MANAGEMENT_INVARIANT_LOCK_KEY = 1788062402;
+
+/** Holds one transaction-scoped advisory lock until the caller releases the query runner. */
+async function lockTransactionAdvisoryKey(
+  dataSource: DataSource,
+  key: number,
+): Promise<QueryRunner> {
+  const runner = dataSource.createQueryRunner();
+  await runner.connect();
+  await runner.startTransaction();
+  await runner.query('SELECT pg_advisory_xact_lock(CAST($1 AS bigint))', [key]);
+  return runner;
+}
+
+/** Waits until another PostgreSQL session is blocked on one advisory lock key. */
+async function waitForAdvisoryLockWaiter(
+  dataSource: DataSource,
+  key: number,
+): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const [{ waiting }] = await dataSource.query(
+      'SELECT COUNT(*)::int AS waiting FROM pg_locks WHERE locktype = $1 AND classid = $2 AND objid = $3 AND granted = false',
+      ['advisory', 0, key],
+    );
+    if (waiting > 0) return;
+    await delay(10);
+  }
+  throw new Error(`Timed out waiting for advisory lock waiter: ${key}`);
+}
 
 describeDatabase('PostgreSQL task repository contract', () => {
   let dataSource: DataSource;
@@ -271,5 +302,241 @@ describeDatabase('PostgreSQL task repository contract', () => {
     expect((await query.list()).map((task) => task.id)).toEqual([
       'task-durable',
     ]);
+  });
+
+  /** Proves deployment seed does not overwrite managed account or permission changes. */
+  it('preserves managed accounts and permissions during deployment seed', async () => {
+    await dataSource.query(
+      "DELETE FROM role_permissions WHERE role_id = 'role-user' AND permission_code = 'tasks.view'",
+    );
+    await dataSource.query(
+      "UPDATE accounts SET role_id = 'role-system-admin', deleted_at = NOW() WHERE id = 'guild-master'",
+    );
+
+    try {
+      await dataSource.transaction(seedDemoData);
+
+      const account = await dataSource.query(
+        "SELECT role_id, deleted_at FROM accounts WHERE id = 'guild-master'",
+      );
+      const permission = await dataSource.query(
+        "SELECT 1 FROM role_permissions WHERE role_id = 'role-user' AND permission_code = 'tasks.view'",
+      );
+      expect(account[0]).toMatchObject({ role_id: 'role-system-admin' });
+      expect(account[0].deleted_at).not.toBeNull();
+      expect(permission).toHaveLength(0);
+    } finally {
+      await dataSource.query(
+        "UPDATE accounts SET role_id = 'role-user', deleted_at = NULL WHERE id = 'guild-master'",
+      );
+      await dataSource.query(
+        "INSERT INTO role_permissions (role_id, permission_code) VALUES ('role-user', 'tasks.view') ON CONFLICT DO NOTHING",
+      );
+    }
+  });
+
+  /** Proves concurrent administrator deletion cannot remove the final management user. */
+  it('serializes concurrent final-administrator deletions', async () => {
+    const authorization = new PostgresAuthorization(dataSource);
+    await dataSource.query(
+      "UPDATE accounts SET role_id = 'role-system-admin', deleted_at = NULL WHERE id IN ('adventurer-a', 'adventurer-b')",
+    );
+    await dataSource.query(
+      "UPDATE accounts SET role_id = 'role-user', deleted_at = NULL WHERE id = 'guild-admin'",
+    );
+
+    try {
+      const results = await Promise.allSettled([
+        authorization.softDeleteUser('adventurer-a'),
+        authorization.softDeleteUser('adventurer-b'),
+      ]);
+
+      expect(
+        results.filter((result) => result.status === 'fulfilled'),
+      ).toHaveLength(1);
+      expect(
+        results.filter((result) => result.status === 'rejected'),
+      ).toHaveLength(1);
+      expect(
+        results.find((result) => result.status === 'rejected'),
+      ).toMatchObject({ reason: { code: 'CONFLICT' } });
+      const [{ count }] = await dataSource.query(
+        "SELECT COUNT(*)::int AS count FROM accounts AS account JOIN roles AS role ON role.id = account.role_id JOIN role_permissions AS permission ON permission.role_id = role.id WHERE account.deleted_at IS NULL AND permission.permission_code = 'system.manage'",
+      );
+      expect(count).toBe(1);
+    } finally {
+      await dataSource.query(
+        "UPDATE accounts SET role_id = 'role-user', deleted_at = NULL WHERE id IN ('adventurer-a', 'adventurer-b')",
+      );
+      await dataSource.query(
+        "UPDATE accounts SET role_id = 'role-system-admin', deleted_at = NULL WHERE id = 'guild-admin'",
+      );
+    }
+  });
+
+  /** Proves concurrent active role-name creation resolves the database race as a conflict. */
+  it('maps concurrent duplicate role names to conflicts', async () => {
+    const authorization = new PostgresAuthorization(dataSource);
+    const name = `并发角色-${Date.now()}`;
+    const results = await Promise.allSettled([
+      authorization.createRole({ name }),
+      authorization.createRole({ name }),
+    ]);
+
+    try {
+      expect(
+        results.filter((result) => result.status === 'fulfilled'),
+      ).toHaveLength(1);
+      expect(
+        results.filter((result) => result.status === 'rejected'),
+      ).toHaveLength(1);
+      expect(
+        results.find((result) => result.status === 'rejected'),
+      ).toMatchObject({ reason: { code: 'CONFLICT' } });
+    } finally {
+      await dataSource.query('DELETE FROM roles WHERE name = $1', [name]);
+    }
+  });
+
+  /** Proves concurrent role deletion and user reassignment cannot leave a deleted role assigned. */
+  it('serializes role deletion with user reassignment', async () => {
+    const authorization = new PostgresAuthorization(dataSource);
+    const role = await authorization.createRole({
+      name: `角色改派竞态-${Date.now()}`,
+    });
+
+    try {
+      const results = await Promise.allSettled([
+        authorization.softDeleteRole(role.id),
+        authorization.updateUser('adventurer-a', { roleId: role.id }),
+      ]);
+      const [{ deleted_at: deletedAt }] = await dataSource.query(
+        'SELECT deleted_at FROM roles WHERE id = $1',
+        [role.id],
+      );
+      const [{ role_id: roleId }] = await dataSource.query(
+        "SELECT role_id FROM accounts WHERE id = 'adventurer-a'",
+      );
+
+      expect(deletedAt !== null && roleId === role.id).toBe(false);
+      expect(results.some((result) => result.status === 'fulfilled')).toBe(
+        true,
+      );
+    } finally {
+      await dataSource.query(
+        "UPDATE accounts SET role_id = 'role-user', deleted_at = NULL WHERE id = 'adventurer-a'",
+      );
+      await dataSource.query('DELETE FROM roles WHERE id = $1', [role.id]);
+    }
+  });
+
+  /** Proves concurrent role edits cannot resurrect a role that another transaction deleted. */
+  it('keeps a concurrently edited custom role soft-deleted', async () => {
+    const authorization = new PostgresAuthorization(dataSource);
+    const role = await authorization.createRole({
+      name: `角色生命周期竞态-${Date.now()}`,
+      permissions: ['system.manage'],
+    });
+    const blocker = await lockTransactionAdvisoryKey(
+      dataSource,
+      MANAGEMENT_INVARIANT_LOCK_KEY,
+    );
+
+    try {
+      const updatePromise = authorization.updateRole(role.id, {
+        name: `${role.name}-改名`,
+        permissions: [],
+      });
+      await waitForAdvisoryLockWaiter(
+        dataSource,
+        MANAGEMENT_INVARIANT_LOCK_KEY,
+      );
+      const deletePromise = authorization.softDeleteRole(role.id);
+      await delay(25);
+      await blocker.commitTransaction();
+      const results = await Promise.allSettled([updatePromise, deletePromise]);
+      const [{ deleted_at: deletedAt }] = await dataSource.query(
+        'SELECT deleted_at FROM roles WHERE id = $1',
+        [role.id],
+      );
+
+      expect(results).toEqual([
+        expect.objectContaining({ status: 'fulfilled' }),
+        expect.objectContaining({ status: 'fulfilled' }),
+      ]);
+      expect(deletedAt).not.toBeNull();
+    } finally {
+      if (blocker.isTransactionActive) await blocker.rollbackTransaction();
+      await blocker.release();
+      await dataSource.query('DELETE FROM roles WHERE id = $1', [role.id]);
+    }
+  });
+
+  /** Proves concurrent user restore and reassignment end with the latest active role assignment. */
+  it('restores a reassigned deleted user with the latest active role', async () => {
+    const authorization = new PostgresAuthorization(dataSource);
+    const role = await authorization.createRole({
+      name: `用户恢复竞态角色-${Date.now()}`,
+    });
+    const blocker = await lockTransactionAdvisoryKey(
+      dataSource,
+      MANAGEMENT_INVARIANT_LOCK_KEY,
+    );
+    await dataSource.query(
+      "UPDATE accounts SET role_id = $1, deleted_at = NOW() WHERE id = 'adventurer-a'",
+      [role.id],
+    );
+    await dataSource.query('UPDATE roles SET deleted_at = NOW() WHERE id = $1', [
+      role.id,
+    ]);
+
+    try {
+      const reassignPromise = authorization.updateUser('adventurer-a', {
+        roleId: 'role-user',
+      });
+      await waitForAdvisoryLockWaiter(
+        dataSource,
+        MANAGEMENT_INVARIANT_LOCK_KEY,
+      );
+      const restorePromise = authorization.restoreUser('adventurer-a');
+      await delay(25);
+      await blocker.commitTransaction();
+      const results = await Promise.allSettled([
+        reassignPromise,
+        restorePromise,
+      ]);
+      const [{ role_id: roleId, deleted_at: deletedAt }] = await dataSource.query(
+        "SELECT role_id, deleted_at FROM accounts WHERE id = 'adventurer-a'",
+      );
+
+      expect(results).toEqual([
+        expect.objectContaining({ status: 'fulfilled' }),
+        expect.objectContaining({ status: 'fulfilled' }),
+      ]);
+      expect(roleId).toBe('role-user');
+      expect(deletedAt).toBeNull();
+    } finally {
+      if (blocker.isTransactionActive) await blocker.rollbackTransaction();
+      await blocker.release();
+      await dataSource.query(
+        "UPDATE accounts SET role_id = 'role-user', deleted_at = NULL WHERE id = 'adventurer-a'",
+      );
+      await dataSource.query('DELETE FROM roles WHERE id = $1', [role.id]);
+    }
+  });
+
+  /** Proves invalid built-in role identity edits use the documented validation error. */
+  it('maps built-in role rename attempts to validation errors', async () => {
+    const authorization = new PostgresAuthorization(dataSource);
+
+    await expect(
+      authorization.updateRole('role-user', {
+        name: '改名用户角色',
+        permissions: ['tasks.view'],
+      }),
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+      message: '内置角色名称不可修改',
+    });
   });
 });
