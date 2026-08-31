@@ -68,3 +68,17 @@ passed
 ```
 
 报告末尾保持单个换行，无额外空行。
+
+## 最后一轮审查修复
+
+- 桌面表格排序语义已移至对应 `th` 的 `ariaSort`，按钮保留可操作性且不重复声明排序状态。
+- 新增单测覆盖当前排序列为 ascending/descending、其它 sortable 列为 none，以及 delete 失败时 editor 保留。
+
+本轮验证：
+
+```text
+RED: 新增排序语义测试失败（th 排序状态为空）
+GREEN: 3 files passed, 38 tests passed
+npm run build:web: passed
+git diff --check: passed
+```

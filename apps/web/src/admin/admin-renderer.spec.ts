@@ -221,7 +221,13 @@ describe('admin renderer', () => {
       rows.slice(1).map((row) => row.querySelector('strong')?.textContent),
     ).toEqual(['甲用户', '乙用户']);
     const nameSort = findData(container, 'adminSort', 'name');
-    expect(nameSort?.ariaSort).toBe('ascending');
+    expect(nameSort?.ariaSort).toBe('');
+    expect(
+      findAll(
+        findAll(container, (element) => element.tagName === 'table')[0]!,
+        (element) => element.tagName === 'th',
+      )[0]?.ariaSort,
+    ).toBe('ascending');
     expect(
       findData(container, 'adminAction', 'restore-user')?.dataset.adminId,
     ).toBe('user-alpha');
@@ -304,6 +310,33 @@ describe('admin renderer', () => {
       '修改时间：2026-08-30 17:00',
       '编辑逻辑删除',
     ]);
+  });
+
+  /** Ensures sortable state belongs to each table column header rather than its action button. */
+  it('exposes sort direction on sortable table headers', () => {
+    const document = new FakeDocument();
+    const container = document.createElement('main');
+
+    renderAdminView(
+      document as unknown as Document,
+      container as unknown as HTMLElement,
+      overview,
+      { section: 'users', sort: { field: 'role', direction: 'desc' } },
+    );
+
+    const table = findAll(
+      container,
+      (element) => element.tagName === 'table',
+    )[0]!;
+    const headers = findAll(table, (element) => element.tagName === 'th');
+    expect(headers.map((header) => header.ariaSort)).toEqual([
+      'none',
+      'descending',
+      'none',
+      'none',
+      '',
+    ]);
+    expect(findData(container, 'adminSort', 'role')?.ariaSort).toBe('');
   });
 
   /** Ensures mobile markup has a separate card list and a delegated sort control. */

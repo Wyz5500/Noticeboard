@@ -1477,4 +1477,49 @@ describe('AppController administration management UI', () => {
     expect(controller.adminEditor).toBeNull();
     expect(controller.render).toHaveBeenCalledOnce();
   });
+
+  /** Ensures a failed delete keeps the current editor open for retry or correction. */
+  it('preserves the editor when delete fails', async () => {
+    installDomShims();
+    const controller = Object.create(AppController.prototype) as {
+      adminEditor: unknown;
+      api: { deleteAdminRole: () => Promise<void> };
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      refreshAdminOverview: ReturnType<typeof vi.fn>;
+      gate: {
+        run: (_key: string, operation: () => Promise<void>) => Promise<void>;
+      };
+      showToast: ReturnType<typeof vi.fn>;
+      handleAdminClick: (event: Event) => Promise<void>;
+    };
+    const editor = { kind: 'role', mode: 'edit' };
+    controller.adminEditor = editor;
+    controller.api = {
+      deleteAdminRole: () => Promise.reject(new Error('failed')),
+    };
+    controller.requestSnapshot = () => ({
+      actorId: 'admin',
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.refreshAdminOverview = vi.fn();
+    controller.gate = { run: (_key, operation) => operation() };
+    controller.showToast = vi.fn();
+    const button = new TestElement({
+      adminAction: 'delete-role',
+      adminId: 'role-1',
+    });
+
+    await controller.handleAdminClick({ target: button } as unknown as Event);
+
+    expect(controller.adminEditor).toBe(editor);
+    expect(controller.refreshAdminOverview).not.toHaveBeenCalled();
+    expect(controller.showToast).toHaveBeenCalledOnce();
+  });
 });

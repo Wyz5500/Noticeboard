@@ -325,7 +325,7 @@ function desktopTable(
     const button = createNode(document, 'button', 'admin-sort-button', label);
     button.type = 'button';
     button.dataset.adminSort = fieldName;
-    button.ariaSort =
+    cell.ariaSort =
       sort.field === fieldName
         ? sort.direction === 'asc'
           ? 'ascending'
