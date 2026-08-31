@@ -395,6 +395,50 @@ describe('admin renderer', () => {
     );
   });
 
+  /** Ensures mobile cards retain the lifecycle or built-in status from desktop rows. */
+  it('includes record status in mobile cards', () => {
+    const document = new FakeDocument();
+    const userContainer = document.createElement('main');
+
+    renderAdminView(
+      document as unknown as Document,
+      userContainer as unknown as HTMLElement,
+      overview,
+      { section: 'users' },
+    );
+
+    const userList = findAll(
+      userContainer,
+      (element) => element.className === 'admin-mobile-list',
+    )[0]!;
+    const userStatuses = findAll(
+      userList,
+      (element) => element.className === 'admin-status',
+    ).map((element) => element.textContent);
+    expect(userStatuses).toHaveLength(2);
+    expect(userStatuses).toEqual(expect.arrayContaining(['活跃', '已删除']));
+
+    const roleContainer = document.createElement('main');
+    renderAdminView(
+      document as unknown as Document,
+      roleContainer as unknown as HTMLElement,
+      overview,
+      { section: 'roles' },
+    );
+    const roleList = findAll(
+      roleContainer,
+      (element) => element.className === 'admin-mobile-list',
+    )[0]!;
+    const roleStatuses = findAll(
+      roleList,
+      (element) => element.className === 'admin-status',
+    ).map((element) => element.textContent);
+    expect(roleStatuses).toHaveLength(2);
+    expect(roleStatuses).toEqual(
+      expect.arrayContaining(['自定义角色', '内置角色']),
+    );
+  });
+
   /** Ensures date formatting is local and malformed API values never become unsafe markup. */
   it('formats valid updatedAt values and uses a safe placeholder for invalid dates', () => {
     const document = new FakeDocument();
@@ -458,10 +502,10 @@ describe('admin renderer', () => {
       roleForm!,
       (element) => element.type === 'submit',
     )[0];
-    expect(builtinSave?.disabled).toBe(true);
+    expect(builtinSave?.disabled).toBe(false);
     expect(
       findAll(roleForm!, (element) => element.type === 'checkbox')[0]?.disabled,
-    ).toBe(true);
+    ).toBe(false);
 
     const regularRoleContainer = document.createElement('main');
     renderAdminView(
@@ -495,6 +539,35 @@ describe('admin renderer', () => {
     expect(
       findAll(noEditor, (element) => element.tagName === 'dialog'),
     ).toHaveLength(0);
+  });
+
+  /** Ensures a failed-submit draft takes precedence over the server record when reopening a role editor. */
+  it('renders preserved role draft values', () => {
+    const document = new FakeDocument();
+    const container = document.createElement('main');
+    const editor = {
+      kind: 'role',
+      mode: 'edit',
+      record: overview.roles[0]!,
+      draft: {
+        name: '草稿角色名称',
+        permissions: ['tasks.view'] as const,
+      },
+    } as never;
+
+    renderAdminView(
+      document as unknown as Document,
+      container as unknown as HTMLElement,
+      overview,
+      { section: 'roles', editor },
+    );
+
+    const roleForm = findData(container, 'adminForm', 'role');
+    const inputs = findAll(roleForm!, (element) => element.tagName === 'input');
+    expect(inputs[0]?.value).toBe('草稿角色名称');
+    expect(
+      findAll(roleForm!, (element) => element.type === 'checkbox')[0]?.checked,
+    ).toBe(true);
   });
 
   /** Ensures the rendered modal can be closed through the native dialog contract. */

@@ -22,7 +22,10 @@ import {
   type TaskScope,
 } from './router.js';
 import { nextAdminSort, type AdminSortField } from '../admin/admin-sort.js';
-import type { AdminEditorState } from '../admin/admin-renderer.js';
+import type {
+  AdminEditorDraft,
+  AdminEditorState,
+} from '../admin/admin-renderer.js';
 import {
   loadCurrentUserId,
   saveCurrentUserId,
@@ -49,6 +52,24 @@ const TASK_TYPES: ReadonlyArray<{ id: TaskType; label: string }> = [
 function formText(form: FormData, name: string): string {
   const value = form.get(name);
   return typeof value === 'string' ? value : '';
+}
+
+/** Captures submitted admin values so a failed mutation can rebuild the same editor draft. */
+function adminEditorDraft(kind: string, values: FormData): AdminEditorDraft {
+  if (kind === 'create-user' || kind === 'user') {
+    return {
+      name: formText(values, 'name'),
+      roleId: formText(values, 'roleId'),
+    };
+  }
+  return {
+    name: formText(values, 'name'),
+    permissions: values
+      .getAll('permissions')
+      .filter(
+        (value): value is string => typeof value === 'string',
+      ) as PermissionCode[],
+  };
 }
 
 interface Elements {
@@ -567,7 +588,13 @@ export class AppController {
       return;
     }
     const enteringView = this.renderedView !== this.route.view;
-    if (enteringView) {
+    const taskRouteChanged =
+      this.route.view === 'tasks' &&
+      this.renderedView === 'tasks' &&
+      this.renderedRoute?.view === 'tasks' &&
+      this.scrollStateKey(this.renderedRoute) !==
+        this.scrollStateKey(this.route);
+    if (enteringView || taskRouteChanged) {
       this.clearTaskPageScrollBeforeRouteChange();
       this.captureRenderedViewScroll();
       if (this.renderedView !== null || tasksVisible) {
@@ -575,6 +602,8 @@ export class AppController {
         this.scrollRestoreSequence += 1;
       }
     }
+    const enteringTaskRoute =
+      tasksVisible && (enteringView || taskRouteChanged);
     const enteringTasks = tasksVisible && enteringView;
     this.elements.homeView.classList.toggle(
       'is-active',
@@ -596,8 +625,9 @@ export class AppController {
     }
     this.renderedView = this.route.view;
     this.renderedRoute = this.route;
-    if (enteringTasks) {
-      this.syncTaskFilterDisclosure(true);
+    if (enteringTaskRoute) {
+      if (enteringTasks) this.syncTaskFilterDisclosure(true);
+      this.resetTaskInnerScroll();
       this.window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
       this.measureTasksIntroCollapse();
     } else if (!tasksVisible) {
@@ -1085,18 +1115,8 @@ export class AppController {
 
   /** Loads the protected management overview when hash navigation enters admin. */
   private async handleRouteChange(): Promise<void> {
-    const previousRoute = this.route;
     this.route = parseHash(this.window.location.hash);
     this.adminEditor = null;
-    if (
-      previousRoute.view === 'tasks' &&
-      this.route.view === 'tasks' &&
-      (previousRoute.scope !== this.route.scope ||
-        previousRoute.filter !== this.route.filter ||
-        previousRoute.query !== this.route.query)
-    ) {
-      this.resetTaskInnerScroll();
-    }
     if (
       this.route.view === 'admin' &&
       this.route.section &&
@@ -1300,7 +1320,9 @@ export class AppController {
           this.showToast('管理信息已更新');
         } catch (error) {
           if (!this.isCurrentRequest(request)) return;
-          this.adminEditor = editor;
+          this.adminEditor = editor
+            ? { ...editor, draft: adminEditorDraft(kind, values) }
+            : null;
           this.render();
           this.showToast(this.errorMessage(error));
         }

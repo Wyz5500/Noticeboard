@@ -1265,7 +1265,10 @@ describe('AppController administration management UI', () => {
 
   class TestForm {
     /** Creates a test form carrying the delegated admin form identifier. */
-    constructor(public readonly dataset: Record<string, string>) {}
+    constructor(
+      public readonly dataset: Record<string, string>,
+      public readonly fields: Record<string, string | string[]> = {},
+    ) {}
   }
 
   /** Installs the smallest browser constructor shims needed by delegated handlers in node tests. */
@@ -1273,14 +1276,26 @@ describe('AppController administration management UI', () => {
     (globalThis as { Element?: unknown }).Element = TestElement;
     (globalThis as { HTMLFormElement?: unknown }).HTMLFormElement = TestForm;
     (globalThis as { FormData?: unknown }).FormData = class {
-      /** Returns the submitted text field used by the create-user command. */
-      get(): string {
-        return '测试用户';
+      private readonly fields: Record<string, string | string[]>;
+
+      /** Copies submitted fake form values into the constructor-compatible shim. */
+      constructor(form?: TestForm) {
+        this.fields = form?.fields ?? {};
       }
 
-      /** Returns no selected permissions in the minimal failed-request case. */
-      getAll(): string[] {
-        return [];
+      /** Returns the submitted text field while preserving existing test defaults. */
+      get(name: string): string {
+        const value = this.fields[name];
+        if (Array.isArray(value)) return value[0] ?? '';
+        if (value !== undefined) return value;
+        return name === 'name' ? '测试用户' : '';
+      }
+
+      /** Returns all submitted values for repeated permission checkbox names. */
+      getAll(name: string): string[] {
+        const value = this.fields[name];
+        if (Array.isArray(value)) return value;
+        return value === undefined ? [] : [value];
       }
     };
   }
@@ -1427,14 +1442,80 @@ describe('AppController administration management UI', () => {
     controller.gate = { run: (_key, operation) => operation() };
     controller.showToast = vi.fn();
     controller.render = vi.fn();
-    const form = new TestForm({ adminForm: 'create-user' });
+    const form = new TestForm(
+      { adminForm: 'create-user' },
+      { name: '保留的用户名称', roleId: 'role-custom' },
+    );
 
     await controller.handleAdminSubmit({
       preventDefault: () => undefined,
       target: form,
     } as unknown as SubmitEvent);
 
-    expect(controller.adminEditor).toBe(editor);
+    expect(controller.adminEditor).toEqual({
+      ...editor,
+      draft: { name: '保留的用户名称', roleId: 'role-custom' },
+    });
+    expect(controller.showToast).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures a failed role mutation keeps the entered name and permission selections. */
+  it('preserves role form values when a CRUD request fails', async () => {
+    installDomShims();
+    const controller = Object.create(AppController.prototype) as {
+      adminEditor: unknown;
+      api: { updateAdminRole: () => Promise<never> };
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      gate: {
+        run: (_key: string, operation: () => Promise<void>) => Promise<void>;
+      };
+      showToast: ReturnType<typeof vi.fn>;
+      render: ReturnType<typeof vi.fn>;
+      handleAdminSubmit: (event: SubmitEvent) => Promise<void>;
+    };
+    const editor = {
+      kind: 'role',
+      mode: 'edit',
+      record: { id: 'role-1' },
+    };
+    controller.adminEditor = editor;
+    controller.api = {
+      updateAdminRole: () => Promise.reject(new Error('failed')),
+    };
+    controller.requestSnapshot = () => ({
+      actorId: 'admin',
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.gate = { run: (_key, operation) => operation() };
+    controller.showToast = vi.fn();
+    controller.render = vi.fn();
+    const form = new TestForm(
+      { adminForm: 'role', adminId: 'role-1' },
+      {
+        name: '保留的角色名称',
+        permissions: ['tasks.view', 'tasks.review'],
+      },
+    );
+
+    await controller.handleAdminSubmit({
+      preventDefault: () => undefined,
+      target: form,
+    } as unknown as SubmitEvent);
+
+    expect(controller.adminEditor).toEqual({
+      ...editor,
+      draft: {
+        name: '保留的角色名称',
+        permissions: ['tasks.view', 'tasks.review'],
+      },
+    });
     expect(controller.showToast).toHaveBeenCalledOnce();
   });
 

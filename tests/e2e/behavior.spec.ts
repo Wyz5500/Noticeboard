@@ -104,7 +104,7 @@ test('navigates and filters the in-memory task board', async ({
       (grid) => getComputedStyle(grid).gridTemplateColumns.split(' ').length,
     );
   expect(desktopTaskColumns).toBe(isMobile ? 1 : 3);
-  if (isMobile) await page.locator('.mobile-filter-toggle').click();
+  await openMobileTaskFilters(page, isMobile);
   await page.getByRole('button', { name: '进行中 3' }).click();
   await expect(page.locator('.task-card')).toHaveCount(3);
   await page.locator('#searchInput').fill('北境');
@@ -303,6 +303,88 @@ test('renders mobile admin cards and sorting controls', async ({
   await expect(page).toHaveURL(/sort=name&direction=asc/);
   await sortBar.locator('[data-admin-direction]').click();
   await expect(page).toHaveURL(/sort=name&direction=desc/);
+  await expect(page.locator('.admin-mobile-card .admin-status')).toHaveCount(
+    await page.locator('.admin-mobile-card').count(),
+  );
+
+  await page.getByRole('link', { name: '返回管理首页' }).click();
+  await page.getByRole('link', { name: '角色管理' }).click();
+  await expect(page.locator('.admin-mobile-list')).toBeVisible();
+  const roleStatusTexts = await page
+    .locator('.admin-mobile-card .admin-status')
+    .allTextContents();
+  expect(roleStatusTexts).toContain('内置角色');
+});
+
+/** Proves built-in role names stay immutable while their supported permissions remain editable. */
+test('edits permissions on a built-in role', async ({ page }) => {
+  await page.locator('#profileButton').click();
+  await page.locator('#identitySelect').selectOption('noticeboard-admin');
+  await page.keyboard.press('Escape');
+  await page.locator('#adminNavLink').click();
+  await page.getByRole('link', { name: '角色管理' }).click();
+
+  const editButton = page
+    .locator(
+      '.admin-mobile-card:visible [data-admin-open="role"][data-admin-id="role-user"], .admin-table:visible [data-admin-open="role"][data-admin-id="role-user"]',
+    )
+    .first();
+  await editButton.click();
+  const dialog = page.locator('dialog[open]');
+  await expect(dialog.locator('input[name="name"]')).toHaveAttribute(
+    'readonly',
+    '',
+  );
+  const permission = dialog.locator('input[value="tasks.accept"]');
+  await expect(permission).toBeEnabled();
+  await expect(dialog.locator('button[type="submit"]')).toBeEnabled();
+  const originalChecked = await permission.isChecked();
+  await permission.setChecked(!originalChecked);
+  await dialog.locator('button[type="submit"]').click();
+  await expect(dialog).toHaveCount(0);
+
+  await editButton.click();
+  const restoredDialog = page.locator('dialog[open]');
+  const restoredPermission = restoredDialog.locator(
+    'input[value="tasks.accept"]',
+  );
+  await restoredPermission.setChecked(originalChecked);
+  await restoredDialog.locator('button[type="submit"]').click();
+  await expect(restoredDialog).toHaveCount(0);
+});
+
+/** Proves failed admin mutations reopen the editor with the submitted values intact. */
+test('preserves admin form values after a failed submission', async ({
+  page,
+}) => {
+  await page.locator('#profileButton').click();
+  await page.locator('#identitySelect').selectOption('noticeboard-admin');
+  await page.keyboard.press('Escape');
+  await page.locator('#adminNavLink').click();
+  await page.getByRole('link', { name: '角色管理' }).click();
+  await page.route('**/api/v1/admin/roles', async (route) => {
+    await route.fulfill({
+      status: 409,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: { code: 'CONFLICT', message: '角色名称已存在' },
+      }),
+    });
+  });
+
+  await page.locator('[data-admin-open="create-role"]').click();
+  const dialog = page.locator('dialog[open]');
+  const name = '失败后保留的角色';
+  await dialog.locator('input[name="name"]').fill(name);
+  await dialog.locator('input[value="tasks.view"]').check();
+  await dialog.locator('input[value="tasks.review"]').check();
+  await dialog.locator('button[type="submit"]').click();
+
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('input[name="name"]')).toHaveValue(name);
+  await expect(dialog.locator('input[value="tasks.view"]')).toBeChecked();
+  await expect(dialog.locator('input[value="tasks.review"]')).toBeChecked();
+  await page.unroute('**/api/v1/admin/roles');
 });
 
 /** Proves home summary copy stays inset from the divider and surrounding edges. */
@@ -894,6 +976,118 @@ test('resets all task scroll layers when entering a different task route', async
       page.locator('.board-sidebar').evaluate((sidebar) => sidebar.scrollTop),
     )
     .toBe(0);
+});
+
+/** Proves direct task-route changes capture and restore each route's three scroll layers independently. */
+test('isolates scroll positions between direct task routes', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, '独立滚动容器的直接任务路由切换在移动端验证。');
+  const routeA = '#tasks?scope=all&filter=进行中';
+  const routeB = '#tasks?scope=all&filter=全部';
+  await page.goto(routeA);
+  await expect(page.locator('.task-card')).toHaveCount(3);
+  await openMobileTaskFilters(page, isMobile);
+
+  const setTaskScroll = async (
+    gridTarget: number,
+    sidebarTarget: number,
+  ): Promise<{ windowY: number; gridY: number; sidebarY: number }> =>
+    page.evaluate(
+      ({ gridTarget: nextGridTarget, sidebarTarget: nextSidebarTarget }) => {
+        const grid = document.querySelector<HTMLElement>('#taskGrid');
+        const sidebar = document.querySelector<HTMLElement>('.board-sidebar');
+        const disclosure = document.querySelector<HTMLDetailsElement>(
+          '#taskFilterDisclosure',
+        );
+        const board = document.querySelector<HTMLElement>('.board-layout');
+        const topbar = document.querySelector<HTMLElement>('.topbar');
+        if (!grid || !sidebar || !disclosure || !board || !topbar)
+          throw new Error('Task layout is missing');
+        disclosure.open = true;
+        sidebar.style.height = '120px';
+        sidebar.style.maxHeight = '120px';
+        sidebar.style.overflowY = 'auto';
+        if (!sidebar.querySelector('[data-scroll-test-spacer]')) {
+          const spacer = document.createElement('div');
+          spacer.dataset.scrollTestSpacer = 'true';
+          spacer.style.height = '400px';
+          sidebar.append(spacer);
+        }
+        if (sidebar.scrollHeight <= sidebar.clientHeight)
+          throw new Error('Task sidebar is not scrollable');
+        const collapsedScrollY = Math.max(
+          0,
+          board.getBoundingClientRect().top +
+            window.scrollY -
+            topbar.getBoundingClientRect().height,
+        );
+        window.scrollTo(0, collapsedScrollY);
+        grid.scrollTop = Math.min(
+          nextGridTarget,
+          grid.scrollHeight - grid.clientHeight,
+        );
+        sidebar.scrollTop = Math.min(
+          nextSidebarTarget,
+          sidebar.scrollHeight - sidebar.clientHeight,
+        );
+        return {
+          windowY: window.scrollY,
+          gridY: grid.scrollTop,
+          sidebarY: sidebar.scrollTop,
+        };
+      },
+      { gridTarget, sidebarTarget },
+    );
+
+  const routeAState = await setTaskScroll(60, 20);
+  expect(routeAState.windowY).toBeGreaterThan(0);
+  expect(routeAState.gridY).toBeGreaterThan(0);
+  expect(routeAState.sidebarY).toBeGreaterThan(0);
+
+  await navigateToHash(page, routeB);
+  await expect(page.locator('.task-card')).toHaveCount(12);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await expect
+    .poll(() => page.locator('#taskGrid').evaluate((grid) => grid.scrollTop))
+    .toBe(0);
+  await expect
+    .poll(() =>
+      page.locator('.board-sidebar').evaluate((sidebar) => sidebar.scrollTop),
+    )
+    .toBe(0);
+
+  const routeBState = await setTaskScroll(120, 45);
+  expect(routeBState.windowY).toBeGreaterThan(0);
+  expect(routeBState.gridY).toBeGreaterThan(0);
+  expect(routeBState.sidebarY).toBeGreaterThan(0);
+
+  await navigateToHash(page, routeA);
+  await expect(page.locator('.task-card')).toHaveCount(3);
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        windowY: window.scrollY,
+        gridY: document.querySelector<HTMLElement>('#taskGrid')?.scrollTop ?? 0,
+        sidebarY:
+          document.querySelector<HTMLElement>('.board-sidebar')?.scrollTop ?? 0,
+      })),
+    )
+    .toEqual(routeAState);
+
+  await navigateToHash(page, routeB);
+  await expect(page.locator('.task-card')).toHaveCount(12);
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        windowY: window.scrollY,
+        gridY: document.querySelector<HTMLElement>('#taskGrid')?.scrollTop ?? 0,
+        sidebarY:
+          document.querySelector<HTMLElement>('.board-sidebar')?.scrollTop ?? 0,
+      })),
+    )
+    .toEqual(routeBState);
 });
 
 /** Proves active task controls use canonical hash deduplication without growing browser history. */

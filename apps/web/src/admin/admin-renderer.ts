@@ -16,11 +16,37 @@ import {
 
 const DEFAULT_USER_ROLE_ID = 'role-user';
 
+export interface AdminEditorDraft {
+  name: string;
+  roleId?: string;
+  permissions?: PermissionCode[];
+}
+
 export type AdminEditorState =
-  | { kind: 'user'; mode: 'create'; record?: undefined }
-  | { kind: 'user'; mode: 'edit'; record: AdminUserResource }
-  | { kind: 'role'; mode: 'create'; record?: undefined }
-  | { kind: 'role'; mode: 'edit'; record: AdminRoleResource };
+  | {
+      kind: 'user';
+      mode: 'create';
+      record?: undefined;
+      draft?: AdminEditorDraft;
+    }
+  | {
+      kind: 'user';
+      mode: 'edit';
+      record: AdminUserResource;
+      draft?: AdminEditorDraft;
+    }
+  | {
+      kind: 'role';
+      mode: 'create';
+      record?: undefined;
+      draft?: AdminEditorDraft;
+    }
+  | {
+      kind: 'role';
+      mode: 'edit';
+      record: AdminRoleResource;
+      draft?: AdminEditorDraft;
+    };
 
 export interface AdminRenderState {
   section?: AdminSection;
@@ -81,7 +107,6 @@ function permissionChecks(
   document: Document,
   overview: AdminOverviewResource,
   selected: readonly PermissionCode[],
-  disabled = false,
 ): HTMLElement {
   const group = createNode(document, 'fieldset', 'admin-permissions');
   group.append(createNode(document, 'legend', undefined, '权限'));
@@ -92,7 +117,6 @@ function permissionChecks(
     input.name = 'permissions';
     input.value = permission.code;
     input.checked = selected.includes(permission.code);
-    input.disabled = disabled;
     label.append(
       input,
       createNode(
@@ -105,6 +129,16 @@ function permissionChecks(
     group.append(label);
   }
   return group;
+}
+
+/** Returns the lifecycle or built-in label shared by desktop rows and mobile cards. */
+function adminStatusText(
+  kind: 'user' | 'role',
+  record: AdminUserResource | AdminRoleResource,
+): string {
+  if (kind === 'user') return record.active ? '活跃' : '已删除';
+  const role = record as AdminRoleResource;
+  return role.builtin ? '内置角色' : role.active ? '自定义角色' : '已删除';
 }
 
 /** Creates one delegated action button with stable admin data attributes. */
@@ -182,7 +216,7 @@ function userRow(
     document,
     'td',
     'admin-status',
-    user.active ? '活跃' : '已删除',
+    adminStatusText('user', user),
   );
   const updatedAt = createNode(document, 'td');
   updatedAt.append(updatedAtNode(document, user.updatedAt));
@@ -213,7 +247,7 @@ function roleRow(
     document,
     'td',
     'admin-status',
-    role.builtin ? '内置角色' : role.active ? '自定义角色' : '已删除',
+    adminStatusText('role', role),
   );
   const updatedAt = createNode(document, 'td');
   updatedAt.append(updatedAtNode(document, role.updatedAt));
@@ -243,6 +277,7 @@ function mobileCard(
         ? `角色：${(record as AdminUserResource).roleName}`
         : `代码：${(record as AdminRoleResource).code}`,
     ),
+    createNode(document, 'span', 'admin-status', adminStatusText(kind, record)),
     updatedAtNode(document, record.updatedAt),
   );
   const actions = createNode(document, 'div', 'admin-record-actions');
@@ -388,6 +423,7 @@ function editorDialog(
   const dialog = createNode(document, 'dialog', 'admin-dialog');
   const kind = editor.kind;
   const record = editor.record;
+  const draft = editor.draft;
   const title =
     editor.mode === 'create'
       ? kind === 'user'
@@ -406,11 +442,12 @@ function editorDialog(
   if (kind === 'user') {
     const user = record as AdminUserResource | undefined;
     form.append(
-      field(document, '用户名称', 'name', user?.name ?? ''),
+      field(document, '用户名称', 'name', draft?.name ?? user?.name ?? ''),
       roleSelect(
         document,
         overview.roles,
-        user?.roleId ??
+        draft?.roleId ??
+          user?.roleId ??
           overview.roles.find(
             (role) => role.active && role.id === DEFAULT_USER_ROLE_ID,
           )?.id ??
@@ -420,7 +457,12 @@ function editorDialog(
     );
   } else {
     const role = record as AdminRoleResource | undefined;
-    const name = field(document, '角色名称', 'name', role?.name ?? '');
+    const name = field(
+      document,
+      '角色名称',
+      'name',
+      draft?.name ?? role?.name ?? '',
+    );
     if (role?.builtin)
       name.querySelector('input')?.setAttribute('readonly', '');
     form.append(
@@ -428,17 +470,13 @@ function editorDialog(
       permissionChecks(
         document,
         overview,
-        role?.permissions ?? [],
-        role?.builtin ?? false,
+        draft?.permissions ?? role?.permissions ?? [],
       ),
     );
   }
   const actions = createNode(document, 'div', 'admin-form-actions');
   const save = createNode(document, 'button', 'primary-button', '保存');
   save.type = 'submit';
-  save.disabled =
-    kind === 'role' &&
-    (record as AdminRoleResource | undefined)?.builtin === true;
   const close = createNode(document, 'button', 'secondary-button', '取消');
   close.type = 'button';
   close.dataset.adminClose = 'dialog';
