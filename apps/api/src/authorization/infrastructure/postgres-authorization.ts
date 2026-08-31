@@ -72,6 +72,7 @@ function toUser(account: AccountOrmEntity): AdminUserModel {
     roleName: account.roleEntity.name,
     active: account.deletedAt === null,
     deletedAt: account.deletedAt?.toISOString() ?? null,
+    updatedAt: account.updatedAt.toISOString(),
   };
 }
 
@@ -90,6 +91,7 @@ function toRole(role: RoleOrmEntity): AdminRoleModel {
     permissions,
     active: role.deletedAt === null,
     deletedAt: role.deletedAt?.toISOString() ?? null,
+    updatedAt: role.updatedAt.toISOString(),
   };
 }
 
@@ -324,6 +326,7 @@ export class PostgresAuthorization
             );
         }
         entity.name = next.name;
+        entity.updatedAt = new Date();
         entity.rolePermissions = next.permissions.map((permissionCode) => ({
           roleId: id,
           permissionCode,

@@ -4,6 +4,7 @@ import { DataSource, type DataSourceOptions } from 'typeorm';
 import { CreateNoticeboardSchema1788062400000 } from '../../../common/infrastructure/database/migrations/1788062400000-create-noticeboard-schema.js';
 import { AddEventActorSnapshot1788062401000 } from '../../../common/infrastructure/database/migrations/1788062401000-add-event-actor-snapshot.js';
 import { AddAuthorizationSchema1788062402000 } from '../../../common/infrastructure/database/migrations/1788062402000-add-authorization-schema.js';
+import { AddAdminUpdatedAt1788062403000 } from '../../../common/infrastructure/database/migrations/1788062403000-add-admin-updated-at.js';
 import { AccountOrmEntity } from '../../../identity/infrastructure/persistence/entities/account.orm-entity.js';
 import { RoleOrmEntity } from '../../../authorization/infrastructure/persistence/entities/role.orm-entity.js';
 import { RolePermissionOrmEntity } from '../../../authorization/infrastructure/persistence/entities/role-permission.orm-entity.js';
@@ -36,6 +37,7 @@ export function postgresDataSourceOptions(
       CreateNoticeboardSchema1788062400000,
       AddEventActorSnapshot1788062401000,
       AddAuthorizationSchema1788062402000,
+      AddAdminUpdatedAt1788062403000,
     ],
     migrationsTableName: 'schema_migrations',
   };

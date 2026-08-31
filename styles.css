@@ -1441,11 +1441,11 @@ body[data-style='pixel-retro'] .task-card:hover {
   .board-layout {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
-    gap: 32px;
-    padding-top: 35px;
+    gap: 20px;
+    padding-top: 24px;
   }
   .tasks-intro {
-    padding-top: 42px;
+    padding: 32px 0 28px;
   }
   .filter-list {
     display: grid;
@@ -1478,9 +1478,10 @@ body[data-style='pixel-retro'] .task-card:hover {
     color: var(--accent);
   }
   .board-filter-content {
-    padding-top: 22px;
+    padding-top: 16px;
   }
   .task-grid {
+    padding-top: 14px;
     overscroll-behavior-y: auto;
   }
   .filter-button {
@@ -1533,6 +1534,13 @@ body[data-style='pixel-retro'] .task-card:hover {
     min-height: 260px;
     align-items: flex-start;
     padding: 43px 0 40px;
+  }
+  .tasks-intro {
+    padding: 28px 0 24px;
+  }
+  .board-layout {
+    gap: 16px;
+    padding-top: 18px;
   }
   h1 {
     font-size: 45px;
@@ -1605,8 +1613,11 @@ body[data-style='pixel-retro'] .task-card:hover {
   .board-toolbar {
     display: block;
   }
+  .result-count {
+    margin-top: 8px;
+  }
   .toolbar-actions {
-    margin-top: 20px;
+    margin-top: 12px;
   }
   .search-box {
     flex: 1;
@@ -1614,6 +1625,7 @@ body[data-style='pixel-retro'] .task-card:hover {
   }
   .task-grid {
     grid-template-columns: 1fr;
+    padding-top: 12px;
   }
   .task-card h3 {
     margin-top: 23px;
@@ -1706,6 +1718,127 @@ body[data-style='pixel-retro'] .task-card:hover {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.admin-landing {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 30px 0 48px;
+}
+.admin-entry-card {
+  min-height: 150px;
+  border: var(--border-width) solid var(--line);
+  background: var(--white);
+  box-shadow: var(--shadow-card);
+}
+.admin-entry-link {
+  min-height: 150px;
+  padding: 24px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  color: var(--ink);
+  font-size: 24px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.admin-entry-link::after {
+  content: '↗';
+  font-size: 22px;
+}
+.admin-back-link {
+  display: inline-block;
+  margin-bottom: 20px;
+  color: var(--muted);
+  font: 11px/1 var(--meta-font);
+  text-decoration: none;
+}
+.admin-sort-bar {
+  position: sticky;
+  z-index: 2;
+  top: var(--topbar-offset);
+  margin: 0 0 18px;
+  padding: 10px 0;
+  display: flex;
+  gap: 8px;
+  background: var(--paper);
+  border-bottom: var(--border-width) solid var(--line);
+}
+.admin-sort-bar .admin-direction {
+  margin-left: auto;
+}
+.admin-sort-bar select,
+.admin-sort-button {
+  min-height: 36px;
+  padding: 7px 10px;
+  border: var(--border-width) solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+  color: var(--ink);
+}
+.admin-sort-button {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+}
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--white);
+}
+.admin-table th,
+.admin-table td {
+  padding: 13px 12px;
+  border-bottom: var(--border-width) solid var(--soft-line);
+  text-align: left;
+  vertical-align: middle;
+}
+.admin-table th {
+  color: var(--muted);
+  font: 10px/1 var(--meta-font);
+  letter-spacing: 0.08em;
+}
+.admin-record-info {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.admin-record-info strong {
+  overflow-wrap: anywhere;
+}
+.admin-updated-at {
+  margin: 0;
+  color: var(--muted);
+  font: 10px/1.4 var(--meta-font);
+}
+.admin-record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+}
+.admin-mobile-list {
+  display: none;
+}
+.admin-dialog {
+  width: min(560px, calc(100vw - 32px));
+  margin: auto;
+  padding: 24px;
+  border: var(--border-width) solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--shadow-card);
+}
+.admin-dialog::backdrop {
+  background: rgb(0 0 0 / 42%);
+}
+.admin-dialog h2 {
+  margin: 0 0 20px;
+  font-size: 24px;
+}
+.admin-dialog .admin-form-actions {
+  justify-content: flex-start;
 }
 .admin-card-title {
   font-weight: 700;
@@ -1803,5 +1936,35 @@ body[data-style='pixel-retro'] .task-card:hover {
   }
   .admin-card {
     padding: 16px;
+  }
+  .admin-landing {
+    grid-template-columns: 1fr;
+    padding-top: 22px;
+  }
+  .admin-entry-link {
+    min-height: 120px;
+  }
+  .admin-table {
+    display: none;
+  }
+  .admin-mobile-list {
+    display: grid;
+    gap: 12px;
+  }
+  .admin-mobile-card {
+    padding: 16px;
+    display: grid;
+    align-items: start;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 16px;
+    border: var(--border-width) solid var(--line);
+    background: var(--white);
+    box-shadow: var(--shadow-card);
+  }
+  .admin-mobile-card .admin-record-actions {
+    justify-content: flex-end;
+  }
+  .admin-dialog {
+    padding: 20px;
   }
 }

@@ -1,5 +1,14 @@
 /** Preserves the prototype's hash routing and Chinese task-filter URL vocabulary. */
 
+import {
+  defaultAdminSort,
+  isAdminSortField,
+  type AdminSection,
+  type AdminSortDirection,
+  type AdminSortField,
+  type AdminSortState,
+} from '../admin/admin-sort.js';
+
 export const FILTER_LABELS = [
   '全部',
   '未开始',
@@ -16,6 +25,8 @@ export interface RouteState {
   scope: TaskScope;
   filter: FilterLabel;
   query: string;
+  section?: AdminSection | undefined;
+  sort?: AdminSortState | undefined;
 }
 
 /** Recognizes only the six visible filter labels supported by the task board. */
@@ -29,12 +40,53 @@ export function parseHash(hash: string): RouteState {
   const [path = '', queryString = ''] = source.split('?');
   const params = new URLSearchParams(queryString);
   const filter = params.get('filter');
+  const section: AdminSection =
+    path === 'admin/users'
+      ? 'users'
+      : path === 'admin/roles'
+        ? 'roles'
+        : 'overview';
+  const isAdminChild = section !== 'overview';
+  const field = params.get('sort');
+  const direction = params.get('direction');
+  const sortDirection: AdminSortDirection | null =
+    direction === 'asc' || direction === 'desc' ? direction : null;
+  const sort = isAdminChild
+    ? isAdminSortField(section, field as AdminSortField) &&
+      sortDirection !== null
+      ? {
+          field: field as AdminSortField,
+          direction: sortDirection,
+        }
+      : defaultAdminSort(section)
+    : undefined;
   return {
-    view: path === 'tasks' ? 'tasks' : path === 'admin' ? 'admin' : 'home',
+    view:
+      path === 'tasks'
+        ? 'tasks'
+        : path === 'admin' || isAdminChild
+          ? 'admin'
+          : 'home',
     scope: params.get('scope') === 'mine' ? 'mine' : 'all',
     filter: isFilterLabel(filter) ? filter : '全部',
     query: params.get('q') ?? '',
+    ...(path === 'admin' || isAdminChild ? { section } : {}),
+    ...(sort ? { sort } : {}),
   };
+}
+
+/** Builds the canonical hash for an administrator section and its child-page sort. */
+export function buildAdminHash(
+  section: AdminSection,
+  sort: AdminSortState = defaultAdminSort(section),
+): string {
+  if (section === 'overview') return '#admin';
+  const safeSort =
+    isAdminSortField(section, sort.field) &&
+    (sort.direction === 'asc' || sort.direction === 'desc')
+      ? sort
+      : defaultAdminSort(section);
+  return `#admin/${section}?sort=${encodeURIComponent(safeSort.field)}&direction=${safeSort.direction}`;
 }
 
 /** Builds the exact task hash used by navigation, status shortcuts, and search. */
@@ -51,5 +103,8 @@ export function normalizeHash(hash: string): string {
   if (route.view === 'tasks') {
     return buildTaskHash(route);
   }
-  return route.view === 'admin' ? '#admin' : '#home';
+  if (route.view !== 'admin') return '#home';
+  return route.section && route.section !== 'overview' && route.sort
+    ? buildAdminHash(route.section, route.sort)
+    : '#admin';
 }

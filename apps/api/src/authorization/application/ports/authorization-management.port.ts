@@ -9,6 +9,7 @@ export interface AdminUserModel {
   roleName: string;
   active: boolean;
   deletedAt: string | null;
+  updatedAt: string;
 }
 
 export interface AdminRoleModel {
@@ -19,6 +20,7 @@ export interface AdminRoleModel {
   permissions: PermissionCode[];
   active: boolean;
   deletedAt: string | null;
+  updatedAt: string;
 }
 
 export interface PermissionModel {

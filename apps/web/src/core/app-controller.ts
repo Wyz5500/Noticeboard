@@ -14,12 +14,15 @@ import { requiredElement, createNode } from './dom.js';
 import { RequestGate } from './request-gate.js';
 import {
   buildTaskHash,
+  buildAdminHash,
   normalizeHash,
   parseHash,
   type FilterLabel,
   type RouteState,
   type TaskScope,
 } from './router.js';
+import { nextAdminSort, type AdminSortField } from '../admin/admin-sort.js';
+import type { AdminEditorState } from '../admin/admin-renderer.js';
 import {
   loadCurrentUserId,
   saveCurrentUserId,
@@ -167,6 +170,7 @@ export class AppController {
   private tasks: TaskResource[] = [];
   private tasksLoaded = false;
   private adminOverview: AdminOverviewResource | null = null;
+  private adminEditor: AdminEditorState | null = null;
   private currentUserId = '';
   private identityChangeSequence = 0;
   private routeChangeSequence = 0;
@@ -306,6 +310,10 @@ export class AppController {
     this.elements.adminView.addEventListener(
       'submit',
       (event) => void this.handleAdminSubmit(event),
+    );
+    this.elements.adminView.addEventListener(
+      'change',
+      (event) => void this.handleAdminChange(event),
     );
     this.elements.drawerInner.addEventListener(
       'click',
@@ -744,7 +752,16 @@ export class AppController {
       this.elements.adminView.replaceChildren();
       return;
     }
-    renderAdminView(this.document, this.elements.adminView, this.adminOverview);
+    const state: Parameters<typeof renderAdminView>[3] = {};
+    if (this.route.section) state.section = this.route.section;
+    if (this.route.sort) state.sort = this.route.sort;
+    if (this.adminEditor) state.editor = this.adminEditor;
+    renderAdminView(
+      this.document,
+      this.elements.adminView,
+      this.adminOverview,
+      state,
+    );
   }
 
   /** Re-renders the selected drawer or closes it if a refresh removed the task. */
@@ -918,6 +935,7 @@ export class AppController {
 
   /** Replaces only the search portion of the current hash to avoid navigation churn while typing. */
   private handleSearch(): void {
+    this.cancelPendingScrollRestore();
     this.route = { ...this.route, query: this.elements.searchInput.value };
     this.window.history.replaceState(null, '', buildTaskHash(this.route));
     this.resetTaskInnerScroll();
@@ -943,6 +961,13 @@ export class AppController {
     const sidebar =
       this.elements.boardLayout.querySelector<HTMLElement>('.board-sidebar');
     if (sidebar) sidebar.scrollTop = 0;
+  }
+
+  /** Cancels an older frame-based view restoration when typing becomes the new source of truth. */
+  private cancelPendingScrollRestore(): void {
+    if (this.pendingScrollRestoreView === null) return;
+    this.pendingScrollRestoreView = null;
+    this.scrollRestoreSequence += 1;
   }
 
   /** Opens a task from pointer activation using event delegation. */
@@ -1014,6 +1039,7 @@ export class AppController {
   private async changeIdentity(): Promise<void> {
     this.captureRenderedViewScroll();
     const sequence = ++this.identityChangeSequence;
+    this.adminEditor = null;
     const actorId = saveCurrentUserId(
       this.storage,
       this.elements.identitySelect.value,
@@ -1055,6 +1081,7 @@ export class AppController {
   private async handleRouteChange(): Promise<void> {
     const previousRoute = this.route;
     this.route = parseHash(this.window.location.hash);
+    this.adminEditor = null;
     if (
       previousRoute.view === 'tasks' &&
       this.route.view === 'tasks' &&
@@ -1063,6 +1090,16 @@ export class AppController {
         previousRoute.query !== this.route.query)
     ) {
       this.resetTaskInnerScroll();
+    }
+    if (
+      this.route.view === 'admin' &&
+      this.route.section &&
+      this.route.section !== 'overview' &&
+      this.route.sort
+    ) {
+      const canonicalHash = buildAdminHash(this.route.section, this.route.sort);
+      if (this.window.location.hash !== canonicalHash)
+        this.window.history.replaceState(null, '', canonicalHash);
     }
     const request = {
       ...this.requestSnapshot(),
@@ -1215,6 +1252,7 @@ export class AppController {
       `admin:${kind}:${form.dataset.adminId ?? 'new'}`,
       async () => {
         const request = this.requestSnapshot();
+        const editor = this.adminEditor;
         try {
           if (kind === 'create-user') {
             await this.api.createAdminUser(request.actorId, {
@@ -1251,9 +1289,13 @@ export class AppController {
             request.routeSequence,
           );
           if (!refreshed || !this.isCurrentRequest(request)) return;
+          this.adminEditor = null;
+          this.render();
           this.showToast('管理信息已更新');
         } catch (error) {
           if (!this.isCurrentRequest(request)) return;
+          this.adminEditor = editor;
+          this.render();
           this.showToast(this.errorMessage(error));
         }
       },
@@ -1263,6 +1305,57 @@ export class AppController {
   /** Handles admin lifecycle buttons while keeping destructive operations soft-delete only. */
   private async handleAdminClick(event: Event): Promise<void> {
     if (!(event.target instanceof Element)) return;
+    const close = event.target.closest<HTMLElement>('[data-admin-close]');
+    if (close?.dataset.adminClose === 'dialog') {
+      this.adminEditor = null;
+      this.render();
+      return;
+    }
+    const open = event.target.closest<HTMLElement>('[data-admin-open]');
+    if (open?.dataset.adminOpen) {
+      const value = open.dataset.adminOpen;
+      if (value === 'create-user' || value === 'create-role') {
+        this.adminEditor = {
+          kind: value === 'create-user' ? 'user' : 'role',
+          mode: 'create',
+        };
+      } else if (
+        (value === 'user' || value === 'role') &&
+        open.dataset.adminId
+      ) {
+        const record =
+          value === 'user'
+            ? this.adminOverview?.users.find(
+                (candidate) => candidate.id === open.dataset.adminId,
+              )
+            : this.adminOverview?.roles.find(
+                (candidate) => candidate.id === open.dataset.adminId,
+              );
+        if (!record) return;
+        this.adminEditor = {
+          kind: value,
+          mode: 'edit',
+          record,
+        } as AdminEditorState;
+      } else return;
+      this.render();
+      return;
+    }
+    const sort = event.target.closest<HTMLElement>('[data-admin-sort]');
+    if (sort?.dataset.adminSort) {
+      this.updateAdminSort(sort.dataset.adminSort as AdminSortField);
+      return;
+    }
+    const direction = event.target.closest<HTMLElement>(
+      '[data-admin-direction]',
+    );
+    if (direction) {
+      const section = this.route.section;
+      if (section === 'users' || section === 'roles') {
+        this.updateAdminSort(this.route.sort?.field ?? 'updatedAt', true);
+      }
+      return;
+    }
     const button = event.target.closest<HTMLButtonElement>(
       '[data-admin-action]',
     );
@@ -1286,12 +1379,42 @@ export class AppController {
           request.routeSequence,
         );
         if (!refreshed || !this.isCurrentRequest(request)) return;
+        this.adminEditor = null;
+        this.render();
         this.showToast('管理信息已更新');
       } catch (error) {
         if (!this.isCurrentRequest(request)) return;
         this.showToast(this.errorMessage(error));
       }
     });
+  }
+
+  /** Handles mobile sort-field changes without requesting a fresh overview. */
+  private handleAdminChange(event: Event): void {
+    if (!(event.target instanceof Element)) return;
+    const select = event.target.closest<HTMLSelectElement>(
+      '[data-admin-sort-select]',
+    );
+    if (!select?.value) return;
+    this.updateAdminSort(select.value as AdminSortField);
+  }
+
+  /** Replaces only the active admin child sort hash and re-renders memory state. */
+  private updateAdminSort(field: AdminSortField, directionOnly = false): void {
+    const section = this.route.section;
+    if (section !== 'users' && section !== 'roles') return;
+    const current = this.route.sort ?? {
+      field: 'updatedAt',
+      direction: 'desc',
+    };
+    const sort = nextAdminSort(
+      section,
+      current,
+      directionOnly ? current.field : field,
+    );
+    this.route = { ...this.route, sort };
+    this.window.history.replaceState(null, '', buildAdminHash(section, sort));
+    this.render();
   }
 
   /** Re-reads admin state and falls back to the first manager if the current one lost access. */
@@ -1384,7 +1507,10 @@ export class AppController {
     if (event.key !== 'Escape') return;
     if (this.elements.profileMenu.classList.contains('is-open'))
       this.closeProfileMenu();
-    else if (this.elements.modal.classList.contains('is-open'))
+    else if (this.adminEditor) {
+      this.adminEditor = null;
+      this.render();
+    } else if (this.elements.modal.classList.contains('is-open'))
       this.closeModal();
     else if (this.elements.drawer.classList.contains('is-open'))
       this.closeDrawer();

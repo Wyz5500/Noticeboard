@@ -7,7 +7,11 @@ import type {
   AdminOverviewResource,
   TaskResource,
 } from './api-types.js';
+vi.mock('../admin/admin-renderer.js', () => ({
+  renderAdminView: vi.fn(),
+}));
 import { AppController } from './app-controller.js';
+import * as adminRenderer from '../admin/admin-renderer.js';
 
 const CURRENT_USER: ActorResource = {
   id: 'noticeboard-admin',
@@ -61,6 +65,7 @@ describe('AppController administration refresh', () => {
       tasks: TaskResource[];
       currentUserId: string;
       adminOverview: unknown;
+      adminEditor: unknown;
       identityChangeSequence: number;
       loadTasksForCurrentUser: () => Promise<TaskResource[]>;
       canManage: () => boolean;
@@ -81,6 +86,7 @@ describe('AppController administration refresh', () => {
       roles: [],
       permissions: [],
     };
+    controller.adminEditor = { kind: 'user', mode: 'create' };
     controller.identityChangeSequence = 0;
     controller.loadTasksForCurrentUser = () =>
       new Promise((resolve) => {
@@ -94,6 +100,7 @@ describe('AppController administration refresh', () => {
 
     expect(controller.tasks).toEqual([]);
     expect(controller.adminOverview).toBeNull();
+    expect(controller.adminEditor).toBeNull();
     expect(controller.render).toHaveBeenCalledOnce();
 
     releaseTasks([]);
@@ -1233,5 +1240,288 @@ describe('AppController administration refresh', () => {
     expect(controller.route.view).toBe('home');
     expect(controller.window.location.hash).toBe('#home');
     expect(controller.render).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('AppController administration management UI', () => {
+  class TestElement {
+    /** Creates a test event target carrying delegated admin data attributes. */
+    constructor(public readonly dataset: Record<string, string>) {}
+
+    /** Provides the selector matching surface used by delegated controller handlers. */
+    closest(selector: string): TestElement | null {
+      return selector === '[data-admin-open]' && this.dataset.adminOpen
+        ? this
+        : selector === '[data-admin-close]' && this.dataset.adminClose
+          ? this
+          : selector === '[data-admin-sort]' && this.dataset.adminSort
+            ? this
+            : selector === '[data-admin-action]' && this.dataset.adminAction
+              ? this
+              : null;
+    }
+  }
+
+  class TestForm {
+    /** Creates a test form carrying the delegated admin form identifier. */
+    constructor(public readonly dataset: Record<string, string>) {}
+  }
+
+  /** Installs the smallest browser constructor shims needed by delegated handlers in node tests. */
+  function installDomShims(): void {
+    (globalThis as { Element?: unknown }).Element = TestElement;
+    (globalThis as { HTMLFormElement?: unknown }).HTMLFormElement = TestForm;
+    (globalThis as { FormData?: unknown }).FormData = class {
+      /** Returns the submitted text field used by the create-user command. */
+      get(): string {
+        return '测试用户';
+      }
+
+      /** Returns no selected permissions in the minimal failed-request case. */
+      getAll(): string[] {
+        return [];
+      }
+    };
+  }
+
+  /** Ensures nested admin routes reach the renderer with parsed section and sort state. */
+  it('renders the route-selected admin child list state', () => {
+    const renderAdminView = vi.spyOn(adminRenderer, 'renderAdminView');
+    const controller = Object.create(AppController.prototype) as {
+      route: {
+        view: 'admin';
+        section: 'users';
+        sort: { field: 'name'; direction: 'asc' };
+      };
+      adminOverview: AdminOverviewResource;
+      canManage: () => boolean;
+      elements: { adminView: HTMLElement };
+      document: Document;
+      renderAdmin: () => void;
+    };
+    controller.route = {
+      view: 'admin',
+      section: 'users',
+      sort: { field: 'name', direction: 'asc' },
+    };
+    controller.adminOverview = { users: [], roles: [], permissions: [] };
+    controller.canManage = () => true;
+    controller.elements = { adminView: {} as HTMLElement };
+    controller.document = {} as Document;
+
+    controller.renderAdmin();
+
+    expect(renderAdminView).toHaveBeenCalledWith(
+      controller.document,
+      controller.elements.adminView,
+      controller.adminOverview,
+      { section: 'users', sort: { field: 'name', direction: 'asc' } },
+    );
+  });
+
+  /** Ensures an editor trigger stores state and a delegated cancel clears it without a request. */
+  it('opens and closes an admin editor through delegated events', async () => {
+    installDomShims();
+    const controller = Object.create(AppController.prototype) as {
+      adminEditor: unknown;
+      adminOverview: AdminOverviewResource;
+      render: ReturnType<typeof vi.fn>;
+      handleAdminClick: (event: Event) => Promise<void>;
+      elements: { adminView: HTMLElement };
+    };
+    const openButton = new TestElement({
+      adminOpen: 'user',
+      adminId: 'user-1',
+    });
+    const closeButton = new TestElement({ adminClose: 'dialog' });
+    controller.adminEditor = null;
+    controller.adminOverview = {
+      users: [{ id: 'user-1' } as AdminOverviewResource['users'][number]],
+      roles: [],
+      permissions: [],
+    };
+    controller.render = vi.fn();
+    controller.elements = { adminView: {} as HTMLElement };
+
+    await controller.handleAdminClick({
+      target: openButton,
+    } as unknown as Event);
+    expect(controller.adminEditor).toEqual({
+      kind: 'user',
+      mode: 'edit',
+      record: controller.adminOverview.users[0],
+    });
+    await controller.handleAdminClick({
+      target: closeButton,
+    } as unknown as Event);
+    expect(controller.adminEditor).toBeNull();
+  });
+
+  /** Ensures desktop and mobile sorting update the hash in memory without refreshing overview data. */
+  it('replaces nested admin sort hashes without a network refresh', async () => {
+    installDomShims();
+    const replaceState = vi.fn();
+    const controller = Object.create(AppController.prototype) as {
+      route: {
+        view: 'admin';
+        section: 'roles';
+        sort: { field: 'name'; direction: 'asc' };
+      };
+      window: { history: { replaceState: typeof replaceState } };
+      render: ReturnType<typeof vi.fn>;
+      refreshAdminOverview: ReturnType<typeof vi.fn>;
+      handleAdminClick: (event: Event) => Promise<void>;
+    };
+    controller.route = {
+      view: 'admin',
+      section: 'roles',
+      sort: { field: 'name', direction: 'asc' },
+    };
+    controller.window = { history: { replaceState } };
+    controller.render = vi.fn();
+    controller.refreshAdminOverview = vi.fn();
+    const button = new TestElement({ adminSort: 'permissions' });
+
+    await controller.handleAdminClick({ target: button } as unknown as Event);
+
+    expect(replaceState).toHaveBeenCalledWith(
+      null,
+      '',
+      '#admin/roles?sort=permissions&direction=asc',
+    );
+    expect(controller.refreshAdminOverview).not.toHaveBeenCalled();
+    expect(controller.render).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures a failed admin mutation preserves the open editor for correction. */
+  it('preserves the editor when a CRUD request fails', async () => {
+    installDomShims();
+    const controller = Object.create(AppController.prototype) as {
+      adminEditor: unknown;
+      api: { createAdminUser: () => Promise<never> };
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      gate: {
+        run: (_key: string, operation: () => Promise<void>) => Promise<void>;
+      };
+      showToast: ReturnType<typeof vi.fn>;
+      render: ReturnType<typeof vi.fn>;
+      handleAdminSubmit: (event: SubmitEvent) => Promise<void>;
+    };
+    const editor = { kind: 'user', mode: 'create' };
+    controller.adminEditor = editor;
+    controller.api = {
+      createAdminUser: () => Promise.reject(new Error('failed')),
+    };
+    controller.requestSnapshot = () => ({
+      actorId: 'admin',
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.gate = { run: (_key, operation) => operation() };
+    controller.showToast = vi.fn();
+    controller.render = vi.fn();
+    const form = new TestForm({ adminForm: 'create-user' });
+
+    await controller.handleAdminSubmit({
+      preventDefault: () => undefined,
+      target: form,
+    } as unknown as SubmitEvent);
+
+    expect(controller.adminEditor).toBe(editor);
+    expect(controller.showToast).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures a successful delete/restore refresh closes an editor and re-renders the child page. */
+  it('closes the editor after a successful lifecycle refresh', async () => {
+    installDomShims();
+    const controller = Object.create(AppController.prototype) as {
+      adminEditor: unknown;
+      api: { deleteAdminRole: () => Promise<void> };
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      refreshAdminOverview: () => Promise<boolean>;
+      gate: {
+        run: (_key: string, operation: () => Promise<void>) => Promise<void>;
+      };
+      render: ReturnType<typeof vi.fn>;
+      showToast: ReturnType<typeof vi.fn>;
+      handleAdminClick: (event: Event) => Promise<void>;
+    };
+    controller.adminEditor = { kind: 'role', mode: 'edit' };
+    controller.api = { deleteAdminRole: () => Promise.resolve() };
+    controller.requestSnapshot = () => ({
+      actorId: 'admin',
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.refreshAdminOverview = () => Promise.resolve(true);
+    controller.gate = { run: (_key, operation) => operation() };
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+    const button = new TestElement({
+      adminAction: 'delete-role',
+      adminId: 'role-1',
+    });
+
+    await controller.handleAdminClick({ target: button } as unknown as Event);
+
+    expect(controller.adminEditor).toBeNull();
+    expect(controller.render).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures a failed delete keeps the current editor open for retry or correction. */
+  it('preserves the editor when delete fails', async () => {
+    installDomShims();
+    const controller = Object.create(AppController.prototype) as {
+      adminEditor: unknown;
+      api: { deleteAdminRole: () => Promise<void> };
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      refreshAdminOverview: ReturnType<typeof vi.fn>;
+      gate: {
+        run: (_key: string, operation: () => Promise<void>) => Promise<void>;
+      };
+      showToast: ReturnType<typeof vi.fn>;
+      handleAdminClick: (event: Event) => Promise<void>;
+    };
+    const editor = { kind: 'role', mode: 'edit' };
+    controller.adminEditor = editor;
+    controller.api = {
+      deleteAdminRole: () => Promise.reject(new Error('failed')),
+    };
+    controller.requestSnapshot = () => ({
+      actorId: 'admin',
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.refreshAdminOverview = vi.fn();
+    controller.gate = { run: (_key, operation) => operation() };
+    controller.showToast = vi.fn();
+    const button = new TestElement({
+      adminAction: 'delete-role',
+      adminId: 'role-1',
+    });
+
+    await controller.handleAdminClick({ target: button } as unknown as Event);
+
+    expect(controller.adminEditor).toBe(editor);
+    expect(controller.refreshAdminOverview).not.toHaveBeenCalled();
+    expect(controller.showToast).toHaveBeenCalledOnce();
   });
 });
