@@ -16,6 +16,19 @@ async function waitForModalTransition(page: Page): Promise<void> {
     });
 }
 
+/** Removes seeded management records while preserving stable list chrome for visual baselines. */
+async function clearDynamicAdminRecords(page: Page): Promise<void> {
+  await page.waitForLoadState('networkidle');
+  await page
+    .locator('.admin-table tbody, .admin-mobile-list')
+    .evaluateAll((containers) => {
+      containers.forEach((container) => container.replaceChildren());
+    });
+  await expect(
+    page.locator('.admin-table tbody tr, .admin-mobile-card'),
+  ).toHaveCount(0);
+}
+
 /** Restores deterministic server or legacy local state before each visual scenario. */
 test.beforeEach(async ({ page, request }) => {
   const health = await request.get('/health/live');
@@ -76,6 +89,25 @@ for (const themeId of THEME_IDS) {
       .evaluateAll((grids) => grids.forEach((grid) => grid.replaceChildren()));
     await expect(page.locator('#adminView')).toHaveScreenshot(
       `${themeId}-admin.png`,
+    );
+
+    await page.getByRole('link', { name: '用户管理' }).click();
+    await expect(page).toHaveURL(
+      /#admin\/users\?sort=updatedAt&direction=desc/,
+    );
+    await clearDynamicAdminRecords(page);
+    await expect(page.locator('#adminView')).toHaveScreenshot(
+      `${themeId}-admin-users.png`,
+    );
+
+    await page.getByRole('link', { name: '返回管理首页' }).click();
+    await page.getByRole('link', { name: '角色管理' }).click();
+    await expect(page).toHaveURL(
+      /#admin\/roles\?sort=updatedAt&direction=desc/,
+    );
+    await clearDynamicAdminRecords(page);
+    await expect(page.locator('#adminView')).toHaveScreenshot(
+      `${themeId}-admin-roles.png`,
     );
   });
 }
