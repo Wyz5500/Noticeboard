@@ -22,6 +22,7 @@ export interface AdminUserResource {
   roleName: string;
   active: boolean;
   deletedAt: string | null;
+  updatedAt: string;
 }
 
 export interface AdminRoleResource {
@@ -32,6 +33,7 @@ export interface AdminRoleResource {
   permissions: PermissionCode[];
   active: boolean;
   deletedAt: string | null;
+  updatedAt: string;
 }
 
 export interface PermissionResource {

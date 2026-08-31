@@ -1,5 +1,12 @@
 /** Maps demo account records to PostgreSQL without exposing ORM entities across layers. */
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
+import {
+  Column,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  PrimaryColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 import type { RoleOrmEntity } from '../../../../authorization/infrastructure/persistence/entities/role.orm-entity.js';
 
@@ -20,4 +27,7 @@ export class AccountOrmEntity {
 
   @Column({ name: 'deleted_at', type: 'timestamptz', nullable: true })
   deletedAt!: Date | null;
+
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt!: Date;
 }

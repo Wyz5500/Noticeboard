@@ -67,6 +67,7 @@ const overview: AdminOverviewResource = {
       permissions: [],
       active: true,
       deletedAt: null,
+      updatedAt: '2026-08-30T09:00:00.000Z',
     },
     {
       id: 'role-user',
@@ -76,6 +77,7 @@ const overview: AdminOverviewResource = {
       permissions: ['tasks.view'],
       active: true,
       deletedAt: null,
+      updatedAt: '2026-08-30T09:00:00.000Z',
     },
   ],
   permissions: [

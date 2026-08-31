@@ -12,6 +12,11 @@ import { configureHttpApplication } from './common/presentation/configure-http-a
 const DATABASE_URL = process.env.DATABASE_URL_TEST;
 const describeDatabase = DATABASE_URL ? describe : describe.skip;
 
+/** Waits until the millisecond precision of JSON ISO timestamps can distinguish the next mutation. */
+function waitForTimestampTick(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 2));
+}
+
 describeDatabase('application composition', () => {
   let app: NestFastifyApplication;
 
@@ -102,7 +107,7 @@ describeDatabase('application composition', () => {
     expect(response.json()).toEqual({ status: 'ready', database: 'up' });
   });
 
-  /** Proves administrator CRUD, role occupancy conflicts, and ordinary-user denial through PostgreSQL. */
+  /** Proves administrator CRUD persists and returns ISO modification timestamps through PostgreSQL. */
   it('runs the authorization management flow through real adapters', async () => {
     const ordinary = await app.inject({
       method: 'GET',
@@ -124,6 +129,22 @@ describeDatabase('application composition', () => {
       ]),
     );
     expect(overview.json().permissions).toHaveLength(8);
+    expect(overview.json().users).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'noticeboard-admin',
+          updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        }),
+      ]),
+    );
+    expect(overview.json().roles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'role-system-admin',
+          updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        }),
+      ]),
+    );
 
     const invalidBuiltinEdit = await app.inject({
       method: 'PATCH',
@@ -144,7 +165,25 @@ describeDatabase('application composition', () => {
       payload: { name: roleName },
     });
     expect(role.statusCode).toBe(201);
-    expect(role.json()).toMatchObject({ name: roleName, permissions: [] });
+    expect(role.json()).toMatchObject({
+      name: roleName,
+      permissions: [],
+      updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    });
+
+    await waitForTimestampTick();
+    const updatedRole = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/admin/roles/${role.json().id as string}`,
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
+      payload: { name: roleName, permissions: ['tasks.view'] },
+    });
+    expect(updatedRole.statusCode).toBe(200);
+    expect(updatedRole.json()).toMatchObject({
+      permissions: ['tasks.view'],
+      updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    });
+    expect(updatedRole.json().updatedAt).not.toBe(role.json().updatedAt);
 
     const missingRoleUser = await app.inject({
       method: 'POST',
@@ -164,6 +203,9 @@ describeDatabase('application composition', () => {
       payload: { name: '集成测试用户', roleId: role.json().id as string },
     });
     expect(user.statusCode).toBe(201);
+    expect(user.json()).toMatchObject({
+      updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    });
 
     const occupied = await app.inject({
       method: 'DELETE',
@@ -173,12 +215,49 @@ describeDatabase('application composition', () => {
     expect(occupied.statusCode).toBe(409);
     expect(occupied.json()).toMatchObject({ error: { code: 'ROLE_IN_USE' } });
 
+    await waitForTimestampTick();
     const deletedUser = await app.inject({
       method: 'DELETE',
       url: `/api/v1/admin/users/${user.json().id as string}`,
       headers: { 'x-demo-user-id': 'noticeboard-admin' },
     });
     expect(deletedUser.statusCode).toBe(204);
+
+    const deletedUserOverview = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/overview',
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
+    });
+    expect(deletedUserOverview.json().users).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: user.json().id,
+          active: false,
+          updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        }),
+      ]),
+    );
+    const deletedUserResource = deletedUserOverview
+      .json()
+      .users.find(
+        (candidate: { id: string }) => candidate.id === user.json().id,
+      );
+    expect(deletedUserResource.updatedAt).not.toBe(user.json().updatedAt);
+
+    await waitForTimestampTick();
+    const restoredUser = await app.inject({
+      method: 'POST',
+      url: `/api/v1/admin/users/${user.json().id as string}/restore`,
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
+    });
+    expect(restoredUser.statusCode).toBe(201);
+    expect(restoredUser.json()).toMatchObject({
+      active: true,
+      updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    });
+    expect(restoredUser.json().updatedAt).not.toBe(
+      deletedUserResource.updatedAt,
+    );
 
     const reassignedUser = await app.inject({
       method: 'PATCH',
@@ -188,12 +267,51 @@ describeDatabase('application composition', () => {
     });
     expect(reassignedUser.statusCode).toBe(200);
 
+    await waitForTimestampTick();
     const deletedRole = await app.inject({
       method: 'DELETE',
       url: `/api/v1/admin/roles/${role.json().id as string}`,
       headers: { 'x-demo-user-id': 'noticeboard-admin' },
     });
     expect(deletedRole.statusCode).toBe(204);
+
+    const deletedRoleOverview = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/overview',
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
+    });
+    expect(deletedRoleOverview.json().roles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: role.json().id,
+          active: false,
+          updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        }),
+      ]),
+    );
+    const deletedRoleResource = deletedRoleOverview
+      .json()
+      .roles.find(
+        (candidate: { id: string }) => candidate.id === role.json().id,
+      );
+    expect(deletedRoleResource.updatedAt).not.toBe(
+      updatedRole.json().updatedAt,
+    );
+
+    await waitForTimestampTick();
+    const restoredRole = await app.inject({
+      method: 'POST',
+      url: `/api/v1/admin/roles/${role.json().id as string}/restore`,
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
+    });
+    expect(restoredRole.statusCode).toBe(201);
+    expect(restoredRole.json()).toMatchObject({
+      active: true,
+      updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    });
+    expect(restoredRole.json().updatedAt).not.toBe(
+      deletedRoleResource.updatedAt,
+    );
 
     const lastAdmin = await app.inject({
       method: 'DELETE',
