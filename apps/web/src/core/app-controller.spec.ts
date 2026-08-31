@@ -566,6 +566,75 @@ describe('AppController administration refresh', () => {
     expect(controller.render).not.toHaveBeenCalled();
   });
 
+  /** Ensures a route change reloads tasks when it invalidates the initial startup request. */
+  it('reloads tasks after startup is superseded by a task route', async () => {
+    const taskResolvers: Array<(tasks: TaskResource[]) => void> = [];
+    const requestedActors: string[] = [];
+    const replacementTask = { ...STALE_TASK, id: 'task-route-reload' };
+    const controller = Object.create(AppController.prototype) as {
+      api: Pick<ApiClient, 'listDemoUsers' | 'listTasks'>;
+      styles: { normalize: (styleId: string | null) => string };
+      storage: Storage;
+      users: ActorResource[];
+      tasks: TaskResource[];
+      tasksLoaded: boolean;
+      currentUserId: string;
+      identityChangeSequence: number;
+      routeChangeSequence: number;
+      route: { view: string };
+      window: { location: { hash: string } };
+      renderStaticOptions: () => void;
+      bindEvents: () => void;
+      renderStyle: (styleId: string) => void;
+      render: () => void;
+      start: () => Promise<void>;
+      handleRouteChange: () => Promise<void>;
+    };
+    controller.api = {
+      listDemoUsers: () => Promise.resolve([TASK_VIEWER]),
+      listTasks: (actorId) => {
+        requestedActors.push(actorId);
+        return new Promise((resolve) => taskResolvers.push(resolve));
+      },
+    };
+    controller.styles = { normalize: () => 'swiss-international' };
+    controller.storage = {
+      getItem: (key: string) =>
+        key === 'minecraft-guild-board-user'
+          ? JSON.stringify({ currentUserId: TASK_VIEWER.id })
+          : null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    } as unknown as Storage;
+    controller.users = [];
+    controller.tasks = [];
+    controller.tasksLoaded = false;
+    controller.currentUserId = '';
+    controller.identityChangeSequence = 0;
+    controller.routeChangeSequence = 0;
+    controller.route = { view: 'home' };
+    controller.window = { location: { hash: '#home' } };
+    controller.renderStaticOptions = vi.fn();
+    controller.bindEvents = vi.fn();
+    controller.renderStyle = vi.fn();
+    controller.render = vi.fn();
+
+    const startup = controller.start();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    controller.window.location.hash = '#tasks?scope=all&filter=全部';
+    const routeChange = controller.handleRouteChange();
+
+    expect(taskResolvers).toHaveLength(2);
+    taskResolvers[0]!([STALE_TASK]);
+    await startup;
+    taskResolvers[1]!([replacementTask]);
+    await routeChange;
+
+    expect(requestedActors).toEqual([TASK_VIEWER.id, TASK_VIEWER.id]);
+    expect(controller.tasks).toEqual([replacementTask]);
+    expect(controller.tasksLoaded).toBe(true);
+  });
+
   /** Ensures startup access loss uses the persisted administrator fallback flow. */
   it('persists a fallback identity when startup admin access is denied', async () => {
     const fallbackAdmin: ActorResource = {
@@ -715,6 +784,8 @@ describe('AppController administration refresh', () => {
     const controller = Object.create(AppController.prototype) as {
       api: Pick<ApiClient, 'getAdminOverview'>;
       users: ActorResource[];
+      tasks: TaskResource[];
+      tasksLoaded: boolean;
       currentUserId: string;
       adminOverview: AdminOverviewResource | null;
       identityChangeSequence: number;
@@ -730,6 +801,8 @@ describe('AppController administration refresh', () => {
         Promise.reject(new ApiError(500, 'SERVER_ERROR', '管理信息加载失败')),
     };
     controller.users = [CURRENT_USER];
+    controller.tasks = [];
+    controller.tasksLoaded = true;
     controller.currentUserId = CURRENT_USER.id;
     controller.adminOverview = {
       users: [],
@@ -768,6 +841,7 @@ describe('AppController administration refresh', () => {
       api: Pick<ApiClient, 'getAdminOverview' | 'listDemoUsers'>;
       users: ActorResource[];
       tasks: TaskResource[];
+      tasksLoaded: boolean;
       currentUserId: string;
       adminOverview: AdminOverviewResource | null;
       identityChangeSequence: number;
@@ -794,6 +868,7 @@ describe('AppController administration refresh', () => {
     };
     controller.users = [CURRENT_USER];
     controller.tasks = [];
+    controller.tasksLoaded = true;
     controller.currentUserId = CURRENT_USER.id;
     controller.adminOverview = null;
     controller.identityChangeSequence = 0;
@@ -973,6 +1048,8 @@ describe('AppController administration refresh', () => {
     const controller = Object.create(AppController.prototype) as {
       api: Pick<ApiClient, 'getAdminOverview'>;
       users: ActorResource[];
+      tasks: TaskResource[];
+      tasksLoaded: boolean;
       currentUserId: string;
       adminOverview: unknown;
       identityChangeSequence: number;
@@ -996,6 +1073,8 @@ describe('AppController administration refresh', () => {
         }),
     };
     controller.users = [CURRENT_USER];
+    controller.tasks = [];
+    controller.tasksLoaded = true;
     controller.currentUserId = CURRENT_USER.id;
     controller.adminOverview = null;
     controller.identityChangeSequence = 0;

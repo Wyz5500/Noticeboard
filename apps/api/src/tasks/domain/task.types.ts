@@ -40,7 +40,9 @@ export type TaskEventAction = (typeof TASK_EVENT_ACTIONS)[number];
 export interface Actor {
   id: string;
   name: string;
-  role: 'user';
+  role: string;
+  roleLabel?: string;
+  permissions?: string[];
 }
 
 export interface CreateTaskValues {

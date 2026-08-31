@@ -26,6 +26,11 @@ function describeError(exception: unknown): ErrorDescription {
     const statusByCode = {
       UNKNOWN_IDENTITY: HttpStatus.UNAUTHORIZED,
       TASK_NOT_FOUND: HttpStatus.NOT_FOUND,
+      USER_NOT_FOUND: HttpStatus.NOT_FOUND,
+      ROLE_NOT_FOUND: HttpStatus.NOT_FOUND,
+      ROLE_IN_USE: HttpStatus.CONFLICT,
+      FORBIDDEN: HttpStatus.FORBIDDEN,
+      VALIDATION_FAILED: HttpStatus.BAD_REQUEST,
       CONFLICT: HttpStatus.CONFLICT,
       DATABASE_NOT_READY: HttpStatus.SERVICE_UNAVAILABLE,
     } as const;

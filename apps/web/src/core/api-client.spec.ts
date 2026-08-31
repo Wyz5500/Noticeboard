@@ -13,8 +13,24 @@ function jsonResponse(value: unknown, status = 200): Response {
 }
 
 describe('ApiClient', () => {
-  /** Proves list reads use the versioned public endpoint without a demo header. */
-  it('loads all tasks from the versioned API', async () => {
+  /** Proves management overview requests carry the selected demo identity header. */
+  it('loads the admin overview with the current identity', async () => {
+    let request: RequestInit | undefined;
+    const client = new ApiClient('/api/v1', (_input, init) => {
+      request = init;
+      return Promise.resolve(
+        jsonResponse({ users: [], roles: [], permissions: [] }),
+      );
+    });
+
+    await client.getAdminOverview('guild-admin');
+
+    expect(request).toMatchObject({
+      headers: { 'x-demo-user-id': 'guild-admin' },
+    });
+  });
+  /** Proves protected task list reads carry the selected demo identity header. */
+  it('loads all tasks with the current identity', async () => {
     const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> =
       [];
     const client = new ApiClient('/api/v1', (input, init) => {
@@ -22,8 +38,13 @@ describe('ApiClient', () => {
       return Promise.resolve(jsonResponse([]));
     });
 
-    await expect(client.listTasks()).resolves.toEqual([]);
-    expect(requests).toEqual([{ input: '/api/v1/tasks' }]);
+    await expect(client.listTasks('guild-master')).resolves.toEqual([]);
+    expect(requests).toEqual([
+      {
+        input: '/api/v1/tasks',
+        init: { headers: { 'x-demo-user-id': 'guild-master' } },
+      },
+    ]);
   });
 
   /** Proves native-style Fetch implementations are invoked without an ApiClient receiver. */
@@ -34,8 +55,24 @@ describe('ApiClient', () => {
     } as typeof fetch;
 
     await expect(
-      new ApiClient('/api/v1', fetcher).listTasks(),
+      new ApiClient('/api/v1', fetcher).listTasks('guild-master'),
     ).resolves.toEqual([]);
+  });
+
+  /** Proves protected task detail reads carry the selected demo identity header. */
+  it('loads one task with the current identity', async () => {
+    let request: RequestInit | undefined;
+    const client = new ApiClient('/api/v1', (_input, init) => {
+      request = init;
+      return Promise.resolve(jsonResponse({ id: 'task-1' }));
+    });
+
+    await expect(client.getTask('task-1', 'guild-master')).resolves.toEqual({
+      id: 'task-1',
+    });
+    expect(request).toEqual({
+      headers: { 'x-demo-user-id': 'guild-master' },
+    });
   });
 
   /** Proves creation sends only the frozen body contract and selected demo identity. */

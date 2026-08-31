@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiHeader,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiProperty,
   ApiSecurity,
@@ -54,6 +55,7 @@ export class DemoController {
   @ApiHeader({ name: 'X-Demo-User-Id', required: true })
   @ApiOkResponse({ type: ResetDemoResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   async reset(
     @Headers('x-demo-user-id') actorId: string,
   ): Promise<ResetDemoResponseDto> {

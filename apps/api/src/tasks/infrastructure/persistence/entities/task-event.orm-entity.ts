@@ -29,8 +29,11 @@ export class TaskEventOrmEntity {
   @Column({ name: 'actor_name', type: 'varchar', length: 80 })
   actorName!: string;
 
-  @Column({ name: 'actor_role', type: 'varchar', length: 24 })
+  @Column({ name: 'actor_role', type: 'varchar', length: 64 })
   actorRole!: string;
+
+  @Column({ name: 'actor_role_name', type: 'varchar', length: 80 })
+  actorRoleName!: string;
 
   @Column({ type: 'timestamptz' })
   at!: Date;

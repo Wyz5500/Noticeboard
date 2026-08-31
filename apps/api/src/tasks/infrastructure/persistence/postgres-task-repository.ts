@@ -40,6 +40,7 @@ function eventRows(
     actorId: event.actor.id,
     actorName: event.actor.name,
     actorRole: event.actor.role,
+    actorRoleName: event.actor.roleLabel ?? '用户',
     at: new Date(event.at),
     detail: event.detail,
   }));

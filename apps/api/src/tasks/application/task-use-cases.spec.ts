@@ -1,6 +1,7 @@
 /** Verifies task use cases through real domain objects and in-memory port adapters. */
 import { describe, expect, it } from 'vitest';
 
+import type { AuthorizationPort } from '../../authorization/application/ports/authorization.port.js';
 import { AppError } from '../../common/application/app-error.js';
 import type { IdentityDirectoryPort } from '../../identity/application/ports/identity-directory.port.js';
 import { ListDemoActors } from '../../identity/application/use-cases/list-demo-actors.js';
@@ -195,6 +196,32 @@ describe('task application use cases', () => {
       assignee: ACTORS[1],
       status: 'in_progress',
       version: 2,
+    });
+  });
+
+  /** Ensures action permission without task-read permission cannot commit a mutation. */
+  it('requires task-read permission before committing an action', async () => {
+    const repository = new MemoryTaskRepository();
+    await publish(repository);
+    const authorization: AuthorizationPort = {
+      hasPermission: (_userId, permission) =>
+        Promise.resolve(permission !== 'tasks.view'),
+    };
+    const useCase = new ActOnTask(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      () => '2026-08-30T10:00:00.000Z',
+      authorization,
+    );
+
+    await expect(
+      useCase.execute(ACTORS[1]!.id, 'task-created', 'accept', 1),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(
+      (await repository.findById('task-created'))!.toSnapshot(),
+    ).toMatchObject({
+      status: 'not_started',
+      version: 1,
     });
   });
 

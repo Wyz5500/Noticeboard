@@ -21,7 +21,7 @@ test.beforeEach(async ({ page, request }) => {
   const health = await request.get('/health/live');
   if (health.ok()) {
     await request.post('/api/v1/demo/reset', {
-      headers: { 'X-Demo-User-Id': 'guild-master' },
+      headers: { 'X-Demo-User-Id': 'guild-admin' },
     });
   }
   await page.goto('/');
@@ -64,6 +64,19 @@ for (const themeId of THEME_IDS) {
     await expect(page).toHaveScreenshot(`${themeId}-modal.png`, {
       fullPage: false,
     });
+
+    await page.locator('#closeModalButton').click();
+    await page.locator('#profileButton').click();
+    await page.locator('#identitySelect').selectOption('guild-admin');
+    await page.keyboard.press('Escape');
+    await page.goto('/#admin');
+    await expect(page.locator('#adminView')).toBeVisible();
+    await page
+      .locator('.admin-grid')
+      .evaluateAll((grids) => grids.forEach((grid) => grid.replaceChildren()));
+    await expect(page.locator('#adminView')).toHaveScreenshot(
+      `${themeId}-admin.png`,
+    );
   });
 }
 

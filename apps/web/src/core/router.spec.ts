@@ -4,6 +4,15 @@ import { describe, expect, it } from 'vitest';
 import { buildTaskHash, parseHash } from './router.js';
 
 describe('hash router', () => {
+  /** Proves the new management hash is normalized as an independent view. */
+  it('recognizes the admin route', () => {
+    expect(parseHash('#admin')).toMatchObject({
+      view: 'admin',
+      scope: 'all',
+      filter: '全部',
+      query: '',
+    });
+  });
   /** Proves task scope, Chinese status label, and search text round-trip through the URL. */
   it('round-trips the existing task hash contract', () => {
     const hash = buildTaskHash({

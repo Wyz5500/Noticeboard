@@ -23,7 +23,7 @@ async function switchUserAndOpenTask(
 /** Restores deterministic server and browser state before each independent UI flow. */
 test.beforeEach(async ({ page, request }) => {
   await request.post('/api/v1/demo/reset', {
-    headers: { 'X-Demo-User-Id': 'guild-master' },
+    headers: { 'X-Demo-User-Id': 'guild-admin' },
   });
   await page.goto('/');
   await page.evaluate(() => localStorage.clear());
@@ -113,6 +113,47 @@ test('renders the action-first home overview layout', async ({ page }) => {
   await expect(
     page.evaluate(() => decodeURI(window.location.hash)),
   ).resolves.toBe('#tasks?scope=mine&filter=全部');
+});
+
+/** Proves administrators can manage roles and users while ordinary users cannot enter the route. */
+test('manages roles and users from the admin view', async ({ page }) => {
+  await expect(page.locator('#adminNavLink')).toBeHidden();
+  await page.locator('#profileButton').click();
+  await page.locator('#identitySelect').selectOption('guild-admin');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#adminNavLink')).toBeVisible();
+  await page.locator('#adminNavLink').click();
+  await expect(page.locator('#adminView')).toBeVisible();
+
+  const roleName = `网页测试角色-${Date.now()}`;
+  const roleForm = page.locator('form[data-admin-form="create-role"]');
+  await roleForm.locator('input[name="name"]').fill(roleName);
+  await roleForm.locator('input[value="tasks.view"]').check();
+  await roleForm.locator('button[type="submit"]').click();
+  await expect(
+    page.locator('.admin-card-title').filter({ hasText: roleName }),
+  ).toBeVisible();
+
+  const roleId = await page
+    .locator('.admin-card')
+    .filter({ hasText: roleName })
+    .locator('form[data-admin-form="role"]')
+    .getAttribute('data-admin-id');
+  if (!roleId) throw new Error('新建角色没有返回角色 ID');
+
+  const userForm = page.locator('form[data-admin-form="create-user"]');
+  await userForm.locator('input[name="name"]').fill('网页测试用户');
+  await userForm.locator('select[name="roleId"]').selectOption(roleId);
+  await userForm.locator('button[type="submit"]').click();
+  await expect(
+    page.locator('.admin-card-title').filter({ hasText: '网页测试用户' }),
+  ).toBeVisible();
+
+  await page.locator('#profileButton').click();
+  await page.locator('#identitySelect').selectOption('guild-master');
+  await expect(page.locator('#adminNavLink')).toBeHidden();
+  await page.goto('/#admin');
+  await expect(page.locator('#homeView')).toBeVisible();
 });
 
 /** Proves home summary copy stays inset from the divider and surrounding edges. */
@@ -594,7 +635,7 @@ test('persists identity and visual style without local task data', async ({
 /** Proves notifications stay at the top, use the highest layer, and stack newest first. */
 test('stacks notifications from the top', async ({ page }) => {
   await page.locator('#profileButton').click();
-  await page.locator('#identitySelect').selectOption('adventurer-b');
+  await page.locator('#identitySelect').selectOption('guild-admin');
   page.once('dialog', (dialog) => dialog.accept());
   await page.locator('#resetButton').click();
 

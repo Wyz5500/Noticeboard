@@ -486,9 +486,10 @@ describeDatabase('PostgreSQL task repository contract', () => {
       "UPDATE accounts SET role_id = $1, deleted_at = NOW() WHERE id = 'adventurer-a'",
       [role.id],
     );
-    await dataSource.query('UPDATE roles SET deleted_at = NOW() WHERE id = $1', [
-      role.id,
-    ]);
+    await dataSource.query(
+      'UPDATE roles SET deleted_at = NOW() WHERE id = $1',
+      [role.id],
+    );
 
     try {
       const reassignPromise = authorization.updateUser('adventurer-a', {
@@ -505,9 +506,10 @@ describeDatabase('PostgreSQL task repository contract', () => {
         reassignPromise,
         restorePromise,
       ]);
-      const [{ role_id: roleId, deleted_at: deletedAt }] = await dataSource.query(
-        "SELECT role_id, deleted_at FROM accounts WHERE id = 'adventurer-a'",
-      );
+      const [{ role_id: roleId, deleted_at: deletedAt }] =
+        await dataSource.query(
+          "SELECT role_id, deleted_at FROM accounts WHERE id = 'adventurer-a'",
+        );
 
       expect(results).toEqual([
         expect.objectContaining({ status: 'fulfilled' }),

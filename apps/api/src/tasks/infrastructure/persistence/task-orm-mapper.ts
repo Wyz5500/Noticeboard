@@ -12,7 +12,12 @@ import type { TaskOrmEntity } from './entities/task.orm-entity.js';
 
 /** Converts an account record to a detached domain actor value. */
 function toActor(entity: AccountOrmEntity): Actor {
-  return { id: entity.id, name: entity.name, role: 'user' };
+  return {
+    id: entity.id,
+    name: entity.name,
+    role: entity.roleEntity?.code ?? 'user',
+    roleLabel: entity.roleEntity?.name ?? '用户',
+  };
 }
 
 /** Converts a fully related task entity graph into a detached domain snapshot. */
@@ -39,7 +44,8 @@ export function taskEntityToSnapshot(entity: TaskOrmEntity): TaskSnapshot {
         actor: {
           id: event.actorId,
           name: event.actorName,
-          role: event.actorRole as 'user',
+          role: event.actorRole,
+          roleLabel: event.actorRoleName,
         },
         at: event.at.toISOString(),
         detail: event.detail,

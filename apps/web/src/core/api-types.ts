@@ -9,8 +9,61 @@ export type TaskType =
 export interface ActorResource {
   id: string;
   name: string;
-  role: 'user';
+  role: string;
   roleLabel: string;
+  permissions?: PermissionCode[];
+}
+
+export interface AdminUserResource {
+  id: string;
+  name: string;
+  roleId: string;
+  roleCode: string;
+  roleName: string;
+  active: boolean;
+  deletedAt: string | null;
+}
+
+export interface AdminRoleResource {
+  id: string;
+  code: string;
+  name: string;
+  builtin: boolean;
+  permissions: PermissionCode[];
+  active: boolean;
+  deletedAt: string | null;
+}
+
+export interface PermissionResource {
+  code: PermissionCode;
+  name: string;
+  description: string;
+}
+
+export interface AdminOverviewResource {
+  users: AdminUserResource[];
+  roles: AdminRoleResource[];
+  permissions: PermissionResource[];
+}
+
+export interface CreateAdminUserRequest {
+  name: string;
+  roleId: string;
+}
+
+export interface UpdateAdminUserRequest {
+  name?: string;
+  roleId?: string;
+}
+
+export interface CreateAdminRoleRequest {
+  name: string;
+  permissions?: PermissionCode[];
+}
+
+export interface UpdateAdminRoleRequest {
+  name: string;
+  permissions: PermissionCode[];
 }
 
 export interface TaskEventResource {
@@ -53,3 +106,12 @@ export interface ActTaskRequest {
   action: TaskAction;
   expectedVersion: number;
 }
+export type PermissionCode =
+  | 'system.manage'
+  | 'tasks.view'
+  | 'tasks.create'
+  | 'tasks.accept'
+  | 'tasks.complete'
+  | 'tasks.review'
+  | 'tasks.close'
+  | 'demo.reset';

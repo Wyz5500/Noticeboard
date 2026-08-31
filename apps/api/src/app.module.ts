@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { loadRuntimeConfig } from './common/infrastructure/config/runtime-config.js';
 import { HealthModule } from './health/health.module.js';
+import { AuthorizationModule } from './authorization/authorization.module.js';
 import { IdentityModule } from './identity/identity.module.js';
 import { postgresDataSourceOptions } from './tasks/infrastructure/persistence/data-source.js';
 import { TasksModule } from './tasks/tasks.module.js';
@@ -15,6 +16,7 @@ import { TasksModule } from './tasks/tasks.module.js';
         postgresDataSourceOptions(loadRuntimeConfig().databaseUrl),
     }),
     IdentityModule,
+    AuthorizationModule,
     TasksModule,
     HealthModule,
   ],

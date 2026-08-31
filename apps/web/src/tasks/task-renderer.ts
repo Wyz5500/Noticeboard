@@ -1,5 +1,9 @@
 /** Renders task cards, details, timelines, and action controls using safe DOM node creation. */
-import type { TaskAction, TaskResource } from '../core/api-types.js';
+import type {
+  PermissionCode,
+  TaskAction,
+  TaskResource,
+} from '../core/api-types.js';
 import { createNode } from '../core/dom.js';
 import { availableActions } from './task-permissions.js';
 
@@ -132,9 +136,10 @@ function actionControls(
   document: Document,
   task: TaskResource,
   actorId: string,
+  permissions?: readonly PermissionCode[],
 ): HTMLElement {
   const container = createNode(document, 'div', 'drawer-actions');
-  const actions = availableActions(task, actorId);
+  const actions = availableActions(task, actorId, permissions);
   if (!actions.length) {
     container.append(
       createNode(
@@ -201,6 +206,7 @@ export function renderTaskDrawer(
   container: HTMLElement,
   task: TaskResource,
   actorId: string,
+  permissions?: readonly PermissionCode[],
 ): void {
   const header = createNode(document, 'div', 'drawer-header');
   const heading = createNode(document, 'div');
@@ -230,7 +236,7 @@ export function renderTaskDrawer(
     header,
     createNode(document, 'p', 'drawer-description', task.description),
     facts,
-    actionControls(document, task, actorId),
+    actionControls(document, task, actorId, permissions),
     timeline(document, task),
   );
 }

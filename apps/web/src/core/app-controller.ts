@@ -151,6 +151,7 @@ export class AppController {
   private readonly gate = new RequestGate();
   private users: ActorResource[] = [];
   private tasks: TaskResource[] = [];
+  private tasksLoaded = false;
   private adminOverview: AdminOverviewResource | null = null;
   private currentUserId = '';
   private identityChangeSequence = 0;
@@ -188,6 +189,7 @@ export class AppController {
       const tasks = await this.loadTasksForCurrentUser(request.actorId);
       if (!this.isCurrentRequest(request)) return;
       this.tasks = tasks;
+      this.tasksLoaded = true;
       if (
         this.route.view === 'admin' &&
         this.canForActor(request.actorId, 'system.manage')
@@ -860,12 +862,14 @@ export class AppController {
     this.currentUserId = actorId;
     this.adminOverview = null;
     this.tasks = [];
+    this.tasksLoaded = false;
     this.render();
     const identity = { actorId, sequence };
     try {
       const tasks = await this.loadTasksForCurrentUser(actorId);
       if (!this.isCurrentIdentity(identity)) return;
       this.tasks = tasks;
+      this.tasksLoaded = true;
       if (this.canForActor(actorId, 'system.manage')) {
         const adminRequestSequence = this.beginAdminRequest();
         const overview = await this.api.getAdminOverview(actorId);
@@ -895,6 +899,19 @@ export class AppController {
       routeSequence: ++this.routeChangeSequence,
     };
     const isCurrentRouteRequest = (): boolean => this.isCurrentRequest(request);
+    if (!this.tasksLoaded) {
+      try {
+        const tasks = await this.loadTasksForCurrentUser(request.actorId);
+        if (!isCurrentRouteRequest()) return;
+        this.tasks = tasks;
+        this.tasksLoaded = true;
+      } catch (error) {
+        if (!isCurrentRouteRequest()) return;
+        this.showToast(this.errorMessage(error));
+        this.render();
+        return;
+      }
+    }
     if (
       this.route.view === 'admin' &&
       this.canForActor(request.actorId, 'system.manage')
@@ -966,6 +983,7 @@ export class AppController {
         };
         activeRequest = nextRequest;
         this.tasks = [];
+        this.tasksLoaded = false;
         this.adminOverview = null;
         this.closeProfileMenu();
         this.closeDrawer();
@@ -973,6 +991,7 @@ export class AppController {
         const tasks = await this.loadTasksForCurrentUser(actorId);
         if (!this.isCurrentRequest(nextRequest)) return;
         this.tasks = tasks;
+        this.tasksLoaded = true;
         if (!this.isCurrentRequest(nextRequest)) return;
         this.render();
         this.showToast('演示数据已恢复');
@@ -1142,6 +1161,7 @@ export class AppController {
         this.currentUserId = actorId;
         this.adminOverview = null;
         this.tasks = [];
+        this.tasksLoaded = false;
         this.closeProfileMenu();
         this.closeDrawer();
         this.route = parseHash('#home');
@@ -1160,6 +1180,7 @@ export class AppController {
         )
           return false;
         this.tasks = tasks;
+        this.tasksLoaded = true;
         this.render();
         return true;
       }
@@ -1169,6 +1190,7 @@ export class AppController {
       const tasks = await this.loadTasksForCurrentUser(request.actorId);
       if (!isCurrentRequest()) return false;
       this.tasks = tasks;
+      this.tasksLoaded = true;
       this.render();
       return true;
     } catch (error) {
@@ -1207,6 +1229,7 @@ export class AppController {
       const tasks = await this.api.listTasks(request.actorId);
       if (!this.isCurrentRequest(request)) return;
       this.tasks = tasks;
+      this.tasksLoaded = true;
       this.render();
     } catch {
       // The original command error remains the most useful message when refresh also fails.

@@ -4,8 +4,8 @@ import type { EntityManager, FindOptionsOrder } from 'typeorm';
 import { TaskOrmEntity } from './entities/task.orm-entity.js';
 
 const TASK_RELATIONS = {
-  publisher: true,
-  assignee: true,
+  publisher: { roleEntity: true },
+  assignee: { roleEntity: true },
   events: true,
 } as const;
 

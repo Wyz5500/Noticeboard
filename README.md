@@ -27,10 +27,11 @@ Compose 会依次等待 PostgreSQL、执行 migration、在任务表为空时写
 
 ## 演示行为与数据
 
-- 三个演示身份可发布任务；接取者可完成任务；发布者可验收、重新打开或关闭任务。
+- 独立的 `guild-admin` 演示身份负责用户与角色管理；`guild-master`、`adventurer-a`、`adventurer-b` 保持普通用户任务身份。
+- 角色权限控制任务 API 和管理 API；管理员拥有全部权限，普通用户拥有全部任务操作权限但不能管理用户、角色或重置演示数据。
 - “我的任务”归属于时间线中最后一位仍有效的操作人。
 - 列表筛选、搜索和统计在启动时加载的内存快照上执行；创建、状态操作和重置才访问 API。
-- PostgreSQL 保存三个身份、任务和有序时间线。`POST /api/v1/demo/reset` 在一个事务中恢复十二项演示任务。
+- PostgreSQL 保存角色、角色权限、账户、任务和有序时间线。`GET /api/v1/admin/overview` 与 `/api/v1/admin/users`、`/api/v1/admin/roles` 提供 demo-only 管理能力；`POST /api/v1/demo/reset` 仍只在一个事务中恢复十二项演示任务。
 - `localStorage` 只保存 `{currentUserId}`（键 `minecraft-guild-board-user`）和视觉偏好（键 `minecraft-guild-board-style`）。旧键 `minecraft-guild-board-state` 中的有效身份会迁移一次并随即删除；不要在本地存储中保存秘密。
 
 `X-Demo-User-Id`、`/api/v1/demo/*`、seed 与 reset 均为 demo-only。HTTP 请求与响应字段只以 OpenAPI 文档为准。
@@ -55,7 +56,7 @@ npm run verify             # 完整交付门禁
 
 ## 项目结构
 
-- `apps/api/src/{tasks,identity,health}`：按功能模块组织的 Domain / Application / Presentation / Infrastructure 代码。
+- `apps/api/src/{tasks,identity,authorization,health}`：按功能模块组织的 Domain / Application / Presentation / Infrastructure 代码。
 - `apps/web/src/{core,tasks,profile,styles}`：API 客户端、内存状态、路由、渲染、交互和类型化主题。
 - `apps/api/src/common/infrastructure/database/migrations`：唯一数据库模式变更入口。
 - `tests/e2e`：行为测试与由旧原型冻结的视觉基线。

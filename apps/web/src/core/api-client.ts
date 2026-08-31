@@ -2,7 +2,14 @@
 import type {
   ActTaskRequest,
   ActorResource,
+  AdminOverviewResource,
+  AdminRoleResource,
+  AdminUserResource,
+  CreateAdminRoleRequest,
+  CreateAdminUserRequest,
   CreateTaskRequest,
+  UpdateAdminRoleRequest,
+  UpdateAdminUserRequest,
   TaskResource,
 } from './api-types.js';
 
@@ -37,14 +44,106 @@ export class ApiClient {
     return this.request('/demo/users');
   }
 
+  /** Loads all administrator-visible users, roles, and fixed permissions. */
+  getAdminOverview(actorId: string): Promise<AdminOverviewResource> {
+    return this.authorizedRequest('/admin/overview', actorId);
+  }
+
+  /** Creates one administrator-managed user. */
+  createAdminUser(
+    actorId: string,
+    body: CreateAdminUserRequest,
+  ): Promise<AdminUserResource> {
+    return this.command('/admin/users', actorId, body);
+  }
+
+  /** Updates one administrator-managed user. */
+  updateAdminUser(
+    actorId: string,
+    userId: string,
+    body: UpdateAdminUserRequest,
+  ): Promise<AdminUserResource> {
+    return this.modify(
+      `/admin/users/${encodeURIComponent(userId)}`,
+      actorId,
+      'PATCH',
+      body,
+    );
+  }
+
+  /** Soft-deletes one administrator-managed user. */
+  deleteAdminUser(actorId: string, userId: string): Promise<void> {
+    return this.modify(
+      `/admin/users/${encodeURIComponent(userId)}`,
+      actorId,
+      'DELETE',
+    );
+  }
+
+  /** Restores one administrator-managed user. */
+  restoreAdminUser(
+    actorId: string,
+    userId: string,
+  ): Promise<AdminUserResource> {
+    return this.command(
+      `/admin/users/${encodeURIComponent(userId)}/restore`,
+      actorId,
+    );
+  }
+
+  /** Creates one administrator-managed custom role. */
+  createAdminRole(
+    actorId: string,
+    body: CreateAdminRoleRequest,
+  ): Promise<AdminRoleResource> {
+    return this.command('/admin/roles', actorId, body);
+  }
+
+  /** Updates one administrator-managed role. */
+  updateAdminRole(
+    actorId: string,
+    roleId: string,
+    body: UpdateAdminRoleRequest,
+  ): Promise<AdminRoleResource> {
+    return this.modify(
+      `/admin/roles/${encodeURIComponent(roleId)}`,
+      actorId,
+      'PATCH',
+      body,
+    );
+  }
+
+  /** Soft-deletes one administrator-managed custom role. */
+  deleteAdminRole(actorId: string, roleId: string): Promise<void> {
+    return this.modify(
+      `/admin/roles/${encodeURIComponent(roleId)}`,
+      actorId,
+      'DELETE',
+    );
+  }
+
+  /** Restores one administrator-managed role. */
+  restoreAdminRole(
+    actorId: string,
+    roleId: string,
+  ): Promise<AdminRoleResource> {
+    return this.command(
+      `/admin/roles/${encodeURIComponent(roleId)}/restore`,
+      actorId,
+    );
+  }
+
   /** Loads all tasks once for browser-memory filtering. */
-  listTasks(): Promise<TaskResource[]> {
-    return this.request('/tasks');
+  listTasks(actorId: string): Promise<TaskResource[]> {
+    return this.authorizedRequest('/tasks', actorId);
   }
 
   /** Loads one fresh task projection after commands or conflicts. */
-  getTask(taskId: string): Promise<TaskResource> {
-    return this.request(`/tasks/${encodeURIComponent(taskId)}`);
+  getTask(taskId: string, actorId: string): Promise<TaskResource> {
+    return this.authorizedRequest(
+      `/tasks/${encodeURIComponent(taskId)}`,
+      actorId,
+    );
   }
 
   /** Creates one task with the selected demo identity. */
@@ -82,6 +181,27 @@ export class ApiClient {
     if (body !== undefined) headers['content-type'] = 'application/json';
     return this.request(path, {
       method: 'POST',
+      headers,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  }
+
+  /** Sends an identity-authorized JSON read request. */
+  private authorizedRequest<T>(path: string, actorId: string): Promise<T> {
+    return this.request(path, { headers: { 'x-demo-user-id': actorId } });
+  }
+
+  /** Sends one identity-authorized mutation with the requested HTTP method. */
+  private modify<T>(
+    path: string,
+    actorId: string,
+    method: 'PATCH' | 'DELETE',
+    body?: unknown,
+  ): Promise<T> {
+    const headers: Record<string, string> = { 'x-demo-user-id': actorId };
+    if (body !== undefined) headers['content-type'] = 'application/json';
+    return this.request(path, {
+      method,
       headers,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });

@@ -12,7 +12,7 @@ export type FilterLabel = (typeof FILTER_LABELS)[number];
 export type TaskScope = 'all' | 'mine';
 
 export interface RouteState {
-  view: 'home' | 'tasks';
+  view: 'home' | 'tasks' | 'admin';
   scope: TaskScope;
   filter: FilterLabel;
   query: string;
@@ -30,7 +30,7 @@ export function parseHash(hash: string): RouteState {
   const params = new URLSearchParams(queryString);
   const filter = params.get('filter');
   return {
-    view: path === 'tasks' ? 'tasks' : 'home',
+    view: path === 'tasks' ? 'tasks' : path === 'admin' ? 'admin' : 'home',
     scope: params.get('scope') === 'mine' ? 'mine' : 'all',
     filter: isFilterLabel(filter) ? filter : '全部',
     query: params.get('q') ?? '',

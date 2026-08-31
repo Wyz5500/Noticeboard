@@ -3,7 +3,10 @@ import { DataSource, type DataSourceOptions } from 'typeorm';
 
 import { CreateGuildSchema1788062400000 } from '../../../common/infrastructure/database/migrations/1788062400000-create-guild-schema.js';
 import { AddEventActorSnapshot1788062401000 } from '../../../common/infrastructure/database/migrations/1788062401000-add-event-actor-snapshot.js';
+import { AddAuthorizationSchema1788062402000 } from '../../../common/infrastructure/database/migrations/1788062402000-add-authorization-schema.js';
 import { AccountOrmEntity } from '../../../identity/infrastructure/persistence/entities/account.orm-entity.js';
+import { RoleOrmEntity } from '../../../authorization/infrastructure/persistence/entities/role.orm-entity.js';
+import { RolePermissionOrmEntity } from '../../../authorization/infrastructure/persistence/entities/role-permission.orm-entity.js';
 import { TaskEventOrmEntity } from './entities/task-event.orm-entity.js';
 import { TaskOrmEntity } from './entities/task.orm-entity.js';
 
@@ -22,10 +25,17 @@ export function postgresDataSourceOptions(
     },
     synchronize: false,
     logging: false,
-    entities: [AccountOrmEntity, TaskOrmEntity, TaskEventOrmEntity],
+    entities: [
+      AccountOrmEntity,
+      RoleOrmEntity,
+      RolePermissionOrmEntity,
+      TaskOrmEntity,
+      TaskEventOrmEntity,
+    ],
     migrations: [
       CreateGuildSchema1788062400000,
       AddEventActorSnapshot1788062401000,
+      AddAuthorizationSchema1788062402000,
     ],
     migrationsTableName: 'schema_migrations',
   };

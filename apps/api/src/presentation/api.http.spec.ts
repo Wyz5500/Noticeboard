@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { AppError } from '../common/application/app-error.js';
 import { AUTHORIZATION } from '../authorization/application/ports/authorization.port.js';
+import { ALL_PERMISSION_CODES } from '../authorization/domain/permission.js';
 import { AdminController } from '../authorization/presentation/admin.controller.js';
 import {
   CreateAdminRole,
@@ -419,7 +420,12 @@ describe('HTTP API contract', () => {
       components: {
         schemas: Record<
           string,
-          { properties?: Record<string, { enum?: string[] }> }
+          {
+            properties?: Record<
+              string,
+              { enum?: string[]; items?: { enum?: string[] } }
+            >;
+          }
         >;
       };
     }>();
@@ -467,5 +473,9 @@ describe('HTTP API contract', () => {
       'reopened',
       'closed',
     ]);
+    expect(
+      document.components.schemas.ActorResponseDto?.properties?.permissions
+        ?.items?.enum,
+    ).toEqual([...ALL_PERMISSION_CODES]);
   });
 });

@@ -1,6 +1,7 @@
 /** Maps application read models to the stable API resource with Chinese presentation labels. */
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+import { ALL_PERMISSION_CODES } from '../../../authorization/domain/permission.js';
 import type { TaskReadModel } from '../../application/read-models/task-read-model.js';
 import {
   TASK_EVENT_ACTIONS,
@@ -45,10 +46,13 @@ export class ActorResponseDto {
   name!: string;
 
   @ApiProperty({ example: 'user' })
-  role!: 'user';
+  role!: string;
 
   @ApiProperty({ example: '演示用户' })
-  roleLabel!: '演示用户';
+  roleLabel!: string;
+
+  @ApiPropertyOptional({ enum: ALL_PERMISSION_CODES, isArray: true })
+  permissions?: string[];
 }
 
 export class TaskEventResponseDto {
@@ -124,7 +128,9 @@ export function toTaskResponse(
 ): TaskResponseDto {
   const actor = (value: TaskReadModel['publisher']): ActorResponseDto => ({
     ...value,
-    roleLabel: '演示用户',
+    roleLabel:
+      value.roleLabel ??
+      (value.role === 'system_admin' ? '系统管理员' : '演示用户'),
   });
   return {
     id: task.id,
@@ -153,5 +159,10 @@ export function toTaskResponse(
 export function toActorResponse(
   actor: TaskReadModel['publisher'],
 ): ActorResponseDto {
-  return { ...actor, roleLabel: '演示用户' };
+  return {
+    ...actor,
+    roleLabel:
+      actor.roleLabel ??
+      (actor.role === 'system_admin' ? '系统管理员' : '演示用户'),
+  };
 }

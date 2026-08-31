@@ -24,6 +24,8 @@ import {
 
 import { ApiErrorResponseDto } from '../../common/presentation/api-error-response.dto.js';
 import { DemoUserGuard } from '../../identity/presentation/demo-user.guard.js';
+import { PermissionGuard } from '../../authorization/presentation/permission.guard.js';
+import { RequirePermission } from '../../authorization/presentation/require-permission.decorator.js';
 import { ActOnTask } from '../application/use-cases/act-on-task.js';
 import { CreateTask } from '../application/use-cases/create-task.js';
 import { GetTask } from '../application/use-cases/get-task.js';
@@ -45,17 +47,34 @@ export class TasksController {
 
   /** Lists all task projections for client-side filtering and statistics. */
   @Get()
+  @UseGuards(DemoUserGuard, PermissionGuard)
+  @ApiSecurity('demo-user')
+  @ApiHeader({ name: 'X-Demo-User-Id', required: true })
   @ApiOkResponse({ type: [TaskResponseDto] })
-  async list(): Promise<TaskResponseDto[]> {
-    return (await this.listTasks.execute()).map(toTaskResponse);
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @RequirePermission('tasks.view')
+  async list(
+    @Headers('x-demo-user-id') actorId: string,
+  ): Promise<TaskResponseDto[]> {
+    return (await this.listTasks.execute(actorId)).map(toTaskResponse);
   }
 
   /** Returns one complete task projection including its ordered timeline. */
   @Get(':taskId')
+  @UseGuards(DemoUserGuard, PermissionGuard)
+  @ApiSecurity('demo-user')
+  @ApiHeader({ name: 'X-Demo-User-Id', required: true })
   @ApiOkResponse({ type: TaskResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   @ApiNotFoundResponse({ type: ApiErrorResponseDto })
-  async get(@Param('taskId') taskId: string): Promise<TaskResponseDto> {
-    return toTaskResponse(await this.getTask.execute(taskId));
+  @RequirePermission('tasks.view')
+  async get(
+    @Headers('x-demo-user-id') actorId: string,
+    @Param('taskId') taskId: string,
+  ): Promise<TaskResponseDto> {
+    return toTaskResponse(await this.getTask.execute(taskId, actorId));
   }
 
   /** Creates a task as the recognized demo actor from the request header. */
@@ -66,6 +85,7 @@ export class TasksController {
   @ApiCreatedResponse({ type: TaskResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   async create(
     @Headers('x-demo-user-id') actorId: string,
     @Body() body: CreateTaskDto,
@@ -96,6 +116,6 @@ export class TasksController {
       body.action,
       body.expectedVersion,
     );
-    return toTaskResponse(await this.getTask.execute(taskId));
+    return toTaskResponse(await this.getTask.execute(taskId, actorId));
   }
 }

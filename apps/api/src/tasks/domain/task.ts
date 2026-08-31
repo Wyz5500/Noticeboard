@@ -21,7 +21,12 @@ const EVENT_DETAILS: Record<TaskEventAction, string> = {
 
 /** Produces a detached actor value so callers cannot mutate aggregate state by reference. */
 function copyActor(actor: Actor): Actor {
-  return { id: actor.id, name: actor.name, role: actor.role };
+  return {
+    id: actor.id,
+    name: actor.name,
+    role: actor.role,
+    ...(actor.roleLabel === undefined ? {} : { roleLabel: actor.roleLabel }),
+  };
 }
 
 /** Produces a detached timeline event, including its nested actor snapshot. */
