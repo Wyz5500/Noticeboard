@@ -246,19 +246,28 @@ test('renders mobile admin cards and sorting controls', async ({
       const cardStyle = getComputedStyle(card);
       const infoBox = info.getBoundingClientRect();
       const actionsBox = actions.getBoundingClientRect();
+      const buttonHeights = Array.from(actions.querySelectorAll('button')).map(
+        (button) => button.getBoundingClientRect().height,
+      );
       return {
         display: cardStyle.display,
         gridTracks: cardStyle.gridTemplateColumns.split(' ').length,
+        alignItems: cardStyle.alignItems,
         sameRow: Math.abs(infoBox.top - actionsBox.top) <= 1,
         infoRight: infoBox.right,
         actionsLeft: actionsBox.left,
+        buttonHeights,
       };
     });
   expect(actionAlignment.display).toBe('grid');
   expect(actionAlignment.gridTracks).toBe(2);
+  expect(actionAlignment.alignItems).toBe('start');
   expect(actionAlignment.sameRow).toBe(true);
   expect(actionAlignment.infoRight).toBeLessThanOrEqual(
     actionAlignment.actionsLeft,
+  );
+  expect(actionAlignment.buttonHeights.every((height) => height === 38)).toBe(
+    true,
   );
   const directionMarginLeft = await sortBar
     .locator('.admin-direction')
