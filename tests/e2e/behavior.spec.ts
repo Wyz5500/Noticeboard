@@ -705,6 +705,101 @@ test('isolates scroll positions between home and task views', async ({
     .toBe(taskScrollState.sidebarY);
 });
 
+/** Proves a different task route entered after home starts every task scroll layer at the top on mobile. */
+test('resets all task scroll layers when entering a different task route', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(
+    !isMobile,
+    'Route-scoped task scroll restoration is covered by the mobile project.',
+  );
+  await page.goto('/#tasks?scope=all&filter=进行中');
+  await expect(page.locator('.task-card')).toHaveCount(3);
+
+  const scrolled = await page.evaluate(() => {
+    const grid = document.querySelector<HTMLElement>('#taskGrid');
+    const sidebar = document.querySelector<HTMLElement>('.board-sidebar');
+    const board = document.querySelector<HTMLElement>('.board-layout');
+    const topbar = document.querySelector<HTMLElement>('.topbar');
+    if (!grid || !sidebar || !board || !topbar)
+      throw new Error('Task layout is missing');
+    const collapsedScrollY = Math.max(
+      0,
+      board.getBoundingClientRect().top +
+        window.scrollY -
+        topbar.getBoundingClientRect().height,
+    );
+    window.scrollTo(0, collapsedScrollY);
+    grid.scrollTop = Math.min(80, grid.scrollHeight - grid.clientHeight);
+    sidebar.scrollTop = Math.min(
+      40,
+      sidebar.scrollHeight - sidebar.clientHeight,
+    );
+    return {
+      windowY: window.scrollY,
+      gridY: grid.scrollTop,
+      sidebarY: sidebar.scrollTop,
+    };
+  });
+  expect(scrolled.windowY).toBeGreaterThan(0);
+  expect(scrolled.gridY).toBeGreaterThan(0);
+
+  await navigateToHash(page, '#home');
+  await expect(page.locator('#homeView')).toBeVisible();
+  await navigateToHash(page, '#tasks?scope=all&filter=全部');
+  await expect(page.locator('#tasksView')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await expect
+    .poll(() => page.locator('#taskGrid').evaluate((grid) => grid.scrollTop))
+    .toBe(0);
+  await expect
+    .poll(() =>
+      page.locator('.board-sidebar').evaluate((sidebar) => sidebar.scrollTop),
+    )
+    .toBe(0);
+});
+
+/** Proves active task controls use canonical hash deduplication without growing browser history. */
+test('does not add history for active task filters or navigation', async ({
+  page,
+  isMobile,
+}) => {
+  await page.goto('/#tasks?scope=all&filter=全部');
+  await expect(page.locator('.task-card')).toHaveCount(12);
+  const initialHistoryLength = await page.evaluate(() => history.length);
+
+  await openMobileTaskFilters(page, isMobile);
+  await page.locator('[data-filter="全部"]').click();
+  await page.getByRole('link', { name: '任务页' }).click();
+
+  await expect
+    .poll(() => page.evaluate(() => history.length))
+    .toBe(initialHistoryLength);
+  await expect(page).toHaveURL(/#tasks\?scope=all&filter=%E5%85%A8%E9%83%A8/);
+});
+
+/** Proves modified and non-primary hash clicks remain native and do not mutate SPA history. */
+test('does not intercept modified or non-primary hash clicks', async ({
+  page,
+}) => {
+  await page.goto('/#tasks?scope=all&filter=全部');
+  const link = page.locator('a[href="#home"]').first();
+  const initialHash = await page.evaluate(() => window.location.hash);
+  const initialHistoryLength = await page.evaluate(() => history.length);
+
+  await link.click({ modifiers: ['Meta'] });
+  await link.click({ modifiers: ['Control'] });
+  await link.click({ button: 'middle' });
+
+  await expect
+    .poll(() => page.evaluate(() => window.location.hash))
+    .toBe(initialHash);
+  await expect
+    .poll(() => page.evaluate(() => history.length))
+    .toBe(initialHistoryLength);
+});
+
 /** Proves the management view has its own window position instead of inheriting the task board position. */
 test('isolates scroll positions across home, tasks, and admin views', async ({
   page,

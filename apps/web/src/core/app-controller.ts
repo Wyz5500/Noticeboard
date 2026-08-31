@@ -14,6 +14,7 @@ import { requiredElement, createNode } from './dom.js';
 import { RequestGate } from './request-gate.js';
 import {
   buildTaskHash,
+  normalizeHash,
   parseHash,
   type FilterLabel,
   type RouteState,
@@ -104,6 +105,7 @@ interface ViewScrollState {
   windowY: number;
   taskGridY?: number;
   taskSidebarY?: number;
+  taskRouteKey?: string;
 }
 
 /** Resolves the preserved HTML shell once so contract drift fails during startup. */
@@ -173,6 +175,7 @@ export class AppController {
   private route: RouteState;
   private selectedTaskId: string | null = null;
   private renderedView: RouteState['view'] | null = null;
+  private renderedRoute: RouteState | null = null;
   private readonly viewScrollStates = new Map<
     RouteState['view'],
     ViewScrollState
@@ -583,6 +586,7 @@ export class AppController {
       else link.removeAttribute('aria-current');
     }
     this.renderedView = this.route.view;
+    this.renderedRoute = this.route;
     if (enteringTasks) {
       this.syncTaskFilterDisclosure(true);
       this.window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
@@ -610,6 +614,9 @@ export class AppController {
     const state: ViewScrollState = { windowY: this.window?.scrollY ?? 0 };
     if (this.renderedView === 'tasks') {
       state.taskGridY = this.elements.taskGrid.scrollTop;
+      if (this.renderedRoute) {
+        state.taskRouteKey = normalizeHash(buildTaskHash(this.renderedRoute));
+      }
       const sidebar =
         this.elements.boardLayout.querySelector<HTMLElement>('.board-sidebar');
       if (sidebar) state.taskSidebarY = sidebar.scrollTop;
@@ -645,18 +652,24 @@ export class AppController {
         this.pendingScrollRestoreView = null;
         if (view === 'tasks') this.measureTasksIntroCollapse();
         const state = this.viewScrollStates.get(view);
+        const taskRouteMatches =
+          view !== 'tasks' ||
+          state?.taskRouteKey === normalizeHash(buildTaskHash(this.route));
         this.window.scrollTo({
           left: 0,
-          top: state?.windowY ?? 0,
+          top: taskRouteMatches ? (state?.windowY ?? 0) : 0,
           behavior: 'auto',
         });
         if (view !== 'tasks') return;
-        this.elements.taskGrid.scrollTop = state?.taskGridY ?? 0;
+        this.elements.taskGrid.scrollTop = taskRouteMatches
+          ? (state?.taskGridY ?? 0)
+          : 0;
         const sidebar =
           this.elements.boardLayout.querySelector<HTMLElement>(
             '.board-sidebar',
           );
-        if (sidebar) sidebar.scrollTop = state?.taskSidebarY ?? 0;
+        if (sidebar)
+          sidebar.scrollTop = taskRouteMatches ? (state?.taskSidebarY ?? 0) : 0;
       });
     });
   }
@@ -854,12 +867,23 @@ export class AppController {
 
   /** Routes application hash links without allowing native fragment scrolling to change the captured view. */
   private handleHashNavigation(event: Event): void {
+    if (event.defaultPrevented) return;
+    const mouseEvent = event as MouseEvent;
+    if (
+      (typeof mouseEvent.button === 'number' && mouseEvent.button !== 0) ||
+      mouseEvent.metaKey ||
+      mouseEvent.ctrlKey ||
+      mouseEvent.shiftKey ||
+      mouseEvent.altKey
+    )
+      return;
     if (!(event.target instanceof Element)) return;
     const link = event.target.closest<HTMLAnchorElement>('a[href^="#"]');
     const hash = link?.getAttribute('href');
     if (!link || !hash) return;
+    if (normalizeHash(hash) === normalizeHash(this.window.location.hash))
+      return;
     event.preventDefault();
-    if (hash === this.window.location.hash) return;
     this.window.history.pushState(null, '', hash);
     void this.handleRouteChange();
   }
@@ -896,7 +920,7 @@ export class AppController {
   private handleSearch(): void {
     this.route = { ...this.route, query: this.elements.searchInput.value };
     this.window.history.replaceState(null, '', buildTaskHash(this.route));
-    this.elements.taskGrid.scrollTop = 0;
+    this.resetTaskInnerScroll();
     this.renderTasks();
   }
 
@@ -906,10 +930,18 @@ export class AppController {
     filter: FilterLabel,
     query: string,
   ): void {
-    const hash = buildTaskHash({ scope, filter, query });
-    if (hash === this.window.location.hash) return;
+    const hash = normalizeHash(buildTaskHash({ scope, filter, query }));
+    if (hash === normalizeHash(this.window.location.hash)) return;
     this.window.history.pushState(null, '', hash);
     void this.handleRouteChange();
+  }
+
+  /** Resets the independently scrolling task grid and sidebar after task-route edits. */
+  private resetTaskInnerScroll(): void {
+    this.elements.taskGrid.scrollTop = 0;
+    const sidebar =
+      this.elements.boardLayout.querySelector<HTMLElement>('.board-sidebar');
+    if (sidebar) sidebar.scrollTop = 0;
   }
 
   /** Opens a task from pointer activation using event delegation. */
@@ -1029,7 +1061,7 @@ export class AppController {
         previousRoute.filter !== this.route.filter ||
         previousRoute.query !== this.route.query)
     ) {
-      this.elements.taskGrid.scrollTop = 0;
+      this.resetTaskInnerScroll();
     }
     const request = {
       ...this.requestSnapshot(),
