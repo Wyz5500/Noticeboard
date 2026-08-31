@@ -65,6 +65,7 @@ describe('AppController administration refresh', () => {
       tasks: TaskResource[];
       currentUserId: string;
       adminOverview: unknown;
+      adminEditor: unknown;
       identityChangeSequence: number;
       loadTasksForCurrentUser: () => Promise<TaskResource[]>;
       canManage: () => boolean;
@@ -85,6 +86,7 @@ describe('AppController administration refresh', () => {
       roles: [],
       permissions: [],
     };
+    controller.adminEditor = { kind: 'user', mode: 'create' };
     controller.identityChangeSequence = 0;
     controller.loadTasksForCurrentUser = () =>
       new Promise((resolve) => {
@@ -98,6 +100,7 @@ describe('AppController administration refresh', () => {
 
     expect(controller.tasks).toEqual([]);
     expect(controller.adminOverview).toBeNull();
+    expect(controller.adminEditor).toBeNull();
     expect(controller.render).toHaveBeenCalledOnce();
 
     releaseTasks([]);
@@ -1430,5 +1433,48 @@ describe('AppController administration management UI', () => {
 
     expect(controller.adminEditor).toBe(editor);
     expect(controller.showToast).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures a successful delete/restore refresh closes an editor and re-renders the child page. */
+  it('closes the editor after a successful lifecycle refresh', async () => {
+    installDomShims();
+    const controller = Object.create(AppController.prototype) as {
+      adminEditor: unknown;
+      api: { deleteAdminRole: () => Promise<void> };
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      refreshAdminOverview: () => Promise<boolean>;
+      gate: {
+        run: (_key: string, operation: () => Promise<void>) => Promise<void>;
+      };
+      render: ReturnType<typeof vi.fn>;
+      showToast: ReturnType<typeof vi.fn>;
+      handleAdminClick: (event: Event) => Promise<void>;
+    };
+    controller.adminEditor = { kind: 'role', mode: 'edit' };
+    controller.api = { deleteAdminRole: () => Promise.resolve() };
+    controller.requestSnapshot = () => ({
+      actorId: 'admin',
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.refreshAdminOverview = () => Promise.resolve(true);
+    controller.gate = { run: (_key, operation) => operation() };
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+    const button = new TestElement({
+      adminAction: 'delete-role',
+      adminId: 'role-1',
+    });
+
+    await controller.handleAdminClick({ target: button } as unknown as Event);
+
+    expect(controller.adminEditor).toBeNull();
+    expect(controller.render).toHaveBeenCalledOnce();
   });
 });

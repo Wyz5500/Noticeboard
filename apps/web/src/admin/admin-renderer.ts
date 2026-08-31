@@ -175,23 +175,22 @@ function userRow(
   user: AdminUserResource,
 ): HTMLTableRowElement {
   const row = createNode(document, 'tr');
-  const info = createNode(document, 'td', 'admin-record-info');
-  info.append(
-    createNode(document, 'strong', undefined, user.name),
-    createNode(document, 'span', 'admin-meta', `角色：${user.roleName}`),
-    updatedAtNode(document, user.updatedAt),
-  );
+  const name = createNode(document, 'td', 'admin-record-info');
+  name.append(createNode(document, 'strong', undefined, user.name));
+  const role = createNode(document, 'td', 'admin-meta', user.roleName);
   const status = createNode(
     document,
     'td',
     'admin-status',
     user.active ? '活跃' : '已删除',
   );
+  const updatedAt = createNode(document, 'td');
+  updatedAt.append(updatedAtNode(document, user.updatedAt));
   const actions = createNode(document, 'td', 'admin-record-actions');
   actions.append(editButton(document, 'user', user.id));
   const lifecycle = lifecycleButton(document, 'user', user);
   if (lifecycle) actions.append(lifecycle);
-  row.append(info, status, actions);
+  row.append(name, role, status, updatedAt, actions);
   return row;
 }
 
@@ -201,17 +200,14 @@ function roleRow(
   role: AdminRoleResource,
 ): HTMLTableRowElement {
   const row = createNode(document, 'tr');
-  const info = createNode(document, 'td', 'admin-record-info');
-  info.append(
-    createNode(document, 'strong', undefined, role.name),
-    createNode(document, 'span', 'admin-meta', `代码：${role.code}`),
-    createNode(
-      document,
-      'span',
-      'admin-meta',
-      `权限数：${role.permissions.length}`,
-    ),
-    updatedAtNode(document, role.updatedAt),
+  const name = createNode(document, 'td', 'admin-record-info');
+  name.append(createNode(document, 'strong', undefined, role.name));
+  const code = createNode(document, 'td', 'admin-meta', role.code);
+  const permissions = createNode(
+    document,
+    'td',
+    'admin-meta',
+    String(role.permissions.length),
   );
   const status = createNode(
     document,
@@ -219,11 +215,13 @@ function roleRow(
     'admin-status',
     role.builtin ? '内置角色' : role.active ? '自定义角色' : '已删除',
   );
+  const updatedAt = createNode(document, 'td');
+  updatedAt.append(updatedAtNode(document, role.updatedAt));
   const actions = createNode(document, 'td', 'admin-record-actions');
   actions.append(editButton(document, 'role', role.id));
   const lifecycle = lifecycleButton(document, 'role', role);
   if (lifecycle) actions.append(lifecycle);
-  row.append(info, status, actions);
+  row.append(name, code, permissions, status, updatedAt, actions);
   return row;
 }
 

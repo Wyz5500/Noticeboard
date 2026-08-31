@@ -33,7 +33,7 @@ npm run test:unit -- --run ...         3 files passed, 33 tests passed
 git diff --check                       passed
 ```
 
-PostgreSQL 已按仓库约束启动，并成功执行 migration 与 seed。行为 E2E 启动成功，已有行为测试大部分通过；管理 E2E 首次失败于测试选择器的多元素 strict-mode，修正后重跑时浏览器进程在管理流程中无输出并阻塞，已按要求停止，未继续扩大修改范围。
+PostgreSQL 已按仓库约束启动，并成功执行 migration 与 seed。行为 E2E 启动成功；管理 E2E 首次运行暴露选择器问题，修复后因浏览器进程阻塞停止，后续修复轮次已重新通过管理流程。
 
 全量 lint 仍受既有 `apps/api/src/app.integration.http.spec.ts:274` 的 unsafe `any` 错误阻塞；Task 5 controller 自身 lint 问题已修正。
 
@@ -44,3 +44,27 @@ PostgreSQL 已按仓库约束启动，并成功执行 migration 与 seed。行�
 - `styles.css`
 - `tests/e2e/behavior.spec.ts`
 
+## 审查修复轮次
+
+- renderer 桌面用户表改为“名称、角色、状态、最近修改、操作”五列；角色表改为“名称、代码、权限数、状态、最近修改、操作”六列，移动卡片保持信息聚合。
+- `changeIdentity()` 开始时清空 `adminEditor`；生命周期成功刷新后清空 editor 并重新渲染，失败路径保留 editor。
+- E2E 管理记录按 viewport 使用 `.admin-mobile-card:visible` 或 `.admin-table:visible tr`，生命周期断言限定在目标记录。
+
+修复轮次验证：
+
+```text
+npm run test:unit -- --run admin-renderer.spec.ts app-controller.spec.ts admin-sort.spec.ts
+3 files passed, 36 tests passed
+npm run build:web
+passed
+npm run test:e2e -- ... --grep 'admin view|mobile admin'
+3 passed, 1 skipped（桌面/移动 CRUD 与移动卡片排序均通过）
+npm run build:web
+passed
+npm run lint
+1 existing error: apps/api/src/app.integration.http.spec.ts:274 unsafe any
+git diff --check
+passed
+```
+
+报告末尾保持单个换行，无额外空行。

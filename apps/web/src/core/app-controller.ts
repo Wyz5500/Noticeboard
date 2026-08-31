@@ -871,6 +871,7 @@ export class AppController {
   /** Switches the current demo identity and persists only its ID. */
   private async changeIdentity(): Promise<void> {
     const sequence = ++this.identityChangeSequence;
+    this.adminEditor = null;
     const actorId = saveCurrentUserId(
       this.storage,
       this.elements.identitySelect.value,
@@ -1200,6 +1201,8 @@ export class AppController {
           request.routeSequence,
         );
         if (!refreshed || !this.isCurrentRequest(request)) return;
+        this.adminEditor = null;
+        this.render();
         this.showToast('管理信息已更新');
       } catch (error) {
         if (!this.isCurrentRequest(request)) return;

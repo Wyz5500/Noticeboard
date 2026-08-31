@@ -116,7 +116,10 @@ test('renders the action-first home overview layout', async ({ page }) => {
 });
 
 /** Proves administrators can manage roles and users while ordinary users cannot enter the route. */
-test('manages roles and users from the admin view', async ({ page }) => {
+test('manages roles and users from the admin view', async ({
+  page,
+  isMobile,
+}) => {
   await expect(page.locator('#adminNavLink')).toBeHidden();
   await page.locator('#profileButton').click();
   await page.locator('#identitySelect').selectOption('noticeboard-admin');
@@ -125,6 +128,9 @@ test('manages roles and users from the admin view', async ({ page }) => {
   await page.locator('#adminNavLink').click();
   await expect(page.locator('#adminView')).toBeVisible();
   await expect(page.locator('.admin-entry-link')).toHaveCount(2);
+  const visibleRecords = isMobile
+    ? '.admin-mobile-card:visible'
+    : '.admin-table:visible tr';
   await page.getByRole('link', { name: '用户管理' }).click();
   await expect(page).toHaveURL(/#admin\/users\?sort=updatedAt&direction=desc/);
   await expect(
@@ -168,7 +174,7 @@ test('manages roles and users from the admin view', async ({ page }) => {
   ).toContainText(roleName);
 
   const roleRecord = page
-    .locator('.admin-table tr, .admin-mobile-card')
+    .locator(visibleRecords)
     .filter({ hasText: roleName })
     .first();
   await roleRecord.locator('[data-admin-open="role"]').click();
@@ -177,23 +183,29 @@ test('manages roles and users from the admin view', async ({ page }) => {
   await expect(page.locator('dialog[open]')).toHaveCount(0);
 
   const roleAction = page
-    .locator('.admin-table tr, .admin-mobile-card')
+    .locator(visibleRecords)
     .filter({ hasText: roleName })
     .first()
     .locator('[data-admin-action="delete-role"]');
   await roleAction.click();
-  await expect(page.locator('.admin-table, .admin-mobile-list')).toContainText(
-    '已删除',
-  );
+  await expect(
+    page
+      .locator(visibleRecords)
+      .filter({ hasText: roleName })
+      .locator('[data-admin-action="restore-role"]'),
+  ).toBeVisible();
   await page
-    .locator('.admin-table tr, .admin-mobile-card')
+    .locator(visibleRecords)
     .filter({ hasText: roleName })
     .first()
     .locator('[data-admin-action="restore-role"]')
     .click();
   await expect(
-    page.locator('.admin-table, .admin-mobile-list'),
-  ).not.toContainText('已删除');
+    page
+      .locator(visibleRecords)
+      .filter({ hasText: roleName })
+      .locator('[data-admin-action="delete-role"]'),
+  ).toBeVisible();
 
   await page.locator('#profileButton').click();
   await page.locator('#identitySelect').selectOption('noticeboard-master');

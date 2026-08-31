@@ -236,6 +236,76 @@ describe('admin renderer', () => {
     expect(findData(container, 'adminDirection', 'asc')).toBeDefined();
   });
 
+  /** Ensures every desktop user column has a matching cell in the same semantic order. */
+  it('aligns user table headers and row cells', () => {
+    const document = new FakeDocument();
+    const container = document.createElement('main');
+
+    renderAdminView(
+      document as unknown as Document,
+      container as unknown as HTMLElement,
+      overview,
+      { section: 'users', sort: { field: 'name', direction: 'asc' } },
+    );
+
+    const table = findAll(
+      container,
+      (element) => element.tagName === 'table',
+    )[0]!;
+    const rows = findAll(table, (element) => element.tagName === 'tr');
+    expect(rows[0]!.children.map((cell) => cell.textContent)).toEqual([
+      '名称',
+      '角色',
+      '状态',
+      '最近修改',
+      '操作',
+    ]);
+    expect(rows[1]!.children).toHaveLength(5);
+    expect(rows[1]!.children.map((cell) => cell.textContent)).toEqual([
+      '甲用户',
+      '用户',
+      '已删除',
+      '修改时间：时间未知',
+      '编辑恢复',
+    ]);
+  });
+
+  /** Ensures every desktop role column has a matching cell in the same semantic order. */
+  it('aligns role table headers and row cells', () => {
+    const document = new FakeDocument();
+    const container = document.createElement('main');
+
+    renderAdminView(
+      document as unknown as Document,
+      container as unknown as HTMLElement,
+      overview,
+      { section: 'roles', sort: { field: 'name', direction: 'asc' } },
+    );
+
+    const table = findAll(
+      container,
+      (element) => element.tagName === 'table',
+    )[0]!;
+    const rows = findAll(table, (element) => element.tagName === 'tr');
+    expect(rows[0]!.children.map((cell) => cell.textContent)).toEqual([
+      '名称',
+      '代码',
+      '权限数',
+      '状态',
+      '最近修改',
+      '操作',
+    ]);
+    expect(rows[1]!.children).toHaveLength(6);
+    expect(rows[1]!.children.map((cell) => cell.textContent)).toEqual([
+      '先排序的自定义角色',
+      'custom_first',
+      '0',
+      '自定义角色',
+      '修改时间：2026-08-30 17:00',
+      '编辑逻辑删除',
+    ]);
+  });
+
   /** Ensures mobile markup has a separate card list and a delegated sort control. */
   it('renders mobile cards with a fixed sort bar and direction control', () => {
     const document = new FakeDocument();
