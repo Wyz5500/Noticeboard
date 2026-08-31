@@ -1715,6 +1715,9 @@ body[data-style='pixel-retro'] .task-card:hover {
   background: var(--paper);
   border-bottom: var(--border-width) solid var(--line);
 }
+.admin-sort-bar .admin-direction {
+  margin-left: auto;
+}
 .admin-sort-bar select,
 .admin-sort-button {
   min-height: 36px;

@@ -231,6 +231,12 @@ test('renders mobile admin cards and sorting controls', async ({
   await expect(sortBar).toBeVisible();
   await expect(sortBar).toHaveCSS('position', 'sticky');
   await expect(sortBar).toHaveCSS('top', '99px');
+  const directionMarginLeft = await sortBar
+    .locator('.admin-direction')
+    .evaluate((element) =>
+      Number.parseFloat(getComputedStyle(element).marginLeft),
+    );
+  expect(directionMarginLeft).toBeGreaterThan(0);
   await sortBar
     .locator('[data-admin-sort-select="users"]')
     .selectOption('name');
