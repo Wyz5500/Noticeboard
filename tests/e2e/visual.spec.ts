@@ -157,7 +157,7 @@ test.beforeEach(async ({ page, request }) => {
 });
 
 for (const themeId of THEME_IDS) {
-  /** Captures the five stable page and overlay states for one visual theme. */
+  /** Captures home, profile, tasks, drawer, modal, admin landing, users, and roles states for one visual theme. */
   test(`${themeId} major states @visual`, async ({ page, isMobile }) => {
     await page.locator('#profileButton').click();
     await page.locator('#styleSelect').selectOption(themeId);
