@@ -16,17 +16,59 @@ async function waitForModalTransition(page: Page): Promise<void> {
     });
 }
 
-/** Removes seeded management records while preserving stable list chrome for visual baselines. */
-async function clearDynamicAdminRecords(page: Page): Promise<void> {
+/** Stabilizes seeded management records while preserving visible list layout for visual baselines. */
+async function stabilizeDynamicAdminRecords(
+  page: Page,
+  isMobile: boolean,
+): Promise<void> {
   await page.waitForLoadState('networkidle');
-  await page
-    .locator('.admin-table tbody, .admin-mobile-list')
-    .evaluateAll((containers) => {
-      containers.forEach((container) => container.replaceChildren());
+  await expect(page.locator('#adminView h1')).toBeVisible();
+  await expect(page.locator('.admin-sort-bar')).toBeVisible();
+  await page.locator('.admin-updated-at').evaluateAll((elements) => {
+    elements.forEach((element) => {
+      element.textContent = '修改时间：2026-08-31 00:00';
     });
+  });
+  await page.locator('#adminView').evaluate((root) => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node) {
+      node.textContent =
+        node.textContent?.replace(
+          /网页测试角色-\d+/g,
+          '网页测试角色-0000000000000',
+        ) ?? '';
+      node = walker.nextNode();
+    }
+  });
+
+  if (isMobile) {
+    await expect(page.locator('.admin-mobile-list:visible')).toBeVisible();
+    await expect(
+      page.locator('.admin-mobile-card:visible').first(),
+    ).toBeVisible();
+    await expect(
+      page
+        .locator('.admin-mobile-card:visible')
+        .first()
+        .locator('[data-admin-open], [data-admin-action]'),
+    ).toHaveCount(2);
+    return;
+  }
+
+  await expect(page.locator('.admin-table:visible')).toBeVisible();
   await expect(
-    page.locator('.admin-table tbody tr, .admin-mobile-card'),
-  ).toHaveCount(0);
+    page.locator('.admin-table:visible thead th').first(),
+  ).toBeVisible();
+  await expect(
+    page.locator('.admin-table:visible tbody tr').first(),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator('.admin-table:visible tbody tr')
+      .first()
+      .locator('[data-admin-open], [data-admin-action]'),
+  ).toHaveCount(2);
 }
 
 /** Restores deterministic server or legacy local state before each visual scenario. */
@@ -45,7 +87,7 @@ test.beforeEach(async ({ page, request }) => {
 
 for (const themeId of THEME_IDS) {
   /** Captures the five stable page and overlay states for one visual theme. */
-  test(`${themeId} major states @visual`, async ({ page }) => {
+  test(`${themeId} major states @visual`, async ({ page, isMobile }) => {
     await page.locator('#profileButton').click();
     await page.locator('#styleSelect').selectOption(themeId);
     await page.keyboard.press('Escape');
@@ -95,7 +137,7 @@ for (const themeId of THEME_IDS) {
     await expect(page).toHaveURL(
       /#admin\/users\?sort=updatedAt&direction=desc/,
     );
-    await clearDynamicAdminRecords(page);
+    await stabilizeDynamicAdminRecords(page, isMobile);
     await expect(page.locator('#adminView')).toHaveScreenshot(
       `${themeId}-admin-users.png`,
     );
@@ -105,7 +147,7 @@ for (const themeId of THEME_IDS) {
     await expect(page).toHaveURL(
       /#admin\/roles\?sort=updatedAt&direction=desc/,
     );
-    await clearDynamicAdminRecords(page);
+    await stabilizeDynamicAdminRecords(page, isMobile);
     await expect(page.locator('#adminView')).toHaveScreenshot(
       `${themeId}-admin-roles.png`,
     );
