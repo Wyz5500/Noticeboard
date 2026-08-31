@@ -881,9 +881,9 @@ export class AppController {
     const link = event.target.closest<HTMLAnchorElement>('a[href^="#"]');
     const hash = link?.getAttribute('href');
     if (!link || !hash) return;
+    event.preventDefault();
     if (normalizeHash(hash) === normalizeHash(this.window.location.hash))
       return;
-    event.preventDefault();
     this.window.history.pushState(null, '', hash);
     void this.handleRouteChange();
   }
@@ -922,6 +922,7 @@ export class AppController {
     this.window.history.replaceState(null, '', buildTaskHash(this.route));
     this.resetTaskInnerScroll();
     this.renderTasks();
+    this.renderedRoute = this.route;
   }
 
   /** Navigates to one normalized task-board hash. */

@@ -716,6 +716,7 @@ test('resets all task scroll layers when entering a different task route', async
   );
   await page.goto('/#tasks?scope=all&filter=进行中');
   await expect(page.locator('.task-card')).toHaveCount(3);
+  await openMobileTaskFilters(page, isMobile);
 
   const scrolled = await page.evaluate(() => {
     const grid = document.querySelector<HTMLElement>('#taskGrid');
@@ -724,6 +725,10 @@ test('resets all task scroll layers when entering a different task route', async
     const topbar = document.querySelector<HTMLElement>('.topbar');
     if (!grid || !sidebar || !board || !topbar)
       throw new Error('Task layout is missing');
+    sidebar.style.height = '120px';
+    sidebar.style.overflowY = 'auto';
+    if (sidebar.scrollHeight <= sidebar.clientHeight)
+      throw new Error('Task sidebar is not scrollable');
     const collapsedScrollY = Math.max(
       0,
       board.getBoundingClientRect().top +
@@ -744,6 +749,7 @@ test('resets all task scroll layers when entering a different task route', async
   });
   expect(scrolled.windowY).toBeGreaterThan(0);
   expect(scrolled.gridY).toBeGreaterThan(0);
+  expect(scrolled.sidebarY).toBeGreaterThan(0);
 
   await navigateToHash(page, '#home');
   await expect(page.locator('#homeView')).toBeVisible();
@@ -798,6 +804,81 @@ test('does not intercept modified or non-primary hash clicks', async ({
   await expect
     .poll(() => page.evaluate(() => history.length))
     .toBe(initialHistoryLength);
+});
+
+/** Proves an active primary hash link is prevented before canonical deduplication can expose native fragment scrolling. */
+test('prevents native scrolling for an active hash link', async ({ page }) => {
+  await page.goto('/#home');
+  const homeScrollY = await page.evaluate(() => {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    return window.scrollY;
+  });
+  expect(homeScrollY).toBeGreaterThan(0);
+  const initialHistoryLength = await page.evaluate(() => history.length);
+  await page.evaluate(() => {
+    document.addEventListener(
+      'click',
+      (event) => {
+        const link = (event.target as Element | null)?.closest(
+          'a[href="#home"]',
+        );
+        if (link)
+          document.documentElement.dataset.activeHashPrevented = String(
+            event.defaultPrevented,
+          );
+      },
+      { once: true },
+    );
+  });
+
+  await page.getByRole('link', { name: '首页', exact: true }).click();
+
+  await expect(page.locator('html')).toHaveAttribute(
+    'data-active-hash-prevented',
+    'true',
+  );
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBe(homeScrollY);
+  await expect
+    .poll(() => page.evaluate(() => history.length))
+    .toBe(initialHistoryLength);
+});
+
+/** Proves in-place search updates keep the current task route eligible for later scroll restoration. */
+test('restores task scroll after an in-place search route update', async ({
+  page,
+}) => {
+  await page.goto('/#tasks?scope=all&filter=全部');
+  await expect(page.locator('.task-card')).toHaveCount(12);
+  await page.locator('#searchInput').fill('北境');
+  await expect(page.locator('.task-card')).toHaveCount(1);
+
+  const taskScrollY = await page.evaluate(() => {
+    const board = document.querySelector<HTMLElement>('.board-layout');
+    const topbar = document.querySelector<HTMLElement>('.topbar');
+    if (!board || !topbar) throw new Error('Task layout is missing');
+    const collapsedScrollY = Math.max(
+      0,
+      board.getBoundingClientRect().top +
+        window.scrollY -
+        topbar.getBoundingClientRect().height,
+    );
+    window.scrollTo(0, collapsedScrollY);
+    return window.scrollY;
+  });
+  expect(taskScrollY).toBeGreaterThan(0);
+
+  await navigateToHash(page, '#home');
+  await expect(page.locator('#homeView')).toBeVisible();
+  await navigateToHash(
+    page,
+    '#tasks?scope=all&filter=全部&q=%E5%8C%97%E5%A2%83',
+  );
+  await expect(page.locator('#tasksView')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBe(taskScrollY);
 });
 
 /** Proves the management view has its own window position instead of inheriting the task board position. */
