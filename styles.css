@@ -1441,11 +1441,11 @@ body[data-style='pixel-retro'] .task-card:hover {
   .board-layout {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
-    gap: 32px;
-    padding-top: 35px;
+    gap: 20px;
+    padding-top: 24px;
   }
   .tasks-intro {
-    padding-top: 42px;
+    padding: 32px 0 28px;
   }
   .filter-list {
     display: grid;
@@ -1478,9 +1478,10 @@ body[data-style='pixel-retro'] .task-card:hover {
     color: var(--accent);
   }
   .board-filter-content {
-    padding-top: 22px;
+    padding-top: 16px;
   }
   .task-grid {
+    padding-top: 14px;
     overscroll-behavior-y: auto;
   }
   .filter-button {
@@ -1533,6 +1534,13 @@ body[data-style='pixel-retro'] .task-card:hover {
     min-height: 260px;
     align-items: flex-start;
     padding: 43px 0 40px;
+  }
+  .tasks-intro {
+    padding: 28px 0 24px;
+  }
+  .board-layout {
+    gap: 16px;
+    padding-top: 18px;
   }
   h1 {
     font-size: 45px;
@@ -1605,8 +1613,11 @@ body[data-style='pixel-retro'] .task-card:hover {
   .board-toolbar {
     display: block;
   }
+  .result-count {
+    margin-top: 8px;
+  }
   .toolbar-actions {
-    margin-top: 20px;
+    margin-top: 12px;
   }
   .search-box {
     flex: 1;
@@ -1614,6 +1625,7 @@ body[data-style='pixel-retro'] .task-card:hover {
   }
   .task-grid {
     grid-template-columns: 1fr;
+    padding-top: 12px;
   }
   .task-card h3 {
     margin-top: 23px;

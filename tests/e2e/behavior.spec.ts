@@ -310,6 +310,7 @@ test('collapses mobile task filters to reveal task cards', async ({
   await expect(page.locator('#filterList')).toBeHidden();
   const collapsed = await metrics();
   if (collapsed.cardTop === undefined) throw new Error('Task card is missing');
+  expect(collapsed.cardTop).toBeLessThan(460);
 
   await page.locator('.mobile-filter-toggle').click();
   await expect(disclosure).toHaveAttribute('open', '');
