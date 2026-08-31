@@ -7,6 +7,7 @@ import type {
   AdminOverviewResource,
   TaskResource,
 } from './api-types.js';
+import type { RouteState } from './router.js';
 vi.mock('../admin/admin-renderer.js', () => ({
   renderAdminView: vi.fn(),
 }));
@@ -1523,5 +1524,102 @@ describe('AppController administration management UI', () => {
     expect(controller.adminEditor).toBe(editor);
     expect(controller.refreshAdminOverview).not.toHaveBeenCalled();
     expect(controller.showToast).toHaveBeenCalledOnce();
+  });
+});
+
+describe('AppController task scroll state', () => {
+  /** Ensures each task route retains its own scroll layers instead of overwriting another route. */
+  it('restores the matching task route after two task routes were visited', () => {
+    type ScrollState = {
+      windowY: number;
+      taskGridY?: number;
+      taskSidebarY?: number;
+    };
+    type ScrollController = {
+      elements: {
+        taskGrid: { scrollTop: number };
+        boardLayout: {
+          querySelector: <T extends Element>(selector: string) => T | null;
+        };
+      };
+      window: {
+        scrollY: number;
+        scrollTo: (options: { top: number }) => void;
+        requestAnimationFrame: (callback: FrameRequestCallback) => number;
+      };
+      route: RouteState;
+      renderedView: RouteState['view'];
+      renderedRoute: RouteState;
+      viewScrollStates: Map<string, ScrollState>;
+      pendingScrollRestoreView: RouteState['view'];
+      scrollRestoreSequence: number;
+      measureTasksIntroCollapse: () => void;
+      captureRenderedViewScroll: () => void;
+      restorePendingScrollState: () => void;
+    };
+    const sidebar = { scrollTop: 0 } as HTMLElement;
+    const controller = Object.create(
+      AppController.prototype,
+    ) as ScrollController;
+    controller.elements = {
+      taskGrid: { scrollTop: 0 },
+      boardLayout: {
+        querySelector: <T extends Element>() => sidebar as unknown as T,
+      },
+    };
+    controller.window = {
+      scrollY: 0,
+      scrollTo: ({ top }) => {
+        controller.window.scrollY = top;
+      },
+      requestAnimationFrame: (callback) => {
+        callback(0);
+        return 0;
+      },
+    };
+    controller.viewScrollStates = new Map();
+    controller.pendingScrollRestoreView = 'tasks';
+    controller.scrollRestoreSequence = 0;
+    controller.measureTasksIntroCollapse = vi.fn();
+
+    const routeA: RouteState = {
+      view: 'tasks',
+      scope: 'all',
+      filter: '全部',
+      query: '北境',
+    };
+    const routeB: RouteState = {
+      view: 'tasks',
+      scope: 'mine',
+      filter: '进行中',
+      query: '',
+    };
+    const capture = (
+      route: RouteState,
+      windowY: number,
+      taskGridY: number,
+      taskSidebarY: number,
+    ): void => {
+      controller.route = route;
+      controller.renderedRoute = route;
+      controller.window.scrollY = windowY;
+      controller.elements.taskGrid.scrollTop = taskGridY;
+      sidebar.scrollTop = taskSidebarY;
+      controller.captureRenderedViewScroll();
+    };
+
+    controller.renderedView = 'tasks';
+    capture(routeA, 180, 42, 24);
+    capture(routeB, 320, 88, 56);
+    controller.route = routeA;
+    controller.window.scrollY = 0;
+    controller.elements.taskGrid.scrollTop = 0;
+    sidebar.scrollTop = 0;
+
+    controller.restorePendingScrollState();
+
+    expect(controller.window.scrollY).toBe(180);
+    expect(controller.elements.taskGrid.scrollTop).toBe(42);
+    expect(sidebar.scrollTop).toBe(24);
   });
 });

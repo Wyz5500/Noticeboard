@@ -108,8 +108,9 @@ interface ViewScrollState {
   windowY: number;
   taskGridY?: number;
   taskSidebarY?: number;
-  taskRouteKey?: string;
 }
+
+type ViewScrollStateKey = RouteState['view'] | `tasks:${string}`;
 
 /** Resolves the preserved HTML shell once so contract drift fails during startup. */
 function collectElements(document: Document): Elements {
@@ -181,7 +182,7 @@ export class AppController {
   private renderedView: RouteState['view'] | null = null;
   private renderedRoute: RouteState | null = null;
   private readonly viewScrollStates = new Map<
-    RouteState['view'],
+    ViewScrollStateKey,
     ViewScrollState
   >();
   private pendingScrollRestoreView: RouteState['view'] | null = null;
@@ -620,16 +621,18 @@ export class AppController {
   private captureRenderedViewScroll(): void {
     if (this.renderedView == null) return;
     const state: ViewScrollState = { windowY: this.window?.scrollY ?? 0 };
+    const route = this.renderedRoute;
     if (this.renderedView === 'tasks') {
       state.taskGridY = this.elements.taskGrid.scrollTop;
-      if (this.renderedRoute) {
-        state.taskRouteKey = normalizeHash(buildTaskHash(this.renderedRoute));
-      }
       const sidebar =
         this.elements.boardLayout.querySelector<HTMLElement>('.board-sidebar');
       if (sidebar) state.taskSidebarY = sidebar.scrollTop;
     }
-    this.viewScrollStates.set(this.renderedView, state);
+    const key =
+      route?.view === this.renderedView
+        ? this.scrollStateKey(route)
+        : this.renderedView;
+    this.viewScrollStates.set(key, state);
   }
 
   /** Cancels task-page snapping before another top-level view takes over. */
@@ -659,27 +662,30 @@ export class AppController {
           return;
         this.pendingScrollRestoreView = null;
         if (view === 'tasks') this.measureTasksIntroCollapse();
-        const state = this.viewScrollStates.get(view);
-        const taskRouteMatches =
-          view !== 'tasks' ||
-          state?.taskRouteKey === normalizeHash(buildTaskHash(this.route));
+        const state = this.viewScrollStates.get(
+          view === 'tasks' ? this.scrollStateKey(this.route) : view,
+        );
         this.window.scrollTo({
           left: 0,
-          top: taskRouteMatches ? (state?.windowY ?? 0) : 0,
+          top: state?.windowY ?? 0,
           behavior: 'auto',
         });
         if (view !== 'tasks') return;
-        this.elements.taskGrid.scrollTop = taskRouteMatches
-          ? (state?.taskGridY ?? 0)
-          : 0;
+        this.elements.taskGrid.scrollTop = state?.taskGridY ?? 0;
         const sidebar =
           this.elements.boardLayout.querySelector<HTMLElement>(
             '.board-sidebar',
           );
-        if (sidebar)
-          sidebar.scrollTop = taskRouteMatches ? (state?.taskSidebarY ?? 0) : 0;
+        if (sidebar) sidebar.scrollTop = state?.taskSidebarY ?? 0;
       });
     });
+  }
+
+  /** Returns a stable scroll-cache key for a top-level view and its task route. */
+  private scrollStateKey(route: RouteState): ViewScrollStateKey {
+    return route.view === 'tasks'
+      ? `tasks:${normalizeHash(buildTaskHash(route))}`
+      : route.view;
   }
 
   /** Caches the outer-page position where the task intro becomes fully hidden. */
