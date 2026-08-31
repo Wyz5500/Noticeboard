@@ -1,8 +1,7 @@
-/** Persists only the selected demo identity and removes legacy local task state. */
+/** Persists only the selected demo identity under a product-scoped browser key. */
 
-export const LEGACY_STATE_KEY = 'minecraft-guild-board-state';
-export const USER_STORAGE_KEY = 'minecraft-guild-board-user';
-const FALLBACK_USER_ID = 'guild-master';
+export const USER_STORAGE_KEY = 'noticeboard-user';
+const FALLBACK_USER_ID = 'noticeboard-master';
 
 /** Parses an identity-only JSON value and accepts only currently known IDs. */
 function parseIdentity(
@@ -21,7 +20,7 @@ function parseIdentity(
   }
 }
 
-/** Loads the new key or migrates one valid identity before deleting all legacy task data. */
+/** Loads a stored identity and normalizes missing or invalid values. */
 export function loadCurrentUserId(
   storage: Storage,
   knownIds: ReadonlySet<string>,
@@ -29,9 +28,6 @@ export function loadCurrentUserId(
   let selected: string | null;
   try {
     selected = parseIdentity(storage.getItem(USER_STORAGE_KEY), knownIds);
-    if (!selected)
-      selected = parseIdentity(storage.getItem(LEGACY_STATE_KEY), knownIds);
-    storage.removeItem(LEGACY_STATE_KEY);
   } catch {
     return knownIds.has(FALLBACK_USER_ID)
       ? FALLBACK_USER_ID
@@ -69,7 +65,6 @@ export function saveCurrentUserId(
       USER_STORAGE_KEY,
       JSON.stringify({ currentUserId: normalized }),
     );
-    storage.removeItem(LEGACY_STATE_KEY);
   } catch {
     // A failed preference write must not prevent the selected identity from working in memory.
   }

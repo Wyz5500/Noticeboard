@@ -5,7 +5,7 @@ import { DEMO_ACTORS } from '../../domain/demo-actors.js';
 import { AccountOrmEntity } from './entities/account.orm-entity.js';
 
 const DEMO_ADMIN = {
-  id: 'guild-admin',
+  id: 'noticeboard-admin',
   name: '公会管理员',
   roleId: 'role-system-admin',
   deletedAt: null,

@@ -18,7 +18,7 @@ import { ListTasks } from './use-cases/list-tasks.js';
 import { ResetDemoTasks } from './use-cases/reset-demo-tasks.js';
 
 const ACTORS: Actor[] = [
-  { id: 'guild-master', name: '用户 A', role: 'user' },
+  { id: 'noticeboard-master', name: '用户 A', role: 'user' },
   { id: 'adventurer-a', name: '用户 B', role: 'user' },
   { id: 'adventurer-b', name: '用户 C', role: 'user' },
 ];

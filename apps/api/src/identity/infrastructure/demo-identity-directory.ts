@@ -20,10 +20,10 @@ export class DemoIdentityDirectory implements IdentityDirectoryPort {
         order: { id: 'ASC' },
       });
     const preferredOrder = [
-      'guild-master',
+      'noticeboard-master',
       'adventurer-a',
       'adventurer-b',
-      'guild-admin',
+      'noticeboard-admin',
     ];
     accounts.sort(
       (left, right) =>

@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 
 const TEST_DATABASE_URL =
   process.env.DATABASE_URL_TEST ??
-  'postgresql://guild:guild@127.0.0.1:54329/guild';
+  'postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard';
 
 /** Runs one command with inherited output and stops immediately on failure. */
 function run(command, args, environment = {}) {

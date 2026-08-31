@@ -48,7 +48,7 @@ const TASK: TaskReadModel = {
   description: '响应不得泄漏 ORM 实体',
   reward: '15 金币',
   dueDate: '2026-09-08',
-  publisher: { id: 'guild-master', name: '用户 A', role: 'user' },
+  publisher: { id: 'noticeboard-master', name: '用户 A', role: 'user' },
   assignee: null,
   status: 'not_started',
   createdAt: '2026-08-30T09:00:00.000Z',
@@ -58,7 +58,7 @@ const TASK: TaskReadModel = {
     {
       sequence: 1,
       action: 'created',
-      actor: { id: 'guild-master', name: '用户 A', role: 'user' },
+      actor: { id: 'noticeboard-master', name: '用户 A', role: 'user' },
       at: '2026-08-30T09:00:00.000Z',
       detail: '任务发布至冒险家工会',
     },
@@ -191,7 +191,7 @@ describe('HTTP API contract', () => {
     const response = await app.inject({
       method: 'GET',
       url: '/api/v1/tasks',
-      headers: { 'x-demo-user-id': 'guild-master' },
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
     });
 
     expect(response.statusCode).toBe(200);
@@ -228,7 +228,7 @@ describe('HTTP API contract', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual([
       {
-        id: 'guild-master',
+        id: 'noticeboard-master',
         name: '用户 A',
         role: 'user',
         roleLabel: '演示用户',
@@ -271,7 +271,7 @@ describe('HTTP API contract', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/v1/tasks',
-      headers: { 'x-demo-user-id': 'guild-master' },
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
       payload: {
         title: '',
         type: 'wrong',
@@ -292,7 +292,7 @@ describe('HTTP API contract', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/v1/tasks',
-      headers: { 'x-demo-user-id': 'guild-master' },
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
       payload: {
         title: '新任务',
         type: 'exploration',
@@ -314,7 +314,7 @@ describe('HTTP API contract', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/v1/tasks/task-conflict/actions',
-      headers: { 'x-demo-user-id': 'guild-master' },
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
       payload: { action: 'accept', expectedVersion: 1 },
     });
 
@@ -327,7 +327,7 @@ describe('HTTP API contract', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/v1/tasks/task-forbidden/actions',
-      headers: { 'x-demo-user-id': 'guild-master' },
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
       payload: { action: 'accept', expectedVersion: 1 },
     });
 
@@ -342,7 +342,7 @@ describe('HTTP API contract', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/v1/tasks/task-internal/actions',
-      headers: { 'x-demo-user-id': 'guild-master' },
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
       payload: { action: 'accept', expectedVersion: 1 },
     });
 
@@ -361,7 +361,7 @@ describe('HTTP API contract', () => {
     const response = await app.inject({
       method: 'GET',
       url: '/api/v1/tasks/missing',
-      headers: { 'x-demo-user-id': 'guild-master' },
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
     });
 
     expect(response.statusCode).toBe(404);

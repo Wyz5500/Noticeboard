@@ -13,7 +13,7 @@ const REOPENED_TASK: TaskResource = {
   reward: '10 金币',
   dueDate: '2026-09-10',
   publisher: {
-    id: 'guild-master',
+    id: 'noticeboard-master',
     name: '用户 A',
     role: 'user',
     roleLabel: '用户',

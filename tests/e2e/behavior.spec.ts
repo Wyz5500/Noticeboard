@@ -23,7 +23,7 @@ async function switchUserAndOpenTask(
 /** Restores deterministic server and browser state before each independent UI flow. */
 test.beforeEach(async ({ page, request }) => {
   await request.post('/api/v1/demo/reset', {
-    headers: { 'X-Demo-User-Id': 'guild-admin' },
+    headers: { 'X-Demo-User-Id': 'noticeboard-admin' },
   });
   await page.goto('/');
   await page.evaluate(() => localStorage.clear());
@@ -119,7 +119,7 @@ test('renders the action-first home overview layout', async ({ page }) => {
 test('manages roles and users from the admin view', async ({ page }) => {
   await expect(page.locator('#adminNavLink')).toBeHidden();
   await page.locator('#profileButton').click();
-  await page.locator('#identitySelect').selectOption('guild-admin');
+  await page.locator('#identitySelect').selectOption('noticeboard-admin');
   await page.keyboard.press('Escape');
   await expect(page.locator('#adminNavLink')).toBeVisible();
   await page.locator('#adminNavLink').click();
@@ -150,7 +150,7 @@ test('manages roles and users from the admin view', async ({ page }) => {
   ).toBeVisible();
 
   await page.locator('#profileButton').click();
-  await page.locator('#identitySelect').selectOption('guild-master');
+  await page.locator('#identitySelect').selectOption('noticeboard-master');
   await expect(page.locator('#adminNavLink')).toBeHidden();
   await page.goto('/#admin');
   await expect(page.locator('#homeView')).toBeVisible();
@@ -590,7 +590,7 @@ test('completes a reopened task with a replacement assignee', async ({
   await page.getByRole('button', { name: /标记为已完成/ }).click();
   await switchUserAndOpenTask(page, 'adventurer-a', '替换接取者任务');
   await page.getByRole('button', { name: '验收不通过，重新打开' }).click();
-  await switchUserAndOpenTask(page, 'guild-master', '替换接取者任务');
+  await switchUserAndOpenTask(page, 'noticeboard-master', '替换接取者任务');
   await page.getByRole('button', { name: /重新接取任务/ }).click();
   await page.getByRole('button', { name: /标记为已完成/ }).click();
   await switchUserAndOpenTask(page, 'adventurer-a', '替换接取者任务');
@@ -602,20 +602,16 @@ test('completes a reopened task with a replacement assignee', async ({
   await expect(page.locator('.timeline-action').first()).toHaveText('关闭任务');
 });
 
-/** Proves identity and style preferences survive refresh while legacy task storage is removed. */
+/** Proves identity and style preferences survive refresh without task data in browser storage. */
 test('persists identity and visual style without local task data', async ({
   page,
 }) => {
-  await page.evaluate(
-    () => (
-      localStorage.removeItem('minecraft-guild-board-user'),
-      localStorage.setItem(
-        'minecraft-guild-board-state',
-        JSON.stringify({
-          currentUserId: 'adventurer-b',
-          tasks: [{ title: '不得保留' }],
-        }),
-      )
+  await page.evaluate(() =>
+    localStorage.setItem(
+      'noticeboard-user',
+      JSON.stringify({
+        currentUserId: 'adventurer-b',
+      }),
     ),
   );
   await page.reload();
@@ -628,14 +624,14 @@ test('persists identity and visual style without local task data', async ({
     'pixel-retro',
   );
   await expect(
-    page.evaluate(() => localStorage.getItem('minecraft-guild-board-state')),
-  ).resolves.toBeNull();
+    page.evaluate(() => Object.keys(localStorage).sort()),
+  ).resolves.toEqual(['noticeboard-style', 'noticeboard-user']);
 });
 
 /** Proves notifications stay at the top, use the highest layer, and stack newest first. */
 test('stacks notifications from the top', async ({ page }) => {
   await page.locator('#profileButton').click();
-  await page.locator('#identitySelect').selectOption('guild-admin');
+  await page.locator('#identitySelect').selectOption('noticeboard-admin');
   page.once('dialog', (dialog) => dialog.accept());
   await page.locator('#resetButton').click();
 

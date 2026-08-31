@@ -15,7 +15,7 @@ function task(overrides: Partial<TaskResource> = {}): TaskResource {
     reward: '25 金币',
     dueDate: '2026-09-10',
     publisher: {
-      id: 'guild-master',
+      id: 'noticeboard-master',
       name: '用户 A',
       role: 'user',
       roleLabel: '演示用户',
@@ -37,7 +37,7 @@ function task(overrides: Partial<TaskResource> = {}): TaskResource {
         action: 'created',
         actionLabel: '创建任务',
         actor: {
-          id: 'guild-master',
+          id: 'noticeboard-master',
           name: '用户 A',
           role: 'user',
           roleLabel: '演示用户',
@@ -88,7 +88,7 @@ describe('task filtering', () => {
     expect(
       latestKnownActorId(
         withRemovedLatestActor,
-        new Set(['guild-master', 'adventurer-a']),
+        new Set(['noticeboard-master', 'adventurer-a']),
       ),
     ).toBe('adventurer-a');
     expect(
@@ -97,7 +97,7 @@ describe('task filtering', () => {
         filter: '全部',
         query: '',
         currentUserId: 'adventurer-a',
-        knownUserIds: new Set(['guild-master', 'adventurer-a']),
+        knownUserIds: new Set(['noticeboard-master', 'adventurer-a']),
       }),
     ).toHaveLength(1);
   });
@@ -109,8 +109,8 @@ describe('task filtering', () => {
         scope: 'all',
         filter: '已完成',
         query: '',
-        currentUserId: 'guild-master',
-        knownUserIds: new Set(['guild-master', 'adventurer-a']),
+        currentUserId: 'noticeboard-master',
+        knownUserIds: new Set(['noticeboard-master', 'adventurer-a']),
       }),
     ).toEqual([]);
   });
@@ -124,8 +124,8 @@ describe('task filtering', () => {
           scope: 'all',
           filter: '全部',
           query,
-          currentUserId: 'guild-master',
-          knownUserIds: new Set(['guild-master', 'adventurer-a']),
+          currentUserId: 'noticeboard-master',
+          knownUserIds: new Set(['noticeboard-master', 'adventurer-a']),
         }),
       ).toHaveLength(1);
     },

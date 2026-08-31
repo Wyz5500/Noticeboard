@@ -117,7 +117,7 @@ describeDatabase('PostgreSQL task repository contract', () => {
     );
     await transaction.run(async (repository) => repository.insert(created));
     await dataSource.query(
-      `UPDATE accounts SET name = '已改名用户' WHERE id = 'guild-master'`,
+      `UPDATE accounts SET name = '已改名用户' WHERE id = 'noticeboard-master'`,
     );
 
     expect(
@@ -310,14 +310,14 @@ describeDatabase('PostgreSQL task repository contract', () => {
       "DELETE FROM role_permissions WHERE role_id = 'role-user' AND permission_code = 'tasks.view'",
     );
     await dataSource.query(
-      "UPDATE accounts SET role_id = 'role-system-admin', deleted_at = NOW() WHERE id = 'guild-master'",
+      "UPDATE accounts SET role_id = 'role-system-admin', deleted_at = NOW() WHERE id = 'noticeboard-master'",
     );
 
     try {
       await dataSource.transaction(seedDemoData);
 
       const account = await dataSource.query(
-        "SELECT role_id, deleted_at FROM accounts WHERE id = 'guild-master'",
+        "SELECT role_id, deleted_at FROM accounts WHERE id = 'noticeboard-master'",
       );
       const permission = await dataSource.query(
         "SELECT 1 FROM role_permissions WHERE role_id = 'role-user' AND permission_code = 'tasks.view'",
@@ -327,7 +327,7 @@ describeDatabase('PostgreSQL task repository contract', () => {
       expect(permission).toHaveLength(0);
     } finally {
       await dataSource.query(
-        "UPDATE accounts SET role_id = 'role-user', deleted_at = NULL WHERE id = 'guild-master'",
+        "UPDATE accounts SET role_id = 'role-user', deleted_at = NULL WHERE id = 'noticeboard-master'",
       );
       await dataSource.query(
         "INSERT INTO role_permissions (role_id, permission_code) VALUES ('role-user', 'tasks.view') ON CONFLICT DO NOTHING",
@@ -342,7 +342,7 @@ describeDatabase('PostgreSQL task repository contract', () => {
       "UPDATE accounts SET role_id = 'role-system-admin', deleted_at = NULL WHERE id IN ('adventurer-a', 'adventurer-b')",
     );
     await dataSource.query(
-      "UPDATE accounts SET role_id = 'role-user', deleted_at = NULL WHERE id = 'guild-admin'",
+      "UPDATE accounts SET role_id = 'role-user', deleted_at = NULL WHERE id = 'noticeboard-admin'",
     );
 
     try {
@@ -369,7 +369,7 @@ describeDatabase('PostgreSQL task repository contract', () => {
         "UPDATE accounts SET role_id = 'role-user', deleted_at = NULL WHERE id IN ('adventurer-a', 'adventurer-b')",
       );
       await dataSource.query(
-        "UPDATE accounts SET role_id = 'role-system-admin', deleted_at = NULL WHERE id = 'guild-admin'",
+        "UPDATE accounts SET role_id = 'role-system-admin', deleted_at = NULL WHERE id = 'noticeboard-admin'",
       );
     }
   });

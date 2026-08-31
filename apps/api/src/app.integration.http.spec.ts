@@ -39,14 +39,14 @@ describeDatabase('application composition', () => {
     const reset = await app.inject({
       method: 'POST',
       url: '/api/v1/demo/reset',
-      headers: { 'x-demo-user-id': 'guild-admin' },
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
     });
     expect(reset.statusCode).toBe(200);
 
     const seeded = await app.inject({
       method: 'GET',
       url: '/api/v1/tasks',
-      headers: { 'x-demo-user-id': 'guild-master' },
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
     });
     expect(seeded.json().map((task: { id: string }) => task.id)).toEqual([
       'task-herbs',
@@ -107,14 +107,14 @@ describeDatabase('application composition', () => {
     const ordinary = await app.inject({
       method: 'GET',
       url: '/api/v1/admin/overview',
-      headers: { 'x-demo-user-id': 'guild-master' },
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
     });
     expect(ordinary.statusCode).toBe(403);
 
     const overview = await app.inject({
       method: 'GET',
       url: '/api/v1/admin/overview',
-      headers: { 'x-demo-user-id': 'guild-admin' },
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
     });
     expect(overview.statusCode).toBe(200);
     expect(overview.json().roles).toEqual(
@@ -128,7 +128,7 @@ describeDatabase('application composition', () => {
     const invalidBuiltinEdit = await app.inject({
       method: 'PATCH',
       url: '/api/v1/admin/roles/role-user',
-      headers: { 'x-demo-user-id': 'guild-admin' },
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
       payload: { name: '不可修改的用户角色', permissions: ['tasks.view'] },
     });
     expect(invalidBuiltinEdit.statusCode).toBe(400);
@@ -140,7 +140,7 @@ describeDatabase('application composition', () => {
     const role = await app.inject({
       method: 'POST',
       url: '/api/v1/admin/roles',
-      headers: { 'x-demo-user-id': 'guild-admin' },
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
       payload: { name: roleName },
     });
     expect(role.statusCode).toBe(201);
@@ -149,7 +149,7 @@ describeDatabase('application composition', () => {
     const missingRoleUser = await app.inject({
       method: 'POST',
       url: '/api/v1/admin/users',
-      headers: { 'x-demo-user-id': 'guild-admin' },
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
       payload: { name: '不存在角色用户', roleId: 'role-does-not-exist' },
     });
     expect(missingRoleUser.statusCode).toBe(404);
@@ -160,7 +160,7 @@ describeDatabase('application composition', () => {
     const user = await app.inject({
       method: 'POST',
       url: '/api/v1/admin/users',
-      headers: { 'x-demo-user-id': 'guild-admin' },
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
       payload: { name: '集成测试用户', roleId: role.json().id as string },
     });
     expect(user.statusCode).toBe(201);
@@ -168,7 +168,7 @@ describeDatabase('application composition', () => {
     const occupied = await app.inject({
       method: 'DELETE',
       url: `/api/v1/admin/roles/${role.json().id as string}`,
-      headers: { 'x-demo-user-id': 'guild-admin' },
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
     });
     expect(occupied.statusCode).toBe(409);
     expect(occupied.json()).toMatchObject({ error: { code: 'ROLE_IN_USE' } });
@@ -176,14 +176,14 @@ describeDatabase('application composition', () => {
     const deletedUser = await app.inject({
       method: 'DELETE',
       url: `/api/v1/admin/users/${user.json().id as string}`,
-      headers: { 'x-demo-user-id': 'guild-admin' },
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
     });
     expect(deletedUser.statusCode).toBe(204);
 
     const reassignedUser = await app.inject({
       method: 'PATCH',
       url: `/api/v1/admin/users/${user.json().id as string}`,
-      headers: { 'x-demo-user-id': 'guild-admin' },
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
       payload: { roleId: 'role-user' },
     });
     expect(reassignedUser.statusCode).toBe(200);
@@ -191,14 +191,14 @@ describeDatabase('application composition', () => {
     const deletedRole = await app.inject({
       method: 'DELETE',
       url: `/api/v1/admin/roles/${role.json().id as string}`,
-      headers: { 'x-demo-user-id': 'guild-admin' },
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
     });
     expect(deletedRole.statusCode).toBe(204);
 
     const lastAdmin = await app.inject({
       method: 'DELETE',
-      url: '/api/v1/admin/users/guild-admin',
-      headers: { 'x-demo-user-id': 'guild-admin' },
+      url: '/api/v1/admin/users/noticeboard-admin',
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
     });
     expect(lastAdmin.statusCode).toBe(409);
   });

@@ -1,8 +1,8 @@
 /** Creates the PostgreSQL account, task, and ordered event schema for the first server release. */
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CreateGuildSchema1788062400000 implements MigrationInterface {
-  name = 'CreateGuildSchema1788062400000';
+export class CreateNoticeboardSchema1788062400000 implements MigrationInterface {
+  name = 'CreateNoticeboardSchema1788062400000';
 
   /** Creates constraints, foreign keys, versioning, and deterministic list ordering index. */
   async up(queryRunner: QueryRunner): Promise<void> {

@@ -6,7 +6,6 @@ set -Eeuo pipefail
 readonly SCRIPT_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly PROJECT_ROOT="$(cd -- "${SCRIPT_DIRECTORY}/.." && pwd)"
 readonly COMPOSE_FILE="${PROJECT_ROOT}/compose.yaml"
-readonly LEGACY_PROJECT_NAME="adventurers-guild"
 
 # Prints the supported deployment wrapper options.
 print_usage() {
@@ -33,18 +32,6 @@ run_compose() {
   docker compose -f "${COMPOSE_FILE}" "$@"
 }
 
-# Removes only legacy project containers so the current project can reuse its ports safely.
-migrate_legacy_project() {
-  local legacy_containers
-  legacy_containers="$(docker compose -f "${COMPOSE_FILE}" -p "${LEGACY_PROJECT_NAME}" ps -aq)"
-  if [[ -z "${legacy_containers}" ]]; then
-    return 0
-  fi
-
-  printf '迁移旧 Compose 项目：%s（保留旧 PostgreSQL 卷）\n' "${LEGACY_PROJECT_NAME}"
-  docker compose -f "${COMPOSE_FILE}" -p "${LEGACY_PROJECT_NAME}" down --remove-orphans
-}
-
 # Validates local Docker access, deploys the stack, and prints its final status.
 main() {
   local dry_run=false
@@ -66,7 +53,6 @@ main() {
   esac
 
   if [[ "${dry_run}" == true ]]; then
-    print_dry_run_command -p "${LEGACY_PROJECT_NAME}" down --remove-orphans
     print_dry_run_command config --quiet
     print_dry_run_command up -d --build --wait
     return 0
@@ -85,7 +71,6 @@ main() {
     return 1
   fi
 
-  migrate_legacy_project
   printf '检查 Compose 配置：%s\n' "${COMPOSE_FILE}"
   run_compose config --quiet
   printf '构建并启动容器，等待健康检查和一次性任务完成……\n'

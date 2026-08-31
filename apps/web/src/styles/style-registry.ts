@@ -1,6 +1,6 @@
 /** Validates, persists, and atomically applies typed visual theme configurations. */
 
-export const STYLE_STORAGE_KEY = 'minecraft-guild-board-style';
+export const STYLE_STORAGE_KEY = 'noticeboard-style';
 export const FALLBACK_STYLE_ID = 'swiss-international';
 export const STYLE_TOKEN_KEYS = [
   '--ink',

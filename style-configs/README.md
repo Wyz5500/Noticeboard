@@ -12,4 +12,4 @@
 4. 更新注册顺序/令牌单元测试；视觉回归只更新并检查“瑞士国际”桌面与移动端基线，其他主题不纳入视觉截图验证。
 5. 运行 `npm run test:unit`、`npm run test:visual` 和 `npm run verify`。
 
-视觉偏好键保持为 `minecraft-guild-board-style`；它与演示身份偏好、服务器任务数据相互独立。
+视觉偏好键保持为 `noticeboard-style`；它与演示身份偏好、服务器任务数据相互独立。

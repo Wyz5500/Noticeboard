@@ -9,10 +9,10 @@
 ```bash
 npm ci
 docker compose up -d --wait postgres
-DATABASE_URL=postgresql://guild:guild@127.0.0.1:54329/guild npm run db:migrate
-DATABASE_URL=postgresql://guild:guild@127.0.0.1:54329/guild npm run db:seed
-DATABASE_URL=postgresql://guild:guild@127.0.0.1:54329/guild npm run build
-DATABASE_URL=postgresql://guild:guild@127.0.0.1:54329/guild npm start
+DATABASE_URL=postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard npm run db:migrate
+DATABASE_URL=postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard npm run db:seed
+DATABASE_URL=postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard npm run build
+DATABASE_URL=postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard npm start
 ```
 
 访问 <http://localhost:3000>。Swagger UI 位于 <http://localhost:3000/api/docs>，机器可读契约位于 <http://localhost:3000/api/openapi.json>。
@@ -23,16 +23,16 @@ DATABASE_URL=postgresql://guild:guild@127.0.0.1:54329/guild npm start
 scripts/deploy.sh
 ```
 
-Compose 会依次等待 PostgreSQL、执行 migration、在任务表为空时写入演示 seed，再以非 root、只读文件系统运行无状态应用。部署脚本会在启动前清理遗留项目容器以释放端口，但不删除旧 PostgreSQL 卷；当前栈使用 `noticeboard-postgres` 卷并由 seed 初始化演示数据。重复部署不会覆盖已有任务。需要显式恢复演示数据时使用页面中的重置操作或 demo reset API。
+Compose 会依次等待 PostgreSQL、执行 migration、在任务表为空时写入演示 seed，再以非 root、只读文件系统运行无状态应用。当前栈使用 `noticeboard-postgres` 卷并由 seed 初始化演示数据。重复部署不会覆盖已有任务。需要显式恢复演示数据时使用页面中的重置操作或 demo reset API。
 
 ## 演示行为与数据
 
-- 独立的 `guild-admin` 演示身份负责用户与角色管理；`guild-master`、`adventurer-a`、`adventurer-b` 保持普通用户任务身份。
+- 独立的 `noticeboard-admin` 演示身份负责用户与角色管理；`noticeboard-master`、`adventurer-a`、`adventurer-b` 保持普通用户任务身份。
 - 角色权限控制任务 API 和管理 API；管理员拥有全部权限，普通用户拥有全部任务操作权限但不能管理用户、角色或重置演示数据。
 - “我的任务”归属于时间线中最后一位仍有效的操作人。
 - 列表筛选、搜索和统计在启动时加载的内存快照上执行；创建、状态操作和重置才访问 API。
 - PostgreSQL 保存角色、角色权限、账户、任务和有序时间线。`GET /api/v1/admin/overview` 与 `/api/v1/admin/users`、`/api/v1/admin/roles` 提供 demo-only 管理能力；`POST /api/v1/demo/reset` 仍只在一个事务中恢复十二项演示任务。
-- `localStorage` 只保存 `{currentUserId}`（键 `minecraft-guild-board-user`）和视觉偏好（键 `minecraft-guild-board-style`）。旧键 `minecraft-guild-board-state` 中的有效身份会迁移一次并随即删除；不要在本地存储中保存秘密。
+- `localStorage` 只保存 `{currentUserId}`（键 `noticeboard-user`）和视觉偏好（键 `noticeboard-style`）；不要在本地存储中保存秘密。
 
 `X-Demo-User-Id`、`/api/v1/demo/*`、seed 与 reset 均为 demo-only。HTTP 请求与响应字段只以 OpenAPI 文档为准。
 
@@ -52,7 +52,7 @@ npm run test:visual        # 桌面/移动端零像素视觉测试
 npm run verify             # 完整交付门禁
 ```
 
-数据库命令读取 `DATABASE_URL`；API/契约集成测试读取 `DATABASE_URL_TEST`。`npm run verify` 默认使用本地 Compose 地址 `postgresql://guild:guild@127.0.0.1:54329/guild`，也可覆盖 `DATABASE_URL_TEST`。
+数据库命令读取 `DATABASE_URL`；API/契约集成测试读取 `DATABASE_URL_TEST`。`npm run verify` 默认使用本地 Compose 地址 `postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard`，也可覆盖 `DATABASE_URL_TEST`。
 
 ## 项目结构
 

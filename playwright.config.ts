@@ -23,7 +23,7 @@ export default defineConfig({
     env: {
       DATABASE_URL:
         process.env.DATABASE_URL_TEST ??
-        'postgresql://guild:guild@127.0.0.1:54329/guild',
+        'postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard',
       HOST: '127.0.0.1',
       PORT: '3100',
     },

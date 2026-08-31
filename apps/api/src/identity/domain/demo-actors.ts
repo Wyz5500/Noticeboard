@@ -3,7 +3,7 @@ import type { Actor } from '../../tasks/domain/task.types.js';
 
 export const DEMO_ACTORS: readonly Actor[] = [
   {
-    id: 'guild-master',
+    id: 'noticeboard-master',
     name: '用户 A',
     role: 'user',
     roleLabel: '用户',

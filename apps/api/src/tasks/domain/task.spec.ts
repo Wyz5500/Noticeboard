@@ -5,7 +5,11 @@ import { DomainError } from './domain-error.js';
 import { Task } from './task.js';
 import type { Actor, TaskSnapshot } from './task.types.js';
 
-const PUBLISHER: Actor = { id: 'guild-master', name: '用户 A', role: 'user' };
+const PUBLISHER: Actor = {
+  id: 'noticeboard-master',
+  name: '用户 A',
+  role: 'user',
+};
 const ASSIGNEE: Actor = { id: 'adventurer-a', name: '用户 B', role: 'user' };
 const REPLACEMENT: Actor = { id: 'adventurer-b', name: '用户 C', role: 'user' };
 const CREATED_AT = '2026-08-29T12:00:00.000Z';

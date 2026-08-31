@@ -1,8 +1,7 @@
-/** Verifies current-user persistence and one-time cleanup of the legacy task localStorage key. */
+/** Verifies current-user persistence under the product-scoped browser storage key. */
 import { describe, expect, it } from 'vitest';
 
 import {
-  LEGACY_STATE_KEY,
   USER_STORAGE_KEY,
   loadCurrentUserId,
   saveCurrentUserId,
@@ -43,38 +42,41 @@ class MemoryStorage implements Storage {
   }
 }
 
-const KNOWN_IDS = new Set(['guild-master', 'adventurer-a', 'adventurer-b']);
+const KNOWN_IDS = new Set([
+  'noticeboard-master',
+  'adventurer-a',
+  'adventurer-b',
+]);
 
 describe('identity preference', () => {
-  /** Proves a valid identity migrates while all legacy browser task data is deleted. */
-  it('migrates a valid identity from the legacy state key', () => {
-    const storage = new MemoryStorage();
-    storage.setItem(
-      LEGACY_STATE_KEY,
-      JSON.stringify({
-        currentUserId: 'adventurer-a',
-        tasks: [{ secret: 'old task data' }],
-      }),
-    );
+  /** Proves browser state is scoped to the current product. */
+  it('uses the Noticeboard identity storage key', () => {
+    expect(USER_STORAGE_KEY).toBe('noticeboard-user');
+  });
 
-    expect(loadCurrentUserId(storage, KNOWN_IDS)).toBe('adventurer-a');
+  /** Proves an empty browser preference uses the deterministic demo identity. */
+  it('falls back to the default demo identity when no preference exists', () => {
+    const storage = new MemoryStorage();
+
+    expect(loadCurrentUserId(storage, KNOWN_IDS)).toBe('noticeboard-master');
     expect(storage.getItem(USER_STORAGE_KEY)).toBe(
-      JSON.stringify({ currentUserId: 'adventurer-a' }),
+      JSON.stringify({ currentUserId: 'noticeboard-master' }),
     );
-    expect(storage.getItem(LEGACY_STATE_KEY)).toBeNull();
   });
 
-  /** Proves invalid JSON and unknown identities fall back without retaining the old task key. */
-  it.each([
-    'broken-json',
-    JSON.stringify({ currentUserId: 'unknown', tasks: [] }),
-  ])('falls back for invalid legacy content', (legacy) => {
-    const storage = new MemoryStorage();
-    storage.setItem(LEGACY_STATE_KEY, legacy);
+  /** Proves malformed or unknown preferences normalize to the default identity. */
+  it.each(['broken-json', JSON.stringify({ currentUserId: 'unknown' })])(
+    'falls back for invalid stored content',
+    (value) => {
+      const storage = new MemoryStorage();
+      storage.setItem(USER_STORAGE_KEY, value);
 
-    expect(loadCurrentUserId(storage, KNOWN_IDS)).toBe('guild-master');
-    expect(storage.getItem(LEGACY_STATE_KEY)).toBeNull();
-  });
+      expect(loadCurrentUserId(storage, KNOWN_IDS)).toBe('noticeboard-master');
+      expect(storage.getItem(USER_STORAGE_KEY)).toBe(
+        JSON.stringify({ currentUserId: 'noticeboard-master' }),
+      );
+    },
+  );
 
   /** Proves the new identity-only key takes precedence and remains minimal. */
   it('loads and saves the identity-only storage contract', () => {

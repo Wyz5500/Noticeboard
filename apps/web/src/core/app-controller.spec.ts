@@ -10,7 +10,7 @@ import type {
 import { AppController } from './app-controller.js';
 
 const CURRENT_USER: ActorResource = {
-  id: 'guild-admin',
+  id: 'noticeboard-admin',
   name: '公会管理员',
   role: 'system_admin',
   roleLabel: '系统管理员',
@@ -538,7 +538,7 @@ describe('AppController administration refresh', () => {
     controller.styles = { normalize: () => 'swiss-international' };
     controller.storage = {
       getItem: (key: string) =>
-        key === 'minecraft-guild-board-user'
+        key === 'noticeboard-user'
           ? JSON.stringify({ currentUserId: TASK_VIEWER.id })
           : null,
       setItem: () => undefined,
@@ -600,7 +600,7 @@ describe('AppController administration refresh', () => {
     controller.styles = { normalize: () => 'swiss-international' };
     controller.storage = {
       getItem: (key: string) =>
-        key === 'minecraft-guild-board-user'
+        key === 'noticeboard-user'
           ? JSON.stringify({ currentUserId: TASK_VIEWER.id })
           : null,
       setItem: () => undefined,
@@ -681,7 +681,7 @@ describe('AppController administration refresh', () => {
     controller.styles = { normalize: () => 'swiss-international' };
     controller.storage = {
       getItem: (key: string) =>
-        key === 'minecraft-guild-board-user'
+        key === 'noticeboard-user'
           ? JSON.stringify({ currentUserId: CURRENT_USER.id })
           : null,
       setItem: (_key: string, value: string) => storedValues.push(value),

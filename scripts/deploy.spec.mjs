@@ -23,10 +23,7 @@ function runScript(argument) {
 const dryRun = runScript('--dry-run');
 assert.match(dryRun, /docker compose .*compose\.yaml config --quiet/);
 assert.match(dryRun, /docker compose .*compose\.yaml up -d --build --wait/);
-assert.match(
-  dryRun,
-  /docker compose .*compose\.yaml -p adventurers-guild down --remove-orphans/,
-);
+assert.equal(dryRun.includes(' -p '), false);
 
 const help = runScript('--help');
 assert.match(help, /用法：.*deploy\.sh/);
@@ -35,5 +32,12 @@ assert.match(help, /--dry-run/);
 /** Proves the Compose project and database volume use the product identity. */
 const compose = readFileSync(COMPOSE_PATH, 'utf8');
 assert.match(compose, /^name: noticeboard$/m);
+assert.match(
+  compose,
+  /DATABASE_URL: postgresql:\/\/noticeboard:noticeboard@postgres:5432\/noticeboard/,
+);
+assert.match(compose, /POSTGRES_DB: noticeboard/);
+assert.match(compose, /POSTGRES_PASSWORD: noticeboard/);
+assert.match(compose, /POSTGRES_USER: noticeboard/);
 assert.match(compose, /^\s{6}- noticeboard-postgres:\/var\/lib\/postgresql$/m);
 assert.match(compose, /^\s{4}name: noticeboard-postgres$/m);

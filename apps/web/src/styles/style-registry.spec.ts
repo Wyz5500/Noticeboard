@@ -27,6 +27,11 @@ class MemoryStorage {
 }
 
 describe('style registry', () => {
+  /** Proves visual preferences are scoped to the current product. */
+  it('uses the Noticeboard style storage key', () => {
+    expect(STYLE_STORAGE_KEY).toBe('noticeboard-style');
+  });
+
   /** Proves all ten themes retain their original order and complete token contract. */
   it('registers ten complete themes in the preserved order', () => {
     const registry = new StyleRegistry(THEMES);

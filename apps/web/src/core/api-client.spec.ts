@@ -23,10 +23,10 @@ describe('ApiClient', () => {
       );
     });
 
-    await client.getAdminOverview('guild-admin');
+    await client.getAdminOverview('noticeboard-admin');
 
     expect(request).toMatchObject({
-      headers: { 'x-demo-user-id': 'guild-admin' },
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
     });
   });
   /** Proves protected task list reads carry the selected demo identity header. */
@@ -38,11 +38,11 @@ describe('ApiClient', () => {
       return Promise.resolve(jsonResponse([]));
     });
 
-    await expect(client.listTasks('guild-master')).resolves.toEqual([]);
+    await expect(client.listTasks('noticeboard-master')).resolves.toEqual([]);
     expect(requests).toEqual([
       {
         input: '/api/v1/tasks',
-        init: { headers: { 'x-demo-user-id': 'guild-master' } },
+        init: { headers: { 'x-demo-user-id': 'noticeboard-master' } },
       },
     ]);
   });
@@ -55,7 +55,7 @@ describe('ApiClient', () => {
     } as typeof fetch;
 
     await expect(
-      new ApiClient('/api/v1', fetcher).listTasks('guild-master'),
+      new ApiClient('/api/v1', fetcher).listTasks('noticeboard-master'),
     ).resolves.toEqual([]);
   });
 
@@ -67,11 +67,13 @@ describe('ApiClient', () => {
       return Promise.resolve(jsonResponse({ id: 'task-1' }));
     });
 
-    await expect(client.getTask('task-1', 'guild-master')).resolves.toEqual({
+    await expect(
+      client.getTask('task-1', 'noticeboard-master'),
+    ).resolves.toEqual({
       id: 'task-1',
     });
     expect(request).toEqual({
-      headers: { 'x-demo-user-id': 'guild-master' },
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
     });
   });
 
@@ -110,12 +112,12 @@ describe('ApiClient', () => {
       return Promise.resolve(jsonResponse({ reset: true }));
     });
 
-    await client.resetDemo('guild-master');
+    await client.resetDemo('noticeboard-master');
 
     expect(request).toEqual({
       method: 'POST',
       headers: {
-        'x-demo-user-id': 'guild-master',
+        'x-demo-user-id': 'noticeboard-master',
       },
     });
   });
@@ -132,7 +134,7 @@ describe('ApiClient', () => {
     );
 
     await expect(
-      client.actOnTask('guild-master', 'task-1', {
+      client.actOnTask('noticeboard-master', 'task-1', {
         action: 'approve',
         expectedVersion: 3,
       }),
@@ -152,7 +154,7 @@ describe('ApiClient', () => {
       Promise.resolve(new Response('gateway failure', { status: 502 })),
     );
 
-    await expect(client.resetDemo('guild-master')).rejects.toMatchObject({
+    await expect(client.resetDemo('noticeboard-master')).rejects.toMatchObject({
       status: 502,
       code: 'HTTP_ERROR',
       message: '请求失败，请稍后重试',
