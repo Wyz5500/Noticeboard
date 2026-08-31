@@ -20,7 +20,7 @@ services:
     ports:
       - '127.0.0.1:54329:5432'
     volumes:
-      - guild-postgres:/var/lib/postgresql
+      - noticeboard-postgres:/var/lib/postgresql
 
   migrate:
     build:
@@ -61,4 +61,5 @@ services:
       - /tmp
 
 volumes:
-  guild-postgres:
+  noticeboard-postgres:
+    name: noticeboard-postgres

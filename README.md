@@ -17,13 +17,13 @@ DATABASE_URL=postgresql://guild:guild@127.0.0.1:54329/guild npm start
 
 访问 <http://localhost:3000>。Swagger UI 位于 <http://localhost:3000/api/docs>，机器可读契约位于 <http://localhost:3000/api/openapi.json>。
 
-也可以直接启动完整容器栈：
+也可以通过部署脚本启动或升级完整容器栈：
 
 ```bash
-docker compose up --build --wait
+scripts/deploy.sh
 ```
 
-Compose 会依次等待 PostgreSQL、执行 migration、在任务表为空时写入演示 seed，再以非 root、只读文件系统运行无状态应用。重复部署不会覆盖已有任务；需要显式恢复演示数据时使用页面中的重置操作或 demo reset API。
+Compose 会依次等待 PostgreSQL、执行 migration、在任务表为空时写入演示 seed，再以非 root、只读文件系统运行无状态应用。产品改名后的第一次部署会移除旧 `adventurers-guild` 项目容器，但保留旧 PostgreSQL 卷；新栈使用 `noticeboard-postgres` 卷并由 seed 初始化演示数据。重复部署不会覆盖已有任务。需要显式恢复演示数据时使用页面中的重置操作或 demo reset API。
 
 ## 演示行为与数据
 
