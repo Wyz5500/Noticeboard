@@ -99,6 +99,12 @@ interface RequestSnapshot extends IdentitySnapshot {
   routeSequence: number;
 }
 
+interface ViewScrollState {
+  windowY: number;
+  taskGridY?: number;
+  taskSidebarY?: number;
+}
+
 /** Resolves the preserved HTML shell once so contract drift fails during startup. */
 function collectElements(document: Document): Elements {
   return {
@@ -161,6 +167,12 @@ export class AppController {
   private route: RouteState;
   private selectedTaskId: string | null = null;
   private renderedView: RouteState['view'] | null = null;
+  private readonly viewScrollStates = new Map<
+    RouteState['view'],
+    ViewScrollState
+  >();
+  private pendingScrollRestoreView: RouteState['view'] | null = null;
+  private scrollRestoreSequence = 0;
   private tasksCollapsedScrollY = 0;
   private taskPageScrollTimer: number | null = null;
 
@@ -246,12 +258,16 @@ export class AppController {
 
   /** Attaches all preserved navigation, overlay, form, and keyboard interactions. */
   private bindEvents(): void {
+    this.window.history.scrollRestoration = 'manual';
     this.window.addEventListener('scroll', () => this.handleTaskPageScroll(), {
       passive: true,
     });
     this.window.addEventListener('hashchange', () => {
       void this.handleRouteChange();
     });
+    this.document.addEventListener('click', (event) =>
+      this.handleHashNavigation(event),
+    );
     this.elements.homeView.addEventListener('click', (event) =>
       this.handleStatusShortcut(event),
     );
@@ -423,6 +439,7 @@ export class AppController {
     this.renderTasks();
     this.renderAdmin();
     if (this.selectedTaskId) this.renderDrawer();
+    this.restorePendingScrollState();
   }
 
   /** Renders current identity labels and safe select options. */
@@ -520,17 +537,29 @@ export class AppController {
   private renderView(): void {
     const tasksVisible = this.route.view === 'tasks';
     const adminVisible = this.route.view === 'admin' && this.canManage();
-    const enteringTasks = tasksVisible && this.renderedView !== 'tasks';
+    if (this.route.view === 'admin' && !adminVisible) {
+      this.clearTaskPageScrollTimer();
+      this.tasksCollapsedScrollY = 0;
+      this.document.documentElement.classList.remove('tasks-scroll-mode');
+      this.window.location.hash = '#home';
+      return;
+    }
+    const enteringView = this.renderedView !== this.route.view;
+    if (enteringView) {
+      this.clearTaskPageScrollBeforeRouteChange();
+      this.captureRenderedViewScroll();
+      if (this.renderedView !== null || tasksVisible) {
+        this.pendingScrollRestoreView = this.route.view;
+        this.scrollRestoreSequence += 1;
+      }
+    }
+    const enteringTasks = tasksVisible && enteringView;
     this.elements.homeView.classList.toggle(
       'is-active',
       !tasksVisible && !adminVisible,
     );
     this.elements.tasksView.classList.toggle('is-active', tasksVisible);
     this.elements.adminView.classList.toggle('is-active', adminVisible);
-    if (this.route.view === 'admin' && !adminVisible) {
-      this.window.location.hash = '#home';
-      return;
-    }
     this.document.documentElement.classList.toggle(
       'tasks-scroll-mode',
       tasksVisible,
@@ -543,13 +572,71 @@ export class AppController {
       if (active) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     }
-    this.renderedView = this.route.view === 'admin' ? 'home' : this.route.view;
+    this.renderedView = this.route.view;
     if (enteringTasks) {
+      this.window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
       this.measureTasksIntroCollapse();
     } else if (!tasksVisible) {
       this.clearTaskPageScrollTimer();
       this.tasksCollapsedScrollY = 0;
     }
+  }
+
+  /** Captures the scroll layers owned by the currently rendered top-level view. */
+  private captureRenderedViewScroll(): void {
+    if (this.renderedView == null) return;
+    const state: ViewScrollState = { windowY: this.window?.scrollY ?? 0 };
+    if (this.renderedView === 'tasks') {
+      state.taskGridY = this.elements.taskGrid.scrollTop;
+      const sidebar =
+        this.elements.boardLayout.querySelector<HTMLElement>('.board-sidebar');
+      if (sidebar) state.taskSidebarY = sidebar.scrollTop;
+    }
+    this.viewScrollStates.set(this.renderedView, state);
+  }
+
+  /** Cancels task-page snapping before another top-level view takes over. */
+  private clearTaskPageScrollBeforeRouteChange(): void {
+    if (this.renderedView !== 'tasks') return;
+    this.clearTaskPageScrollTimer();
+  }
+
+  /** Restores the pending view scroll state after all route content has rendered. */
+  private restorePendingScrollState(): void {
+    const view = this.pendingScrollRestoreView;
+    if (view === null) return;
+    const sequence = this.scrollRestoreSequence;
+    this.window.requestAnimationFrame(() => {
+      if (
+        sequence !== this.scrollRestoreSequence ||
+        this.pendingScrollRestoreView !== view ||
+        this.renderedView !== view
+      )
+        return;
+      this.window.requestAnimationFrame(() => {
+        if (
+          sequence !== this.scrollRestoreSequence ||
+          this.pendingScrollRestoreView !== view ||
+          this.renderedView !== view
+        )
+          return;
+        this.pendingScrollRestoreView = null;
+        if (view === 'tasks') this.measureTasksIntroCollapse();
+        const state = this.viewScrollStates.get(view);
+        this.window.scrollTo({
+          left: 0,
+          top: state?.windowY ?? 0,
+          behavior: 'auto',
+        });
+        if (view !== 'tasks') return;
+        this.elements.taskGrid.scrollTop = state?.taskGridY ?? 0;
+        const sidebar =
+          this.elements.boardLayout.querySelector<HTMLElement>(
+            '.board-sidebar',
+          );
+        if (sidebar) sidebar.scrollTop = state?.taskSidebarY ?? 0;
+      });
+    });
   }
 
   /** Caches the outer-page position where the task intro becomes fully hidden. */
@@ -573,6 +660,7 @@ export class AppController {
 
   /** Snaps an interrupted outer task-page scroll to either the expanded or collapsed endpoint. */
   private snapTaskPageScroll(): void {
+    if (this.route.view !== 'tasks' || this.tasksCollapsedScrollY <= 0) return;
     const midpoint = this.tasksCollapsedScrollY / 2;
     const target =
       this.window.scrollY > midpoint ? this.tasksCollapsedScrollY : 0;
@@ -742,6 +830,18 @@ export class AppController {
     );
   }
 
+  /** Routes application hash links without allowing native fragment scrolling to change the captured view. */
+  private handleHashNavigation(event: Event): void {
+    if (!(event.target instanceof Element)) return;
+    const link = event.target.closest<HTMLAnchorElement>('a[href^="#"]');
+    const hash = link?.getAttribute('href');
+    if (!link || !hash) return;
+    event.preventDefault();
+    if (hash === this.window.location.hash) return;
+    this.window.history.pushState(null, '', hash);
+    void this.handleRouteChange();
+  }
+
   /** Updates task scope from the sidebar controls. */
   private handleScope(event: Event): void {
     const target =
@@ -774,6 +874,7 @@ export class AppController {
   private handleSearch(): void {
     this.route = { ...this.route, query: this.elements.searchInput.value };
     this.window.history.replaceState(null, '', buildTaskHash(this.route));
+    this.elements.taskGrid.scrollTop = 0;
     this.renderTasks();
   }
 
@@ -783,7 +884,10 @@ export class AppController {
     filter: FilterLabel,
     query: string,
   ): void {
-    this.window.location.hash = buildTaskHash({ scope, filter, query });
+    const hash = buildTaskHash({ scope, filter, query });
+    if (hash === this.window.location.hash) return;
+    this.window.history.pushState(null, '', hash);
+    void this.handleRouteChange();
   }
 
   /** Opens a task from pointer activation using event delegation. */
@@ -853,6 +957,7 @@ export class AppController {
 
   /** Switches the current demo identity and persists only its ID. */
   private async changeIdentity(): Promise<void> {
+    this.captureRenderedViewScroll();
     const sequence = ++this.identityChangeSequence;
     const actorId = saveCurrentUserId(
       this.storage,
@@ -893,7 +998,17 @@ export class AppController {
 
   /** Loads the protected management overview when hash navigation enters admin. */
   private async handleRouteChange(): Promise<void> {
+    const previousRoute = this.route;
     this.route = parseHash(this.window.location.hash);
+    if (
+      previousRoute.view === 'tasks' &&
+      this.route.view === 'tasks' &&
+      (previousRoute.scope !== this.route.scope ||
+        previousRoute.filter !== this.route.filter ||
+        previousRoute.query !== this.route.query)
+    ) {
+      this.elements.taskGrid.scrollTop = 0;
+    }
     const request = {
       ...this.requestSnapshot(),
       routeSequence: ++this.routeChangeSequence,

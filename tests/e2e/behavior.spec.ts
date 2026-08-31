@@ -20,6 +20,14 @@ async function switchUserAndOpenTask(
   await page.locator('.task-card').filter({ hasText: title }).click();
 }
 
+/** Changes the hash through the SPA route boundary without browser fragment scrolling. */
+async function navigateToHash(page: Page, hash: string): Promise<void> {
+  await page.evaluate((nextHash) => {
+    window.history.pushState(null, '', nextHash);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  }, hash);
+}
+
 /** Restores deterministic server and browser state before each independent UI flow. */
 test.beforeEach(async ({ page, request }) => {
   await request.post('/api/v1/demo/reset', {
@@ -142,11 +150,12 @@ test('manages roles and users from the admin view', async ({ page }) => {
   if (!roleId) throw new Error('新建角色没有返回角色 ID');
 
   const userForm = page.locator('form[data-admin-form="create-user"]');
-  await userForm.locator('input[name="name"]').fill('网页测试用户');
+  const userName = `网页测试用户-${Date.now()}`;
+  await userForm.locator('input[name="name"]').fill(userName);
   await userForm.locator('select[name="roleId"]').selectOption(roleId);
   await userForm.locator('button[type="submit"]').click();
   await expect(
-    page.locator('.admin-card-title').filter({ hasText: '网页测试用户' }),
+    page.locator('.admin-card-title').filter({ hasText: userName }),
   ).toBeVisible();
 
   await page.locator('#profileButton').click();
@@ -487,6 +496,7 @@ test('settles intermediate outer task-page scroll positions', async ({
   page,
 }) => {
   await page.goto('/#tasks?scope=all&filter=全部');
+  await expect(page.locator('.task-card')).toHaveCount(12);
   const collapsedScrollY = await page.evaluate(() => {
     const topbar = document.querySelector<HTMLElement>('.topbar');
     const board = document.querySelector<HTMLElement>('.board-layout');
@@ -521,6 +531,7 @@ test('settles intermediate outer task-page scroll positions', async ({
 /** Proves the task list scrolls independently while the board chrome stays in place. */
 test('scrolls task cards without moving board chrome', async ({ page }) => {
   await page.goto('/#tasks?scope=all&filter=全部');
+  await expect(page.locator('.task-card')).toHaveCount(12);
 
   const before = await page
     .locator('.board-sidebar, .board-toolbar')
@@ -548,6 +559,219 @@ test('scrolls task cards without moving board chrome', async ({ page }) => {
       elements.map((element) => element.getBoundingClientRect().top),
     );
   expect(after).toEqual(before);
+});
+
+/** Proves top-level view scroll positions and the task list position stay isolated across navigation. */
+test('isolates scroll positions between home and task views', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await expect(page.locator('.task-card')).toHaveCount(12);
+
+  const homeScrollY = await page.evaluate(() => {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    return window.scrollY;
+  });
+  expect(homeScrollY).toBeGreaterThan(0);
+
+  await navigateToHash(page, '#tasks?scope=all&filter=全部');
+  await expect(page.locator('#tasksView')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await page.waitForTimeout(100);
+
+  const taskScrollState = await page.evaluate(() => {
+    const grid = document.querySelector<HTMLElement>('#taskGrid');
+    const sidebar = document.querySelector<HTMLElement>('.board-sidebar');
+    const board = document.querySelector<HTMLElement>('.board-layout');
+    const topbar = document.querySelector<HTMLElement>('.topbar');
+    if (!grid || !sidebar || !board || !topbar)
+      throw new Error('Task layout is missing');
+    const collapsedScrollY = Math.max(
+      0,
+      board.getBoundingClientRect().top +
+        window.scrollY -
+        topbar.getBoundingClientRect().height,
+    );
+    window.scrollTo(0, collapsedScrollY);
+    grid.scrollTop = Math.min(120, grid.scrollHeight - grid.clientHeight);
+    sidebar.scrollTop = Math.min(
+      40,
+      sidebar.scrollHeight - sidebar.clientHeight,
+    );
+    return {
+      windowY: window.scrollY,
+      gridY: grid.scrollTop,
+      sidebarY: sidebar.scrollTop,
+    };
+  });
+  expect(taskScrollState.windowY).toBeGreaterThan(0);
+  expect(taskScrollState.gridY).toBeGreaterThan(0);
+
+  await navigateToHash(page, '#home');
+  await expect(page.locator('#homeView')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBe(homeScrollY);
+
+  await navigateToHash(page, '#tasks?scope=all&filter=全部');
+  await expect(page.locator('#tasksView')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBe(taskScrollState.windowY);
+  await expect
+    .poll(() => page.locator('#taskGrid').evaluate((grid) => grid.scrollTop))
+    .toBe(taskScrollState.gridY);
+  await expect
+    .poll(() =>
+      page.locator('.board-sidebar').evaluate((sidebar) => sidebar.scrollTop),
+    )
+    .toBe(taskScrollState.sidebarY);
+});
+
+/** Proves the management view has its own window position instead of inheriting the task board position. */
+test('isolates scroll positions across home, tasks, and admin views', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await expect(page.locator('.task-card')).toHaveCount(12);
+
+  await page.locator('#profileButton').click();
+  await page.locator('#identitySelect').selectOption('noticeboard-admin');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#adminNavLink')).toBeVisible();
+  await expect(page.locator('.task-card')).toHaveCount(12);
+  const homeScrollY = await page.evaluate(() => {
+    window.scrollTo(
+      0,
+      Math.min(120, document.documentElement.scrollHeight - window.innerHeight),
+    );
+    return window.scrollY;
+  });
+  expect(homeScrollY).toBeGreaterThan(0);
+
+  await navigateToHash(page, '#tasks?scope=all&filter=全部');
+  await expect(page.locator('#tasksView')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await page.waitForTimeout(100);
+  const taskScrollY = await page.evaluate(() => {
+    const board = document.querySelector<HTMLElement>('.board-layout');
+    const topbar = document.querySelector<HTMLElement>('.topbar');
+    if (!board || !topbar) throw new Error('Task layout is missing');
+    const collapsedScrollY = Math.max(
+      0,
+      board.getBoundingClientRect().top +
+        window.scrollY -
+        topbar.getBoundingClientRect().height,
+    );
+    window.scrollTo(0, collapsedScrollY);
+    return window.scrollY;
+  });
+  expect(taskScrollY).toBeGreaterThan(0);
+
+  await navigateToHash(page, '#admin');
+  await expect(page.locator('#adminView')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  const adminScrollY = await page.evaluate(() => {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    return window.scrollY;
+  });
+  expect(adminScrollY).toBeGreaterThan(0);
+
+  await navigateToHash(page, '#tasks?scope=all&filter=全部');
+  await expect(page.locator('#tasksView')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBe(taskScrollY);
+
+  await navigateToHash(page, '#home');
+  await expect(page.locator('#homeView')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBe(homeScrollY);
+});
+
+/** Proves browser hash history restores the cached position of each top-level view. */
+test('restores isolated positions while traversing hash history', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await expect(page.locator('.task-card')).toHaveCount(12);
+  const homeScrollY = await page.evaluate(() => {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    return window.scrollY;
+  });
+  await navigateToHash(page, '#tasks?scope=all&filter=全部');
+  await expect(page.locator('#tasksView')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await page.waitForTimeout(100);
+  const taskScrollY = await page.evaluate(() => {
+    const board = document.querySelector<HTMLElement>('.board-layout');
+    const topbar = document.querySelector<HTMLElement>('.topbar');
+    if (!board || !topbar) throw new Error('Task layout is missing');
+    const collapsedScrollY = Math.max(
+      0,
+      board.getBoundingClientRect().top +
+        window.scrollY -
+        topbar.getBoundingClientRect().height,
+    );
+    window.scrollTo(0, collapsedScrollY);
+    return window.scrollY;
+  });
+  await navigateToHash(page, '#home');
+  await expect(page.locator('#homeView')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBe(homeScrollY);
+
+  await page.goBack();
+  await expect(page.locator('#tasksView')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBe(taskScrollY);
+  await page.goForward();
+  await expect(page.locator('#homeView')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBe(homeScrollY);
+});
+
+/** Proves changing task filters and search does not leave the list stranded at an old scroll offset. */
+test('resets the task list scroll after filtering and searching', async ({
+  page,
+}) => {
+  await page.goto('/#tasks?scope=all&filter=全部');
+  await expect(page.locator('.task-card')).toHaveCount(12);
+  const grid = page.locator('#taskGrid');
+  await expect
+    .poll(() =>
+      grid.evaluate((element) => element.scrollHeight - element.clientHeight),
+    )
+    .toBeGreaterThan(0);
+  await page.waitForTimeout(100);
+  await grid.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect
+    .poll(() => grid.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+
+  await page.getByRole('button', { name: /进行中/ }).click();
+  await expect
+    .poll(() => grid.evaluate((element) => element.scrollTop))
+    .toBe(0);
+
+  await page.locator('[data-filter="全部"]').click();
+  await expect(page.locator('.task-card')).toHaveCount(12);
+  await grid.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect
+    .poll(() => grid.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  await page.locator('#searchInput').fill('北境');
+  await expect
+    .poll(() => grid.evaluate((element) => element.scrollTop))
+    .toBe(0);
 });
 
 /** Proves the mobile two-column status rail keeps its middle vertical separators. */
