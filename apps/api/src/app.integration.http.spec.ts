@@ -270,7 +270,10 @@ describeDatabase('application composition', () => {
     expect(reassignedUser.json()).toMatchObject({
       roleId: 'role-user',
     });
-    const reassignedUpdatedAt = reassignedUser.json().updatedAt;
+    const reassignedUpdatedAt: unknown = reassignedUser.json().updatedAt;
+    if (typeof reassignedUpdatedAt !== 'string') {
+      throw new Error('Expected reassigned user updatedAt to be a string');
+    }
     expect(new Date(reassignedUpdatedAt).toISOString()).toBe(
       reassignedUpdatedAt,
     );
