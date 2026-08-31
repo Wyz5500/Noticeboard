@@ -1910,7 +1910,7 @@ body[data-style='pixel-retro'] .task-card:hover {
     box-shadow: var(--shadow-card);
   }
   .admin-mobile-card .admin-record-actions {
-    justify-content: flex-start;
+    justify-content: flex-end;
   }
   .admin-dialog {
     padding: 20px;

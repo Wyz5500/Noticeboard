@@ -231,6 +231,23 @@ test('renders mobile admin cards and sorting controls', async ({
   await expect(sortBar).toBeVisible();
   await expect(sortBar).toHaveCSS('position', 'sticky');
   await expect(sortBar).toHaveCSS('top', '99px');
+  await expect(
+    page.locator('.admin-mobile-card .admin-record-actions').first(),
+  ).toHaveCSS('justify-content', 'flex-end');
+  const actionAlignment = await page
+    .locator('.admin-mobile-card')
+    .first()
+    .evaluate((card) => {
+      const actions = card.querySelector('.admin-record-actions');
+      if (!actions) throw new Error('Expected mobile record actions');
+      return {
+        cardRight: card.getBoundingClientRect().right,
+        actionsRight: actions.getBoundingClientRect().right,
+      };
+    });
+  expect(
+    Math.abs(actionAlignment.cardRight - actionAlignment.actionsRight),
+  ).toBeLessThanOrEqual(1);
   const directionMarginLeft = await sortBar
     .locator('.admin-direction')
     .evaluate((element) =>

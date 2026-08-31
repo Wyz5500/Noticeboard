@@ -1245,6 +1245,7 @@ describe('AppController administration refresh', () => {
 
 describe('AppController administration management UI', () => {
   class TestElement {
+    /** Creates a test event target carrying delegated admin data attributes. */
     constructor(public readonly dataset: Record<string, string>) {}
 
     /** Provides the selector matching surface used by delegated controller handlers. */
@@ -1262,6 +1263,7 @@ describe('AppController administration management UI', () => {
   }
 
   class TestForm {
+    /** Creates a test form carrying the delegated admin form identifier. */
     constructor(public readonly dataset: Record<string, string>) {}
   }
 

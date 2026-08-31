@@ -386,8 +386,8 @@ function editorDialog(
   editor: AdminEditorState,
 ): HTMLDialogElement {
   const dialog = createNode(document, 'dialog', 'admin-dialog');
-  dialog.open = true;
-  dialog.ariaModal = 'true';
+  if (typeof dialog.showModal === 'function') dialog.showModal();
+  else dialog.open = true;
   const kind = editor.kind;
   const record = editor.record;
   const title =

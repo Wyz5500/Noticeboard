@@ -24,6 +24,8 @@ class FakeElement {
   checked = false;
   readOnly = false;
   disabled = false;
+  modal = false;
+  showModalCalled = false;
 
   /** Returns the final child using the browser DOM's null-on-empty contract. */
   get lastElementChild(): FakeElement | null {
@@ -58,6 +60,19 @@ class FakeElement {
     if (name === 'readonly') this.readOnly = true;
     if (name === 'aria-sort') this.ariaSort = value;
     if (name === 'aria-labelledby') this.ariaLabelledBy = value;
+  }
+
+  /** Opens the fake dialog as a modal while preserving the browser dialog contract. */
+  showModal(): void {
+    this.showModalCalled = true;
+    this.modal = true;
+    this.open = true;
+  }
+
+  /** Closes the fake dialog and clears its modal state. */
+  close(): void {
+    this.modal = false;
+    this.open = false;
   }
 
   /** Replaces all child nodes while preserving the container instance. */
@@ -412,7 +427,9 @@ describe('admin renderer', () => {
       (element) => element.tagName === 'dialog',
     )[0];
     expect(dialog?.open).toBe(true);
-    expect(dialog?.ariaModal).toBe('true');
+    expect(dialog?.modal).toBe(true);
+    expect(dialog?.showModalCalled).toBe(true);
+    expect(dialog?.ariaModal).toBe('');
     expect(dialog?.ariaLabelledBy).toBe('admin-editor-title');
     expect(findData(container, 'adminClose', 'dialog')).toBeDefined();
     const roleForm = findData(container, 'adminForm', 'role');
@@ -463,5 +480,27 @@ describe('admin renderer', () => {
     expect(
       findAll(noEditor, (element) => element.tagName === 'dialog'),
     ).toHaveLength(0);
+  });
+
+  /** Ensures the rendered modal can be closed through the native dialog contract. */
+  it('closes an editor dialog through the native close contract', () => {
+    const document = new FakeDocument();
+    const container = document.createElement('main');
+
+    renderAdminView(
+      document as unknown as Document,
+      container as unknown as HTMLElement,
+      overview,
+      { section: 'users', editor: { kind: 'user', mode: 'create' } },
+    );
+
+    const dialog = findAll(
+      container,
+      (element) => element.tagName === 'dialog',
+    )[0]!;
+    dialog.close();
+
+    expect(dialog.open).toBe(false);
+    expect(dialog.modal).toBe(false);
   });
 });

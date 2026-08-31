@@ -67,16 +67,42 @@ async function stabilizeDynamicAdminRecords(
   );
   await records.evaluateAll((rows, kind) => {
     rows.forEach((row, index) => {
-      const cells = row.querySelectorAll('td');
-      cells[0].querySelector('strong')!.textContent =
+      const cells = Array.from(row.querySelectorAll('td'));
+      const requiredCellCount = kind === 'users' ? 5 : 6;
+      if (cells.length < requiredCellCount) {
+        throw new Error(
+          `Expected ${requiredCellCount} table cells, found ${cells.length}`,
+        );
+      }
+      const nameCell = cells[0];
+      const roleOrCodeCell = cells[1];
+      const statusOrPermissionCell = cells[kind === 'users' ? 2 : 3];
+      const updatedAtCell = cells[kind === 'users' ? 3 : 4];
+      if (
+        !nameCell ||
+        !roleOrCodeCell ||
+        !statusOrPermissionCell ||
+        !updatedAtCell
+      ) {
+        throw new Error('Expected management table cells to be present');
+      }
+      const name = nameCell.querySelector('strong');
+      const updatedAt = updatedAtCell.querySelector('.admin-updated-at');
+      if (!name || !updatedAt) {
+        throw new Error('Expected management table content to be present');
+      }
+      name.textContent =
         kind === 'users' ? `用户 ${index + 1}` : `角色 ${index + 1}`;
-      cells[1].textContent = kind === 'users' ? '用户' : `role-${index + 1}`;
-      if (kind === 'roles') cells[2].textContent = String(index + 1);
-      cells[kind === 'users' ? 2 : 3].textContent =
+      roleOrCodeCell.textContent =
+        kind === 'users' ? '用户' : `role-${index + 1}`;
+      if (kind === 'roles') {
+        const permissionCell = cells[2];
+        if (!permissionCell) throw new Error('Expected role permission cell');
+        permissionCell.textContent = String(index + 1);
+      }
+      statusOrPermissionCell.textContent =
         kind === 'users' ? '活跃' : '自定义角色';
-      cells[kind === 'users' ? 3 : 4].querySelector(
-        '.admin-updated-at',
-      )!.textContent = '修改时间：2026-08-31 00:00';
+      updatedAt.textContent = '修改时间：2026-08-31 00:00';
     });
   }, section);
   await expect(records.first()).toBeVisible();
