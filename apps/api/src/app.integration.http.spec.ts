@@ -269,11 +269,12 @@ describeDatabase('application composition', () => {
     expect(reassignedUser.statusCode).toBe(200);
     expect(reassignedUser.json()).toMatchObject({
       roleId: 'role-user',
-      updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
     });
-    expect(reassignedUser.json().updatedAt).not.toBe(
-      restoredUser.json().updatedAt,
+    const reassignedUpdatedAt = reassignedUser.json().updatedAt;
+    expect(new Date(reassignedUpdatedAt).toISOString()).toBe(
+      reassignedUpdatedAt,
     );
+    expect(reassignedUpdatedAt).not.toBe(restoredUser.json().updatedAt);
 
     await waitForTimestampTick();
     const deletedRole = await app.inject({
