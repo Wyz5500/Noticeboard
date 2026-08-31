@@ -614,6 +614,9 @@ test('settles intermediate outer task-page scroll positions', async ({
   page,
 }) => {
   await page.goto('/#tasks?scope=all&filter=全部');
+  await expect(page.locator('.tasks-intro')).toBeVisible();
+  await expect(page.locator('.board-layout')).toBeVisible();
+  await expect(page.locator('#taskGrid')).toBeVisible();
   const collapsedScrollY = await page.evaluate(() => {
     const topbar = document.querySelector<HTMLElement>('.topbar');
     const board = document.querySelector<HTMLElement>('.board-layout');
