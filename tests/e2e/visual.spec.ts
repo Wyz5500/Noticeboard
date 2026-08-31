@@ -45,12 +45,26 @@ async function stabilizeDynamicAdminRecords(
           kind === 'users' ? '角色：用户' : `代码：role-${index + 1}`;
         card.querySelector('.admin-updated-at')!.textContent =
           '修改时间：2026-08-31 00:00';
+        if (kind === 'roles') {
+          // Role baselines model seeded built-in roles, which have no lifecycle actions.
+          card
+            .querySelectorAll('[data-admin-action]')
+            .forEach((action) => action.remove());
+        }
       });
     }, section);
     await expect(records.first()).toBeVisible();
-    await expect(records.locator('[data-admin-open]')).toHaveCount(keepCount);
+    const editSelector = `[data-admin-open="${section === 'users' ? 'user' : 'role'}"]`;
+    const editCounts = await records.evaluateAll(
+      (cards, selector) =>
+        cards.map((card) => card.querySelectorAll(selector).length),
+      editSelector,
+    );
+    expect(editCounts).toEqual(Array.from({ length: keepCount }, () => 1));
     const lifecycle = records.locator('[data-admin-action]');
-    if ((await lifecycle.count()) > 0) {
+    if (section === 'roles') {
+      await expect(lifecycle).toHaveCount(0);
+    } else if ((await lifecycle.count()) > 0) {
       const labels = await lifecycle.allTextContents();
       expect(labels.every((label) => /^(逻辑删除|恢复)$/.test(label))).toBe(
         true,
@@ -103,12 +117,26 @@ async function stabilizeDynamicAdminRecords(
       statusOrPermissionCell.textContent =
         kind === 'users' ? '活跃' : '自定义角色';
       updatedAt.textContent = '修改时间：2026-08-31 00:00';
+      if (kind === 'roles') {
+        // Role baselines model seeded built-in roles, which have no lifecycle actions.
+        row
+          .querySelectorAll('[data-admin-action]')
+          .forEach((action) => action.remove());
+      }
     });
   }, section);
   await expect(records.first()).toBeVisible();
-  await expect(records.locator('[data-admin-open]')).toHaveCount(keepCount);
+  const editSelector = `[data-admin-open="${section === 'users' ? 'user' : 'role'}"]`;
+  const editCounts = await records.evaluateAll(
+    (rows, selector) =>
+      rows.map((row) => row.querySelectorAll(selector).length),
+    editSelector,
+  );
+  expect(editCounts).toEqual(Array.from({ length: keepCount }, () => 1));
   const lifecycle = records.locator('[data-admin-action]');
-  if ((await lifecycle.count()) > 0) {
+  if (section === 'roles') {
+    await expect(lifecycle).toHaveCount(0);
+  } else if ((await lifecycle.count()) > 0) {
     const labels = await lifecycle.allTextContents();
     expect(labels.every((label) => /^(逻辑删除|恢复)$/.test(label))).toBe(true);
   }
