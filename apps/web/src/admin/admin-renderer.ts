@@ -386,8 +386,6 @@ function editorDialog(
   editor: AdminEditorState,
 ): HTMLDialogElement {
   const dialog = createNode(document, 'dialog', 'admin-dialog');
-  if (typeof dialog.showModal === 'function') dialog.showModal();
-  else dialog.open = true;
   const kind = editor.kind;
   const record = editor.record;
   const title =
@@ -499,7 +497,13 @@ export function renderAdminView(
     );
   child.append(mobile);
   const children: HTMLElement[] = [intro, child];
-  if (state.editor)
-    children.push(editorDialog(document, overview, state.editor));
+  const dialog = state.editor
+    ? editorDialog(document, overview, state.editor)
+    : undefined;
+  if (dialog) children.push(dialog);
   container.replaceChildren(...children);
+  if (dialog) {
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.open = true;
+  }
 }

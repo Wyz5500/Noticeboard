@@ -1904,6 +1904,7 @@ body[data-style='pixel-retro'] .task-card:hover {
   .admin-mobile-card {
     padding: 16px;
     display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 16px;
     border: var(--border-width) solid var(--line);
     background: var(--white);

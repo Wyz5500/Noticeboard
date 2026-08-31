@@ -26,6 +26,8 @@ class FakeElement {
   disabled = false;
   modal = false;
   showModalCalled = false;
+  showModalConnected = false;
+  isConnected = false;
 
   /** Returns the final child using the browser DOM's null-on-empty contract. */
   get lastElementChild(): FakeElement | null {
@@ -40,6 +42,7 @@ class FakeElement {
   /** Appends child nodes in the same order as the browser DOM. */
   append(...children: FakeElement[]): void {
     this.children.push(...children);
+    if (this.isConnected) children.forEach((child) => child.connectTree());
   }
 
   /** Mirrors browser textContent reads across descendant nodes for assertions. */
@@ -64,7 +67,9 @@ class FakeElement {
 
   /** Opens the fake dialog as a modal while preserving the browser dialog contract. */
   showModal(): void {
+    if (!this.isConnected) throw new Error('Dialog must be connected');
     this.showModalCalled = true;
+    this.showModalConnected = this.isConnected;
     this.modal = true;
     this.open = true;
   }
@@ -78,6 +83,13 @@ class FakeElement {
   /** Replaces all child nodes while preserving the container instance. */
   replaceChildren(...children: FakeElement[]): void {
     this.children.splice(0, this.children.length, ...children);
+    if (this.isConnected) children.forEach((child) => child.connectTree());
+  }
+
+  /** Marks this fake node and all descendants as connected to the fake document. */
+  private connectTree(): void {
+    this.isConnected = true;
+    this.children.forEach((child) => child.connectTree());
   }
 
   /** Finds the first descendant with the requested simple tag selector. */
@@ -94,7 +106,9 @@ class FakeElement {
 class FakeDocument {
   /** Creates a fake node accepted by the renderer's DOM factory calls. */
   createElement(tagName: string): FakeElement {
-    return new FakeElement(tagName);
+    const element = new FakeElement(tagName);
+    element.isConnected = tagName === 'main';
+    return element;
   }
 }
 
@@ -429,6 +443,7 @@ describe('admin renderer', () => {
     expect(dialog?.open).toBe(true);
     expect(dialog?.modal).toBe(true);
     expect(dialog?.showModalCalled).toBe(true);
+    expect(dialog?.showModalConnected).toBe(true);
     expect(dialog?.ariaModal).toBe('');
     expect(dialog?.ariaLabelledBy).toBe('admin-editor-title');
     expect(findData(container, 'adminClose', 'dialog')).toBeDefined();
