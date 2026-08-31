@@ -35,8 +35,7 @@
 ## 测试与交付
 
 - Git 提交日志必须使用中文书写。
-- 遵循测试驱动：先写会失败的最小测试，再实现，再重构。
 - 领域/前端规则进单元测试；PostgreSQL 语义进仓储契约；HTTP/DTO/guard/OpenAPI/健康进 API 测试；跨页面交互进 Playwright 行为测试；外观进零像素视觉测试。
 - 视觉验证只检查“瑞士国际”主题；其桌面端与移动端截图作为唯一视觉基准。其他主题按类似于 Mod 的定位处理，不纳入视觉回归截图检查，但仍须通过主题注册、令牌、类型与行为质量检查。
 - 主题契约见 `style-configs/README.md`，架构决策见 `docs/architecture.md`，运行方式见 `README.md`。
-- 交付前运行 `npm run verify`。它依次检查格式、lint、类型、注释、架构、单元/API/PostgreSQL/行为/视觉测试，并执行 `git diff --check`。
+- 项目完整验证命令为 `npm run verify`，依次检查格式、lint、类型、注释、架构、单元/API/PostgreSQL/行为/视觉测试，并执行 `git diff --check`。
