@@ -20,55 +20,72 @@ async function waitForModalTransition(page: Page): Promise<void> {
 async function stabilizeDynamicAdminRecords(
   page: Page,
   isMobile: boolean,
+  section: 'users' | 'roles',
 ): Promise<void> {
   await page.waitForLoadState('networkidle');
   await expect(page.locator('#adminView h1')).toBeVisible();
   await expect(page.locator('.admin-sort-bar')).toBeVisible();
-  await page.locator('.admin-updated-at').evaluateAll((elements) => {
-    elements.forEach((element) => {
-      element.textContent = '修改时间：2026-08-31 00:00';
-    });
-  });
-  await page.locator('#adminView').evaluate((root) => {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let node = walker.nextNode();
-    while (node) {
-      node.textContent =
-        node.textContent?.replace(
-          /网页测试角色-\d+/g,
-          '网页测试角色-0000000000000',
-        ) ?? '';
-      node = walker.nextNode();
-    }
-  });
+  const keepCount = section === 'users' ? 4 : 2;
+  const records = page.locator(
+    isMobile ? '.admin-mobile-card:visible' : '.admin-table:visible tbody tr',
+  );
+  const recordCount = await records.count();
+  expect(recordCount).toBeGreaterThanOrEqual(keepCount);
+  for (let index = recordCount - 1; index >= keepCount; index -= 1)
+    await records.nth(index).evaluate((record) => record.remove());
+  await expect(records).toHaveCount(keepCount);
 
   if (isMobile) {
     await expect(page.locator('.admin-mobile-list:visible')).toBeVisible();
-    await expect(
-      page.locator('.admin-mobile-card:visible').first(),
-    ).toBeVisible();
-    await expect(
-      page
-        .locator('.admin-mobile-card:visible')
-        .first()
-        .locator('[data-admin-open], [data-admin-action]'),
-    ).toHaveCount(2);
+    await records.evaluateAll((cards, kind) => {
+      cards.forEach((card, index) => {
+        card.querySelector('strong')!.textContent =
+          kind === 'users' ? `用户 ${index + 1}` : `角色 ${index + 1}`;
+        card.querySelector('.admin-meta')!.textContent =
+          kind === 'users' ? '角色：用户' : `代码：role-${index + 1}`;
+        card.querySelector('.admin-updated-at')!.textContent =
+          '修改时间：2026-08-31 00:00';
+      });
+    }, section);
+    await expect(records.first()).toBeVisible();
+    await expect(records.locator('[data-admin-open]')).toHaveCount(keepCount);
+    const lifecycle = records.locator('[data-admin-action]');
+    if ((await lifecycle.count()) > 0) {
+      const labels = await lifecycle.allTextContents();
+      expect(labels.every((label) => /^(逻辑删除|恢复)$/.test(label))).toBe(
+        true,
+      );
+    }
     return;
   }
 
   await expect(page.locator('.admin-table:visible')).toBeVisible();
-  await expect(
-    page.locator('.admin-table:visible thead th').first(),
-  ).toBeVisible();
-  await expect(
-    page.locator('.admin-table:visible tbody tr').first(),
-  ).toBeVisible();
-  await expect(
-    page
-      .locator('.admin-table:visible tbody tr')
-      .first()
-      .locator('[data-admin-open], [data-admin-action]'),
-  ).toHaveCount(2);
+  const table = page.locator('.admin-table:visible');
+  await expect(table.locator('thead th').first()).toBeVisible();
+  await expect(table.locator('thead th')).toHaveCount(
+    section === 'users' ? 5 : 6,
+  );
+  await records.evaluateAll((rows, kind) => {
+    rows.forEach((row, index) => {
+      const cells = row.querySelectorAll('td');
+      cells[0].querySelector('strong')!.textContent =
+        kind === 'users' ? `用户 ${index + 1}` : `角色 ${index + 1}`;
+      cells[1].textContent = kind === 'users' ? '用户' : `role-${index + 1}`;
+      if (kind === 'roles') cells[2].textContent = String(index + 1);
+      cells[kind === 'users' ? 2 : 3].textContent =
+        kind === 'users' ? '活跃' : '自定义角色';
+      cells[kind === 'users' ? 3 : 4].querySelector(
+        '.admin-updated-at',
+      )!.textContent = '修改时间：2026-08-31 00:00';
+    });
+  }, section);
+  await expect(records.first()).toBeVisible();
+  await expect(records.locator('[data-admin-open]')).toHaveCount(keepCount);
+  const lifecycle = records.locator('[data-admin-action]');
+  if ((await lifecycle.count()) > 0) {
+    const labels = await lifecycle.allTextContents();
+    expect(labels.every((label) => /^(逻辑删除|恢复)$/.test(label))).toBe(true);
+  }
 }
 
 /** Restores deterministic server or legacy local state before each visual scenario. */
@@ -137,7 +154,7 @@ for (const themeId of THEME_IDS) {
     await expect(page).toHaveURL(
       /#admin\/users\?sort=updatedAt&direction=desc/,
     );
-    await stabilizeDynamicAdminRecords(page, isMobile);
+    await stabilizeDynamicAdminRecords(page, isMobile, 'users');
     await expect(page.locator('#adminView')).toHaveScreenshot(
       `${themeId}-admin-users.png`,
     );
@@ -147,7 +164,7 @@ for (const themeId of THEME_IDS) {
     await expect(page).toHaveURL(
       /#admin\/roles\?sort=updatedAt&direction=desc/,
     );
-    await stabilizeDynamicAdminRecords(page, isMobile);
+    await stabilizeDynamicAdminRecords(page, isMobile, 'roles');
     await expect(page.locator('#adminView')).toHaveScreenshot(
       `${themeId}-admin-roles.png`,
     );
