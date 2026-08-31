@@ -211,93 +211,109 @@
           </section>
           <section class="board-layout" aria-label="任务列表">
             <aside class="board-sidebar">
-              <div class="section-kicker">任务范围 <span>查看范围</span></div>
-              <div
-                class="scope-switcher"
-                id="scopeSwitcher"
-                role="group"
-                aria-label="任务范围"
+              <details
+                class="board-filter-disclosure"
+                id="taskFilterDisclosure"
+                open
               >
-                <button
-                  class="scope-button is-active"
-                  type="button"
-                  data-scope="all"
-                  aria-pressed="true"
+                <summary
+                  class="mobile-filter-toggle"
+                  aria-controls="taskFilterContent"
                 >
-                  全部任务
-                </button>
-                <button
-                  class="scope-button"
-                  type="button"
-                  data-scope="mine"
-                  aria-pressed="false"
-                >
-                  我的任务
-                </button>
-              </div>
-              <div class="section-kicker filter-heading">
-                状态筛选 <span>筛选状态</span>
-              </div>
-              <nav
-                class="filter-list"
-                id="filterList"
-                aria-label="任务状态筛选"
-              >
-                <button
-                  class="filter-button is-active"
-                  type="button"
-                  data-filter="全部"
-                  aria-pressed="true"
-                >
-                  <span>全部任务</span
-                  ><span class="filter-count" data-count="全部">0</span>
-                </button>
-                <button
-                  class="filter-button"
-                  type="button"
-                  data-filter="未开始"
-                  aria-pressed="false"
-                >
-                  <span>未开始</span
-                  ><span class="filter-count" data-count="未开始">0</span>
-                </button>
-                <button
-                  class="filter-button"
-                  type="button"
-                  data-filter="进行中"
-                  aria-pressed="false"
-                >
-                  <span>进行中</span
-                  ><span class="filter-count" data-count="进行中">0</span>
-                </button>
-                <button
-                  class="filter-button"
-                  type="button"
-                  data-filter="已完成"
-                  aria-pressed="false"
-                >
-                  <span>已完成</span
-                  ><span class="filter-count" data-count="已完成">0</span>
-                </button>
-                <button
-                  class="filter-button"
-                  type="button"
-                  data-filter="重新打开"
-                  aria-pressed="false"
-                >
-                  <span>重新打开</span
-                  ><span class="filter-count" data-count="重新打开">0</span>
-                </button>
-                <button
-                  class="filter-button"
-                  type="button"
-                  data-filter="关闭"
-                  aria-pressed="false"
-                >
-                  <span>已关闭</span
-                  ><span class="filter-count" data-count="关闭">0</span>
-                </button>
-              </nav>
+                  任务筛选
+                </summary>
+                <div class="board-filter-content" id="taskFilterContent">
+                  <div class="section-kicker">
+                    任务范围 <span>查看范围</span>
+                  </div>
+                  <div
+                    class="scope-switcher"
+                    id="scopeSwitcher"
+                    role="group"
+                    aria-label="任务范围"
+                  >
+                    <button
+                      class="scope-button is-active"
+                      type="button"
+                      data-scope="all"
+                      aria-pressed="true"
+                    >
+                      全部任务
+                    </button>
+                    <button
+                      class="scope-button"
+                      type="button"
+                      data-scope="mine"
+                      aria-pressed="false"
+                    >
+                      我的任务
+                    </button>
+                  </div>
+                  <div class="section-kicker filter-heading">
+                    状态筛选 <span>筛选状态</span>
+                  </div>
+                  <nav
+                    class="filter-list"
+                    id="filterList"
+                    aria-label="任务状态筛选"
+                  >
+                    <button
+                      class="filter-button is-active"
+                      type="button"
+                      data-filter="全部"
+                      aria-pressed="true"
+                    >
+                      <span>全部任务</span
+                      ><span class="filter-count" data-count="全部">0</span>
+                    </button>
+                    <button
+                      class="filter-button"
+                      type="button"
+                      data-filter="未开始"
+                      aria-pressed="false"
+                    >
+                      <span>未开始</span
+                      ><span class="filter-count" data-count="未开始">0</span>
+                    </button>
+                    <button
+                      class="filter-button"
+                      type="button"
+                      data-filter="进行中"
+                      aria-pressed="false"
+                    >
+                      <span>进行中</span
+                      ><span class="filter-count" data-count="进行中">0</span>
+                    </button>
+                    <button
+                      class="filter-button"
+                      type="button"
+                      data-filter="已完成"
+                      aria-pressed="false"
+                    >
+                      <span>已完成</span
+                      ><span class="filter-count" data-count="已完成">0</span>
+                    </button>
+                    <button
+                      class="filter-button"
+                      type="button"
+                      data-filter="重新打开"
+                      aria-pressed="false"
+                    >
+                      <span>重新打开</span
+                      ><span class="filter-count" data-count="重新打开">0</span>
+                    </button>
+                    <button
+                      class="filter-button"
+                      type="button"
+                      data-filter="关闭"
+                      aria-pressed="false"
+                    >
+                      <span>已关闭</span
+                      ><span class="filter-count" data-count="关闭">0</span>
+                    </button>
+                  </nav>
+                </div>
+              </details>
               <div class="sidebar-note">
                 <span class="note-symbol">↗</span>
                 <p>

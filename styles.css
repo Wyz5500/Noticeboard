@@ -542,6 +542,13 @@ h1 em {
   min-height: 0;
   overflow-y: auto;
 }
+.mobile-filter-toggle {
+  display: none;
+  list-style: none;
+}
+.mobile-filter-toggle::-webkit-details-marker {
+  display: none;
+}
 .section-kicker {
   font-size: 10px;
 }
@@ -1444,6 +1451,37 @@ body[data-style='pixel-retro'] .task-card:hover {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     border-bottom: var(--border-width) solid var(--line);
+  }
+  .mobile-filter-toggle {
+    min-height: 42px;
+    padding: 0 0 0 1px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: var(--border-width) solid var(--line);
+    border-bottom: var(--border-width) solid var(--line);
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .mobile-filter-toggle::after {
+    content: '＋';
+    color: var(--accent);
+    font-size: 18px;
+    font-weight: 400;
+    line-height: 1;
+  }
+  .board-filter-disclosure[open] .mobile-filter-toggle::after {
+    content: '−';
+  }
+  .mobile-filter-toggle:hover {
+    color: var(--accent);
+  }
+  .board-filter-content {
+    padding-top: 22px;
+  }
+  .task-grid {
+    overscroll-behavior-y: auto;
   }
   .filter-button {
     padding-right: 8px;

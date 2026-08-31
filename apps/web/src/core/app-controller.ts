@@ -70,6 +70,7 @@ interface Elements {
   statClosed: HTMLElement;
   scopeSwitcher: HTMLElement;
   filterList: HTMLElement;
+  filterDisclosure: HTMLDetailsElement;
   resultLabel: HTMLElement;
   resultCount: HTMLElement;
   searchInput: HTMLInputElement;
@@ -124,6 +125,10 @@ function collectElements(document: Document): Elements {
     statClosed: requiredElement(document, '#statClosed'),
     scopeSwitcher: requiredElement(document, '#scopeSwitcher'),
     filterList: requiredElement(document, '#filterList'),
+    filterDisclosure: requiredElement<HTMLDetailsElement>(
+      document,
+      '#taskFilterDisclosure',
+    ),
     resultLabel: requiredElement(document, '#resultLabel'),
     resultCount: requiredElement(document, '#resultCount'),
     searchInput: requiredElement(document, '#searchInput'),
@@ -149,6 +154,7 @@ export class AppController {
   private readonly elements: Elements;
   private readonly styles = new StyleRegistry(THEMES);
   private readonly gate = new RequestGate();
+  private readonly compactTaskQuery: MediaQueryList;
   private users: ActorResource[] = [];
   private tasks: TaskResource[] = [];
   private tasksLoaded = false;
@@ -171,6 +177,7 @@ export class AppController {
     private readonly storage: Storage,
     private readonly api: ApiClient,
   ) {
+    this.compactTaskQuery = window.matchMedia('(max-width: 840px)');
     this.elements = collectElements(document);
     this.route = parseHash(window.location.hash);
   }
@@ -249,6 +256,9 @@ export class AppController {
     this.window.addEventListener('scroll', () => this.handleTaskPageScroll(), {
       passive: true,
     });
+    this.compactTaskQuery.addEventListener('change', () =>
+      this.syncTaskFilterDisclosure(),
+    );
     this.window.addEventListener('hashchange', () => {
       void this.handleRouteChange();
     });
@@ -545,11 +555,23 @@ export class AppController {
     }
     this.renderedView = this.route.view === 'admin' ? 'home' : this.route.view;
     if (enteringTasks) {
+      this.syncTaskFilterDisclosure(true);
       this.measureTasksIntroCollapse();
     } else if (!tasksVisible) {
       this.clearTaskPageScrollTimer();
       this.tasksCollapsedScrollY = 0;
     }
+  }
+
+  /** Applies the mobile default and keeps the native disclosure aligned with the responsive board layout. */
+  private syncTaskFilterDisclosure(reset = false): void {
+    if (this.route.view !== 'tasks') return;
+    if (
+      !reset &&
+      this.elements.filterDisclosure.open === !this.compactTaskQuery.matches
+    )
+      return;
+    this.elements.filterDisclosure.open = !this.compactTaskQuery.matches;
   }
 
   /** Caches the outer-page position where the task intro becomes fully hidden. */

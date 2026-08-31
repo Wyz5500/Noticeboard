@@ -83,6 +83,7 @@ test('navigates and filters the in-memory task board', async ({
       (grid) => getComputedStyle(grid).gridTemplateColumns.split(' ').length,
     );
   expect(desktopTaskColumns).toBe(isMobile ? 1 : 3);
+  if (isMobile) await page.locator('.mobile-filter-toggle').click();
   await page.getByRole('button', { name: '进行中 3' }).click();
   await expect(page.locator('.task-card')).toHaveCount(3);
   await page.locator('#searchInput').fill('北境');
@@ -280,6 +281,69 @@ test('uses responsive task-grid columns', async ({ page }) => {
   await expect.poll(() => columnsAt(900)).toBe(1);
   await expect.poll(() => columnsAt(840)).toBe(2);
   await expect.poll(() => columnsAt(620)).toBe(1);
+});
+
+/** Proves mobile task filters collapse out of the board flow and remain open during filter changes. */
+test('collapses mobile task filters to reveal task cards', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(
+    !isMobile,
+    'Mobile filter disclosure is covered by the mobile project.',
+  );
+  await page.goto('/#tasks?scope=all&filter=全部');
+
+  const disclosure = page.locator('#taskFilterDisclosure');
+  const metrics = () =>
+    page.locator('#taskGrid').evaluate((grid) => ({
+      clientHeight: grid.clientHeight,
+      cardTop: grid
+        .querySelector<HTMLElement>('.task-card')
+        ?.getBoundingClientRect().top,
+    }));
+
+  await expect(disclosure).toBeAttached();
+  await expect(disclosure).not.toHaveAttribute('open', '');
+  await expect(page.locator('.mobile-filter-toggle')).toBeVisible();
+  await expect(page.locator('#scopeSwitcher')).toBeHidden();
+  await expect(page.locator('#filterList')).toBeHidden();
+  const collapsed = await metrics();
+  if (collapsed.cardTop === undefined) throw new Error('Task card is missing');
+
+  await page.locator('.mobile-filter-toggle').click();
+  await expect(disclosure).toHaveAttribute('open', '');
+  await expect(page.locator('#scopeSwitcher')).toBeVisible();
+  await expect(page.locator('#filterList')).toBeVisible();
+  const expanded = await metrics();
+  if (expanded.cardTop === undefined) throw new Error('Task card is missing');
+  expect(collapsed.clientHeight).toBeGreaterThan(expanded.clientHeight + 80);
+  expect(collapsed.cardTop).toBeLessThan(expanded.cardTop - 80);
+
+  await page.locator('[data-scope="mine"]').click();
+  await expect(disclosure).toHaveAttribute('open', '');
+  await page.locator('[data-filter="进行中"]').click();
+  await expect(disclosure).toHaveAttribute('open', '');
+
+  await page.locator('.mobile-filter-toggle').click();
+  await expect(disclosure).not.toHaveAttribute('open', '');
+});
+
+/** Proves desktop task filters stay expanded without showing the mobile disclosure trigger. */
+test('keeps task filters expanded on desktop', async ({ page, isMobile }) => {
+  test.skip(
+    isMobile,
+    'Desktop filter layout is covered by the desktop project.',
+  );
+  await page.goto('/#tasks?scope=all&filter=全部');
+
+  await expect(page.locator('#taskFilterDisclosure')).toHaveAttribute(
+    'open',
+    '',
+  );
+  await expect(page.locator('.mobile-filter-toggle')).toBeHidden();
+  await expect(page.locator('#scopeSwitcher')).toBeVisible();
+  await expect(page.locator('#filterList')).toBeVisible();
 });
 
 /** Proves one or two visible tasks keep the standard desktop card width instead of filling the row. */
