@@ -33,7 +33,7 @@ run_compose() {
   docker compose -f "${COMPOSE_FILE}" "$@"
 }
 
-# Removes only legacy project containers so the product rename can reuse its ports safely.
+# Removes only legacy project containers so the current project can reuse its ports safely.
 migrate_legacy_project() {
   local legacy_containers
   legacy_containers="$(docker compose -f "${COMPOSE_FILE}" -p "${LEGACY_PROJECT_NAME}" ps -aq)"
