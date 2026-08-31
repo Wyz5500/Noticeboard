@@ -4,7 +4,11 @@
 
 ## 快速开始
 
-安装 Node.js 24.20.0 与 npm 11.19.1，然后在仓库根目录运行：
+安装 Node.js 24.20.0 与 npm 11.19.1，然后在仓库根目录进行本地启动。
+
+运行以下命令前，请先确保 Docker daemon 已运行；macOS 和 Windows 请先启动 Docker Desktop，Linux 请确保 Docker 服务已启动。
+
+Linux 和 macOS：
 
 ```bash
 npm ci
@@ -15,12 +19,30 @@ DATABASE_URL=postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard np
 DATABASE_URL=postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard npm start
 ```
 
+Windows PowerShell：
+
+```powershell
+npm ci
+docker compose up -d --wait postgres
+$env:DATABASE_URL = 'postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard'
+npm run db:migrate
+npm run db:seed
+npm run build
+npm start
+```
+
 访问 <http://localhost:3000>。Swagger UI 位于 <http://localhost:3000/api/docs>，机器可读契约位于 <http://localhost:3000/api/openapi.json>。
 
-也可以通过部署脚本启动或升级完整容器栈：
+容器启动：Linux 和 macOS 可以通过部署脚本启动或升级完整容器栈：
 
 ```bash
 scripts/deploy.sh
+```
+
+容器启动：Windows 请在 PowerShell 中直接运行 Docker Compose 启动命令：
+
+```powershell
+docker compose up -d --build --wait
 ```
 
 Compose 会依次等待 PostgreSQL、执行 migration、在任务表为空时写入演示 seed，再以非 root、只读文件系统运行无状态应用。当前栈使用 `noticeboard-postgres` 卷并由 seed 初始化演示数据。重复部署不会覆盖已有任务。需要显式恢复演示数据时使用页面中的重置操作或 demo reset API。
