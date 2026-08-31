@@ -124,36 +124,107 @@ test('manages roles and users from the admin view', async ({ page }) => {
   await expect(page.locator('#adminNavLink')).toBeVisible();
   await page.locator('#adminNavLink').click();
   await expect(page.locator('#adminView')).toBeVisible();
+  await expect(page.locator('.admin-entry-link')).toHaveCount(2);
+  await page.getByRole('link', { name: '用户管理' }).click();
+  await expect(page).toHaveURL(/#admin\/users\?sort=updatedAt&direction=desc/);
+  await expect(
+    page.locator('.admin-table:visible, .admin-mobile-list:visible').first(),
+  ).toBeVisible();
 
+  const overviewRequests: string[] = [];
+  await page.route('**/api/v1/admin/overview', async (route) => {
+    overviewRequests.push(route.request().url());
+    await route.continue();
+  });
+  if (isMobile) {
+    await page.locator('[data-admin-sort-select="users"]').selectOption('name');
+  } else {
+    await page.locator('.admin-table:visible [data-admin-sort="name"]').click();
+  }
+  await expect(page).toHaveURL(/sort=name&direction=asc/);
+  expect(overviewRequests).toHaveLength(0);
+
+  const userName = `网页测试用户-${Date.now()}`;
+  await page.locator('[data-admin-open="create-user"]').click();
+  const userDialog = page.locator('dialog[open]');
+  await userDialog.locator('input[name="name"]').fill(userName);
+  await userDialog.locator('button[type="submit"]').click();
+  await expect(userDialog).toHaveCount(0);
+  await expect(
+    page.locator('.admin-table:visible, .admin-mobile-list:visible'),
+  ).toContainText(userName);
+
+  await page.getByRole('link', { name: '返回管理首页' }).click();
+  await page.getByRole('link', { name: '角色管理' }).click();
+  await page.locator('[data-admin-open="create-role"]').click();
+  const roleDialog = page.locator('dialog[open]');
   const roleName = `网页测试角色-${Date.now()}`;
-  const roleForm = page.locator('form[data-admin-form="create-role"]');
-  await roleForm.locator('input[name="name"]').fill(roleName);
-  await roleForm.locator('input[value="tasks.view"]').check();
-  await roleForm.locator('button[type="submit"]').click();
+  await roleDialog.locator('input[name="name"]').fill(roleName);
+  await roleDialog.locator('input[value="tasks.view"]').check();
+  await roleDialog.locator('button[type="submit"]').click();
+  await expect(roleDialog).toHaveCount(0);
   await expect(
-    page.locator('.admin-card-title').filter({ hasText: roleName }),
-  ).toBeVisible();
+    page.locator('.admin-table:visible, .admin-mobile-list:visible'),
+  ).toContainText(roleName);
 
-  const roleId = await page
-    .locator('.admin-card')
+  const roleRecord = page
+    .locator('.admin-table tr, .admin-mobile-card')
     .filter({ hasText: roleName })
-    .locator('form[data-admin-form="role"]')
-    .getAttribute('data-admin-id');
-  if (!roleId) throw new Error('新建角色没有返回角色 ID');
+    .first();
+  await roleRecord.locator('[data-admin-open="role"]').click();
+  await expect(page.locator('dialog[open]')).toBeVisible();
+  await page.locator('dialog[open] [data-admin-close="dialog"]').click();
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
 
-  const userForm = page.locator('form[data-admin-form="create-user"]');
-  await userForm.locator('input[name="name"]').fill('网页测试用户');
-  await userForm.locator('select[name="roleId"]').selectOption(roleId);
-  await userForm.locator('button[type="submit"]').click();
+  const roleAction = page
+    .locator('.admin-table tr, .admin-mobile-card')
+    .filter({ hasText: roleName })
+    .first()
+    .locator('[data-admin-action="delete-role"]');
+  await roleAction.click();
+  await expect(page.locator('.admin-table, .admin-mobile-list')).toContainText(
+    '已删除',
+  );
+  await page
+    .locator('.admin-table tr, .admin-mobile-card')
+    .filter({ hasText: roleName })
+    .first()
+    .locator('[data-admin-action="restore-role"]')
+    .click();
   await expect(
-    page.locator('.admin-card-title').filter({ hasText: '网页测试用户' }),
-  ).toBeVisible();
+    page.locator('.admin-table, .admin-mobile-list'),
+  ).not.toContainText('已删除');
 
   await page.locator('#profileButton').click();
   await page.locator('#identitySelect').selectOption('noticeboard-master');
   await expect(page.locator('#adminNavLink')).toBeHidden();
   await page.goto('/#admin');
   await expect(page.locator('#homeView')).toBeVisible();
+});
+
+/** Proves mobile management uses cards and a sticky sort control below the fixed topbar. */
+test('renders mobile admin cards and sorting controls', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, '仅在移动端检查管理卡片');
+  await page.locator('#profileButton').click();
+  await page.locator('#identitySelect').selectOption('noticeboard-admin');
+  await page.keyboard.press('Escape');
+  await page.locator('#adminNavLink').click();
+  await page.getByRole('link', { name: '用户管理' }).click();
+  await expect(page.locator('.admin-mobile-list')).toBeVisible();
+  await expect(page.locator('.admin-table')).toBeHidden();
+  const sortBar = page.locator('.admin-sort-bar');
+  await expect(sortBar).toBeVisible();
+  await expect(sortBar).toHaveCSS('position', 'sticky');
+  await expect(sortBar).toHaveCSS('top', '99px');
+  await sortBar
+    .locator('[data-admin-sort-select="users"]')
+    .selectOption('name');
+  await expect(page).toHaveURL(/sort=name&direction=asc/);
+  await sortBar.locator('[data-admin-direction]').click();
+  await expect(page).toHaveURL(/sort=name&direction=desc/);
 });
 
 /** Proves home summary copy stays inset from the divider and surrounding edges. */
