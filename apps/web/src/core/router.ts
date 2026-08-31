@@ -44,3 +44,12 @@ export function buildTaskHash(
   const query = route.query ? `&q=${encodeURIComponent(route.query)}` : '';
   return `#tasks?scope=${route.scope}&filter=${route.filter}${query}`;
 }
+
+/** Rebuilds a browser hash from its semantic route state using canonical URL vocabulary. */
+export function normalizeHash(hash: string): string {
+  const route = parseHash(hash);
+  if (route.view === 'tasks') {
+    return buildTaskHash(route);
+  }
+  return route.view === 'admin' ? '#admin' : '#home';
+}
