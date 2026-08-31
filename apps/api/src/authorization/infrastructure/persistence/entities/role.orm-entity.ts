@@ -1,5 +1,11 @@
 /** Maps role records to PostgreSQL while keeping role persistence out of application code. */
-import { Column, Entity, OneToMany, PrimaryColumn } from 'typeorm';
+import {
+  Column,
+  Entity,
+  OneToMany,
+  PrimaryColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 import type { RolePermissionOrmEntity } from './role-permission.orm-entity.js';
 
@@ -19,6 +25,9 @@ export class RoleOrmEntity {
 
   @Column({ name: 'deleted_at', type: 'timestamptz', nullable: true })
   deletedAt!: Date | null;
+
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt!: Date;
 
   @OneToMany('RolePermissionOrmEntity', 'role')
   rolePermissions!: RolePermissionOrmEntity[];

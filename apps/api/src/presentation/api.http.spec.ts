@@ -423,7 +423,11 @@ describe('HTTP API contract', () => {
           {
             properties?: Record<
               string,
-              { enum?: string[]; items?: { enum?: string[] } }
+              {
+                enum?: string[];
+                format?: string;
+                items?: { enum?: string[] };
+              }
             >;
           }
         >;
@@ -477,5 +481,11 @@ describe('HTTP API contract', () => {
       document.components.schemas.ActorResponseDto?.properties?.permissions
         ?.items?.enum,
     ).toEqual([...ALL_PERMISSION_CODES]);
+    expect(
+      document.components.schemas.AdminUserResponseDto?.properties?.updatedAt,
+    ).toMatchObject({ format: 'date-time' });
+    expect(
+      document.components.schemas.AdminRoleResponseDto?.properties?.updatedAt,
+    ).toMatchObject({ format: 'date-time' });
   });
 });

@@ -117,7 +117,10 @@ test('renders the action-first home overview layout', async ({ page }) => {
 });
 
 /** Proves administrators can manage roles and users while ordinary users cannot enter the route. */
-test('manages roles and users from the admin view', async ({ page }) => {
+test('manages roles and users from the admin view', async ({
+  page,
+  isMobile,
+}) => {
   await expect(page.locator('#adminNavLink')).toBeHidden();
   await page.locator('#profileButton').click();
   await page.locator('#identitySelect').selectOption('noticeboard-admin');
@@ -125,29 +128,84 @@ test('manages roles and users from the admin view', async ({ page }) => {
   await expect(page.locator('#adminNavLink')).toBeVisible();
   await page.locator('#adminNavLink').click();
   await expect(page.locator('#adminView')).toBeVisible();
-
-  const roleName = `网页测试角色-${Date.now()}`;
-  const roleForm = page.locator('form[data-admin-form="create-role"]');
-  await roleForm.locator('input[name="name"]').fill(roleName);
-  await roleForm.locator('input[value="tasks.view"]').check();
-  await roleForm.locator('button[type="submit"]').click();
+  await expect(page.locator('.admin-entry-link')).toHaveCount(2);
+  const visibleRecords = isMobile
+    ? '.admin-mobile-card:visible'
+    : '.admin-table:visible tr';
+  await page.getByRole('link', { name: '用户管理' }).click();
+  await expect(page).toHaveURL(/#admin\/users\?sort=updatedAt&direction=desc/);
   await expect(
-    page.locator('.admin-card-title').filter({ hasText: roleName }),
+    page.locator('.admin-table:visible, .admin-mobile-list:visible').first(),
   ).toBeVisible();
 
-  const roleId = await page
-    .locator('.admin-card')
-    .filter({ hasText: roleName })
-    .locator('form[data-admin-form="role"]')
-    .getAttribute('data-admin-id');
-  if (!roleId) throw new Error('新建角色没有返回角色 ID');
+  const overviewRequests: string[] = [];
+  await page.route('**/api/v1/admin/overview', async (route) => {
+    overviewRequests.push(route.request().url());
+    await route.continue();
+  });
+  if (isMobile) {
+    await page.locator('[data-admin-sort-select="users"]').selectOption('name');
+  } else {
+    await page.locator('.admin-table:visible [data-admin-sort="name"]').click();
+  }
+  await expect(page).toHaveURL(/sort=name&direction=asc/);
+  expect(overviewRequests).toHaveLength(0);
 
-  const userForm = page.locator('form[data-admin-form="create-user"]');
-  await userForm.locator('input[name="name"]').fill('网页测试用户');
-  await userForm.locator('select[name="roleId"]').selectOption(roleId);
-  await userForm.locator('button[type="submit"]').click();
+  const userName = `网页测试用户-${Date.now()}`;
+  await page.locator('[data-admin-open="create-user"]').click();
+  const userDialog = page.locator('dialog[open]');
+  await userDialog.locator('input[name="name"]').fill(userName);
+  await userDialog.locator('button[type="submit"]').click();
+  await expect(userDialog).toHaveCount(0);
   await expect(
-    page.locator('.admin-card-title').filter({ hasText: '网页测试用户' }),
+    page.locator('.admin-table:visible, .admin-mobile-list:visible'),
+  ).toContainText(userName);
+
+  await page.getByRole('link', { name: '返回管理首页' }).click();
+  await page.getByRole('link', { name: '角色管理' }).click();
+  await page.locator('[data-admin-open="create-role"]').click();
+  const roleDialog = page.locator('dialog[open]');
+  const roleName = `网页测试角色-${Date.now()}`;
+  await roleDialog.locator('input[name="name"]').fill(roleName);
+  await roleDialog.locator('input[value="tasks.view"]').check();
+  await roleDialog.locator('button[type="submit"]').click();
+  await expect(roleDialog).toHaveCount(0);
+  await expect(
+    page.locator('.admin-table:visible, .admin-mobile-list:visible'),
+  ).toContainText(roleName);
+
+  const roleRecord = page
+    .locator(visibleRecords)
+    .filter({ hasText: roleName })
+    .first();
+  await roleRecord.locator('[data-admin-open="role"]').click();
+  await expect(page.locator('dialog[open]')).toBeVisible();
+  await page.locator('dialog[open] [data-admin-close="dialog"]').click();
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+
+  const roleAction = page
+    .locator(visibleRecords)
+    .filter({ hasText: roleName })
+    .first()
+    .locator('[data-admin-action="delete-role"]');
+  await roleAction.click();
+  await expect(
+    page
+      .locator(visibleRecords)
+      .filter({ hasText: roleName })
+      .locator('[data-admin-action="restore-role"]'),
+  ).toBeVisible();
+  await page
+    .locator(visibleRecords)
+    .filter({ hasText: roleName })
+    .first()
+    .locator('[data-admin-action="restore-role"]')
+    .click();
+  await expect(
+    page
+      .locator(visibleRecords)
+      .filter({ hasText: roleName })
+      .locator('[data-admin-action="delete-role"]'),
   ).toBeVisible();
 
   await page.locator('#profileButton').click();
@@ -155,6 +213,75 @@ test('manages roles and users from the admin view', async ({ page }) => {
   await expect(page.locator('#adminNavLink')).toBeHidden();
   await page.goto('/#admin');
   await expect(page.locator('#homeView')).toBeVisible();
+});
+
+/** Proves mobile management uses cards and a sticky sort control below the fixed topbar. */
+test('renders mobile admin cards and sorting controls', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, '仅在移动端检查管理卡片');
+  await page.locator('#profileButton').click();
+  await page.locator('#identitySelect').selectOption('noticeboard-admin');
+  await page.keyboard.press('Escape');
+  await page.locator('#adminNavLink').click();
+  await page.getByRole('link', { name: '用户管理' }).click();
+  await expect(page.locator('.admin-mobile-list')).toBeVisible();
+  await expect(page.locator('.admin-table')).toBeHidden();
+  const sortBar = page.locator('.admin-sort-bar');
+  await expect(sortBar).toBeVisible();
+  await expect(sortBar).toHaveCSS('position', 'sticky');
+  await expect(sortBar).toHaveCSS('top', '99px');
+  await expect(
+    page.locator('.admin-mobile-card .admin-record-actions').first(),
+  ).toHaveCSS('justify-content', 'flex-end');
+  const actionAlignment = await page
+    .locator('.admin-mobile-card')
+    .first()
+    .evaluate((card) => {
+      const info = card.querySelector('.admin-record-info');
+      const actions = card.querySelector('.admin-record-actions');
+      if (!info || !actions) {
+        throw new Error('Expected mobile record info and actions');
+      }
+      const cardStyle = getComputedStyle(card);
+      const infoBox = info.getBoundingClientRect();
+      const actionsBox = actions.getBoundingClientRect();
+      const buttonHeights = Array.from(actions.querySelectorAll('button')).map(
+        (button) => button.getBoundingClientRect().height,
+      );
+      return {
+        display: cardStyle.display,
+        gridTracks: cardStyle.gridTemplateColumns.split(' ').length,
+        alignItems: cardStyle.alignItems,
+        sameRow: Math.abs(infoBox.top - actionsBox.top) <= 1,
+        infoRight: infoBox.right,
+        actionsLeft: actionsBox.left,
+        buttonHeights,
+      };
+    });
+  expect(actionAlignment.display).toBe('grid');
+  expect(actionAlignment.gridTracks).toBe(2);
+  expect(actionAlignment.alignItems).toBe('start');
+  expect(actionAlignment.sameRow).toBe(true);
+  expect(actionAlignment.infoRight).toBeLessThanOrEqual(
+    actionAlignment.actionsLeft,
+  );
+  expect(actionAlignment.buttonHeights.every((height) => height === 38)).toBe(
+    true,
+  );
+  const directionMarginLeft = await sortBar
+    .locator('.admin-direction')
+    .evaluate((element) =>
+      Number.parseFloat(getComputedStyle(element).marginLeft),
+    );
+  expect(directionMarginLeft).toBeGreaterThan(0);
+  await sortBar
+    .locator('[data-admin-sort-select="users"]')
+    .selectOption('name');
+  await expect(page).toHaveURL(/sort=name&direction=asc/);
+  await sortBar.locator('[data-admin-direction]').click();
+  await expect(page).toHaveURL(/sort=name&direction=desc/);
 });
 
 /** Proves home summary copy stays inset from the divider and surrounding edges. */
@@ -552,6 +679,9 @@ test('settles intermediate outer task-page scroll positions', async ({
   page,
 }) => {
   await page.goto('/#tasks?scope=all&filter=全部');
+  await expect(page.locator('.tasks-intro')).toBeVisible();
+  await expect(page.locator('.board-layout')).toBeVisible();
+  await expect(page.locator('#taskGrid')).toBeVisible();
   const collapsedScrollY = await page.evaluate(() => {
     const topbar = document.querySelector<HTMLElement>('.topbar');
     const board = document.querySelector<HTMLElement>('.board-layout');
