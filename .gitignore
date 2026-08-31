@@ -7,3 +7,7 @@
 /playwright-report/
 /test-results/
 .DS_Store
+/design-concepts/
+/tests/e2e/visual.spec.ts-snapshots/*.png
+!/tests/e2e/visual.spec.ts-snapshots/swiss-international-*.png
+!/tests/e2e/visual.spec.ts-snapshots/edge-*.png
