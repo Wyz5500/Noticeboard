@@ -1,4 +1,4 @@
-name: adventurers-guild
+name: noticeboard
 
 x-app-environment: &app-environment
   DATABASE_URL: postgresql://guild:guild@postgres:5432/guild

@@ -1,9 +1,9 @@
 {
-  "name": "adventurers-guild-task-platform",
+  "name": "noticeboard",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "冒险家工会任务平台的 NestJS、PostgreSQL 与原生 TypeScript 单体应用。",
+  "description": "告示牌（Noticeboard）任务协作平台的 NestJS、PostgreSQL 与原生 TypeScript 单体应用。",
   "license": "UNLICENSED",
   "engines": {
     "node": "24.20.0",

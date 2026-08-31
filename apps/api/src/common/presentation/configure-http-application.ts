@@ -32,7 +32,7 @@ export function configureHttpApplication(
   app.useGlobalFilters(new ApiErrorFilter(errorLogger));
 
   const openApi = new DocumentBuilder()
-    .setTitle('冒险家工会任务 API')
+    .setTitle('告示牌 Noticeboard API')
     .setDescription('演示身份与任务状态机的 demo-only REST 契约')
     .setVersion('1.0.0')
     .addApiKey(
