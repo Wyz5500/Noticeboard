@@ -259,6 +259,7 @@ describeDatabase('application composition', () => {
       deletedUserResource.updatedAt,
     );
 
+    await waitForTimestampTick();
     const reassignedUser = await app.inject({
       method: 'PATCH',
       url: `/api/v1/admin/users/${user.json().id as string}`,
@@ -266,6 +267,13 @@ describeDatabase('application composition', () => {
       payload: { roleId: 'role-user' },
     });
     expect(reassignedUser.statusCode).toBe(200);
+    expect(reassignedUser.json()).toMatchObject({
+      roleId: 'role-user',
+      updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    });
+    expect(reassignedUser.json().updatedAt).not.toBe(
+      restoredUser.json().updatedAt,
+    );
 
     await waitForTimestampTick();
     const deletedRole = await app.inject({
