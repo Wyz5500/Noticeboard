@@ -81,6 +81,7 @@ function permissionChecks(
   document: Document,
   overview: AdminOverviewResource,
   selected: readonly PermissionCode[],
+  disabled = false,
 ): HTMLElement {
   const group = createNode(document, 'fieldset', 'admin-permissions');
   group.append(createNode(document, 'legend', undefined, '权限'));
@@ -91,6 +92,7 @@ function permissionChecks(
     input.name = 'permissions';
     input.value = permission.code;
     input.checked = selected.includes(permission.code);
+    input.disabled = disabled;
     label.append(
       input,
       createNode(
@@ -145,8 +147,15 @@ function editButton(
   kind: 'user' | 'role',
   id: string,
 ): HTMLButtonElement {
-  const button = adminButton(document, '编辑', kind, id);
+  const button = createNode(
+    document,
+    'button',
+    'secondary-button admin-edit',
+    '编辑',
+  );
+  button.type = 'button';
   button.dataset.adminOpen = kind;
+  button.dataset.adminId = id;
   return button;
 }
 
@@ -380,6 +389,7 @@ function editorDialog(
 ): HTMLDialogElement {
   const dialog = createNode(document, 'dialog', 'admin-dialog');
   dialog.open = true;
+  dialog.ariaModal = 'true';
   const kind = editor.kind;
   const record = editor.record;
   const title =
@@ -390,7 +400,10 @@ function editorDialog(
       : kind === 'user'
         ? '编辑用户'
         : '编辑角色';
-  dialog.append(createNode(document, 'h2', undefined, title));
+  const heading = createNode(document, 'h2', undefined, title);
+  heading.id = 'admin-editor-title';
+  dialog.setAttribute('aria-labelledby', heading.id);
+  dialog.append(heading);
   const form = createNode(document, 'form', 'admin-form');
   form.dataset.adminForm = editor.mode === 'create' ? `create-${kind}` : kind;
   if (record) form.dataset.adminId = record.id;
@@ -416,12 +429,20 @@ function editorDialog(
       name.querySelector('input')?.setAttribute('readonly', '');
     form.append(
       name,
-      permissionChecks(document, overview, role?.permissions ?? []),
+      permissionChecks(
+        document,
+        overview,
+        role?.permissions ?? [],
+        role?.builtin ?? false,
+      ),
     );
   }
   const actions = createNode(document, 'div', 'admin-form-actions');
   const save = createNode(document, 'button', 'primary-button', '保存');
   save.type = 'submit';
+  save.disabled =
+    kind === 'role' &&
+    (record as AdminRoleResource | undefined)?.builtin === true;
   const close = createNode(document, 'button', 'secondary-button', '取消');
   close.type = 'button';
   close.dataset.adminClose = 'dialog';

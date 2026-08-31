@@ -11,6 +11,8 @@ class FakeElement {
   className = '';
   href = '';
   ariaSort = '';
+  ariaModal = '';
+  ariaLabelledBy = '';
   open = false;
   id = '';
   private ownTextContent = '';
@@ -21,6 +23,7 @@ class FakeElement {
   selected = false;
   checked = false;
   readOnly = false;
+  disabled = false;
 
   /** Returns the final child using the browser DOM's null-on-empty contract. */
   get lastElementChild(): FakeElement | null {
@@ -54,6 +57,7 @@ class FakeElement {
   setAttribute(name: string, value: string): void {
     if (name === 'readonly') this.readOnly = true;
     if (name === 'aria-sort') this.ariaSort = value;
+    if (name === 'aria-labelledby') this.ariaLabelledBy = value;
   }
 
   /** Replaces all child nodes while preserving the container instance. */
@@ -224,6 +228,12 @@ describe('admin renderer', () => {
     expect(
       findData(container, 'adminAction', 'delete-user')?.dataset.adminId,
     ).toBe('user-zeta');
+    const edit = findData(container, 'adminOpen', 'user');
+    expect(edit?.dataset.adminId).toBe('user-alpha');
+    expect(edit?.dataset.adminAction).toBeUndefined();
+    expect(findData(container, 'adminOpen', 'create-user')).toBeDefined();
+    expect(findData(container, 'adminSortSelect', 'users')?.name).toBe('sort');
+    expect(findData(container, 'adminDirection', 'asc')).toBeDefined();
   });
 
   /** Ensures mobile markup has a separate card list and a delegated sort control. */
@@ -299,6 +309,8 @@ describe('admin renderer', () => {
       (element) => element.tagName === 'dialog',
     )[0];
     expect(dialog?.open).toBe(true);
+    expect(dialog?.ariaModal).toBe('true');
+    expect(dialog?.ariaLabelledBy).toBe('admin-editor-title');
     expect(findData(container, 'adminClose', 'dialog')).toBeDefined();
     const roleForm = findData(container, 'adminForm', 'role');
     expect(roleForm).toBeDefined();
@@ -306,6 +318,35 @@ describe('admin renderer', () => {
     expect(
       findAll(roleForm!, (element) => element.type === 'checkbox'),
     ).toHaveLength(1);
+
+    const builtinSave = findAll(
+      roleForm!,
+      (element) => element.type === 'submit',
+    )[0];
+    expect(builtinSave?.disabled).toBe(true);
+    expect(
+      findAll(roleForm!, (element) => element.type === 'checkbox')[0]?.disabled,
+    ).toBe(true);
+
+    const regularRoleContainer = document.createElement('main');
+    renderAdminView(
+      document as unknown as Document,
+      regularRoleContainer as unknown as HTMLElement,
+      overview,
+      {
+        section: 'roles',
+        editor: {
+          kind: 'role',
+          mode: 'edit',
+          record: overview.roles[0]!,
+        },
+      },
+    );
+    const regularRoleForm = findData(regularRoleContainer, 'adminForm', 'role');
+    expect(
+      findAll(regularRoleForm!, (element) => element.type === 'submit')[0]
+        ?.disabled,
+    ).toBe(false);
 
     const noEditor = document.createElement('main');
     renderAdminView(
