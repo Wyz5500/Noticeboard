@@ -26,6 +26,18 @@ async function navigateToHash(page: Page, hash: string): Promise<void> {
     window.history.pushState(null, '', nextHash);
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   }, hash);
+  const viewSelector = hash.startsWith('#tasks')
+    ? '#tasksView'
+    : hash.startsWith('#admin')
+      ? '#adminView'
+      : '#homeView';
+  await expect(page.locator(viewSelector)).toBeVisible();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
 }
 
 /** Opens the responsive task filter disclosure before mobile-only filter interactions. */

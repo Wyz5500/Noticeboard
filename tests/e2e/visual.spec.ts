@@ -197,6 +197,7 @@ for (const themeId of THEME_IDS) {
     await page.keyboard.press('Escape');
     await page.goto('/#admin');
     await expect(page.locator('#adminView')).toBeVisible();
+    await expect(page.locator('#toast .toast-item')).toHaveCount(0);
     await page
       .locator('.admin-grid')
       .evaluateAll((grids) => grids.forEach((grid) => grid.replaceChildren()));
