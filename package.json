@@ -29,9 +29,11 @@
     "test:api": "vitest run --config vitest.http.config.ts",
     "test:contract": "vitest run --config vitest.contract.config.ts",
     "test:e2e": "playwright test --grep-invert @visual",
+    "test:instance": "node --test scripts/instance.spec.mjs scripts/deploy.spec.mjs",
     "test:unit": "vitest run --config vitest.config.ts",
     "test:visual": "playwright test --grep @visual",
     "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
+    "instance": "node scripts/instance.mjs",
     "verify": "node scripts/verify.mjs"
   },
   "dependencies": {

@@ -8,44 +8,44 @@
 
 运行以下命令前，请先确保 Docker daemon 已运行；macOS 和 Windows 请先启动 Docker Desktop，Linux 请确保 Docker 服务已启动。
 
-Linux 和 macOS：
+Linux、macOS 和 Windows：
 
 ```bash
 npm ci
-docker compose up -d --wait postgres
-DATABASE_URL=postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard npm run db:migrate
-DATABASE_URL=postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard npm run db:seed
-DATABASE_URL=postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard npm run build
-DATABASE_URL=postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard npm start
+npm run instance -- up
+npm run instance -- status
 ```
 
-Windows PowerShell：
+`status` 会打印当前 worktree 的页面、Swagger 和数据库地址。每个 worktree 使用独立的 Compose project、PostgreSQL 容器、网络和卷，应用与数据库宿主机端口由 Docker 动态分配。
 
-```powershell
-npm ci
-docker compose up -d --wait postgres
-$env:DATABASE_URL = 'postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard'
-npm run db:migrate
-npm run db:seed
-npm run build
-npm start
+停止当前实例但保留数据：
+
+```bash
+npm run instance -- down
 ```
 
-访问 <http://localhost:3000>。Swagger UI 位于 <http://localhost:3000/api/docs>，机器可读契约位于 <http://localhost:3000/api/openapi.json>。
+删除当前实例及其数据库数据：
 
-容器启动：Linux 和 macOS 可以通过部署脚本启动或升级完整容器栈：
+```bash
+npm run instance -- destroy --yes
+```
+
+销毁后当前 worktree 会从干净数据库重新初始化；历史迁移卷仍保留为备份，但不会再次导入到该实例。
+
+完整验证也使用当前实例，成功后移除容器和网络，失败时保留现场：
+
+```bash
+npm run instance -- verify
+npm run instance -- verify --keep  # 成功后也保留实例
+```
+
+访问地址以 `npm run instance -- status` 的输出为准。Linux/macOS 下的兼容旧入口部署脚本仍可启动当前 worktree 实例：
 
 ```bash
 scripts/deploy.sh
 ```
 
-容器启动：Windows 请在 PowerShell 中直接运行 Docker Compose 启动命令：
-
-```powershell
-docker compose up -d --build --wait
-```
-
-Compose 会依次等待 PostgreSQL、执行 migration、在任务表为空时写入演示 seed，再以非 root、只读文件系统运行无状态应用。当前栈使用 `noticeboard-postgres` 卷并由 seed 初始化演示数据。重复部署不会覆盖已有任务。需要显式恢复演示数据时使用页面中的重置操作或 demo reset API。
+Compose 会依次等待 PostgreSQL、执行 migration、在任务表为空时写入演示 seed，再以非 root、只读文件系统运行无状态应用。重复部署不会覆盖已有任务。需要显式恢复演示数据时使用页面中的重置操作或 demo reset API。
 
 ## 演示行为与数据
 
@@ -71,10 +71,11 @@ npm run test:api           # HTTP 契约及真实模块集成测试
 npm run test:contract      # PostgreSQL 仓储契约测试
 npm run test:e2e           # Chromium 行为测试
 npm run test:visual        # 桌面/移动端零像素视觉测试
+npm run instance -- status  # 显示当前实例和动态端口
 npm run verify             # 完整交付门禁
 ```
 
-数据库命令读取 `DATABASE_URL`；API/契约集成测试读取 `DATABASE_URL_TEST`。`npm run verify` 默认使用本地 Compose 地址 `postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard`，也可覆盖 `DATABASE_URL_TEST`。
+数据库命令读取 `DATABASE_URL`；API/契约集成测试读取 `DATABASE_URL_TEST`。由实例 CLI 执行的验证会自动注入当前实例的 `DATABASE_URL_TEST` 和 `E2E_BASE_URL`；Playwright 检测到 `E2E_BASE_URL` 后不会再启动第二个本地应用。
 
 ## 项目结构
 
