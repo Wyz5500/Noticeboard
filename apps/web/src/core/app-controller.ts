@@ -100,7 +100,6 @@ interface Elements {
   resultCount: HTMLElement;
   searchInput: HTMLInputElement;
   newTaskButton: HTMLButtonElement;
-  boardLayout: HTMLElement;
   taskGrid: HTMLElement;
   identitySelect: HTMLSelectElement;
   drawer: HTMLElement;
@@ -127,8 +126,6 @@ interface RequestSnapshot extends IdentitySnapshot {
 
 interface ViewScrollState {
   windowY: number;
-  taskGridY?: number;
-  taskSidebarY?: number;
 }
 
 /** Resolves the preserved HTML shell once so contract drift fails during startup. */
@@ -164,7 +161,6 @@ function collectElements(document: Document): Elements {
     resultCount: requiredElement(document, '#resultCount'),
     searchInput: requiredElement(document, '#searchInput'),
     newTaskButton: requiredElement(document, '#newTaskButton'),
-    boardLayout: requiredElement(document, '.board-layout'),
     taskGrid: requiredElement(document, '#taskGrid'),
     identitySelect: requiredElement(document, '#identitySelect'),
     drawer: requiredElement(document, '#detailDrawer'),
@@ -205,8 +201,6 @@ export class AppController {
   >();
   private pendingScrollRestoreView: RouteState['view'] | null = null;
   private scrollRestoreSequence = 0;
-  private tasksCollapsedScrollY = 0;
-  private taskPageScrollTimer: number | null = null;
 
   /** Receives browser boundaries and the versioned API client from the entrypoint. */
   constructor(
@@ -292,9 +286,6 @@ export class AppController {
   /** Attaches all preserved navigation, overlay, form, and keyboard interactions. */
   private bindEvents(): void {
     this.window.history.scrollRestoration = 'manual';
-    this.window.addEventListener('scroll', () => this.handleTaskPageScroll(), {
-      passive: true,
-    });
     this.compactTaskQuery.addEventListener('change', () =>
       this.syncTaskFilterDisclosure(),
     );
@@ -578,17 +569,13 @@ export class AppController {
     const tasksVisible = this.route.view === 'tasks';
     const adminVisible = this.route.view === 'admin' && this.canManage();
     if (this.route.view === 'admin' && !adminVisible) {
-      this.clearTaskPageScrollTimer();
-      this.tasksCollapsedScrollY = 0;
-      this.document.documentElement.classList.remove('tasks-scroll-mode');
       this.window.location.hash = '#home';
       return;
     }
     const enteringView = this.renderedView !== this.route.view;
     if (enteringView) {
-      this.clearTaskPageScrollBeforeRouteChange();
       this.captureRenderedViewScroll();
-      if (this.renderedView !== null || tasksVisible) {
+      if (this.renderedView !== null) {
         this.pendingScrollRestoreView = this.route.view;
         this.scrollRestoreSequence += 1;
       }
@@ -600,10 +587,6 @@ export class AppController {
     );
     this.elements.tasksView.classList.toggle('is-active', tasksVisible);
     this.elements.adminView.classList.toggle('is-active', adminVisible);
-    this.document.documentElement.classList.toggle(
-      'tasks-scroll-mode',
-      tasksVisible,
-    );
     for (const link of this.elements.viewNav.querySelectorAll<HTMLElement>(
       '[data-view]',
     )) {
@@ -616,10 +599,6 @@ export class AppController {
     if (enteringTasks) {
       this.syncTaskFilterDisclosure(true);
       this.window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-      this.measureTasksIntroCollapse();
-    } else if (!tasksVisible) {
-      this.clearTaskPageScrollTimer();
-      this.tasksCollapsedScrollY = 0;
     }
   }
 
@@ -634,23 +613,12 @@ export class AppController {
     this.elements.filterDisclosure.open = !this.compactTaskQuery.matches;
   }
 
-  /** Captures the scroll layers owned by the currently rendered top-level view. */
+  /** Captures the document position owned by the currently rendered top-level view. */
   private captureRenderedViewScroll(): void {
     if (this.renderedView == null) return;
-    const state: ViewScrollState = { windowY: this.window?.scrollY ?? 0 };
-    if (this.renderedView === 'tasks') {
-      state.taskGridY = this.elements.taskGrid.scrollTop;
-      const sidebar =
-        this.elements.boardLayout.querySelector<HTMLElement>('.board-sidebar');
-      if (sidebar) state.taskSidebarY = sidebar.scrollTop;
-    }
-    this.viewScrollStates.set(this.renderedView, state);
-  }
-
-  /** Cancels task-page snapping before another top-level view takes over. */
-  private clearTaskPageScrollBeforeRouteChange(): void {
-    if (this.renderedView !== 'tasks') return;
-    this.clearTaskPageScrollTimer();
+    this.viewScrollStates.set(this.renderedView, {
+      windowY: this.window?.scrollY ?? 0,
+    });
   }
 
   /** Restores the pending view scroll state after all route content has rendered. */
@@ -673,62 +641,19 @@ export class AppController {
         )
           return;
         this.pendingScrollRestoreView = null;
-        if (view === 'tasks') this.measureTasksIntroCollapse();
         const state = this.viewScrollStates.get(view);
         this.window.scrollTo({
           left: 0,
           top: state?.windowY ?? 0,
           behavior: 'instant',
         });
-        if (view !== 'tasks') return;
-        this.elements.taskGrid.scrollTop = state?.taskGridY ?? 0;
-        const sidebar =
-          this.elements.boardLayout.querySelector<HTMLElement>(
-            '.board-sidebar',
-          );
-        if (sidebar) sidebar.scrollTop = state?.taskSidebarY ?? 0;
       });
     });
   }
 
-  /** Caches the outer-page position where the task intro becomes fully hidden. */
-  private measureTasksIntroCollapse(): void {
-    const boardTop =
-      this.elements.boardLayout.getBoundingClientRect().top +
-      this.window.scrollY;
-    const topbarHeight = this.elements.topbar.getBoundingClientRect().height;
-    this.tasksCollapsedScrollY = Math.max(0, boardTop - topbarHeight);
-  }
-
-  /** Debounces outer task-page scrolling so only the nearest title endpoint remains visible. */
-  private handleTaskPageScroll(): void {
-    if (this.route.view !== 'tasks' || this.tasksCollapsedScrollY <= 0) return;
-    this.clearTaskPageScrollTimer();
-    this.taskPageScrollTimer = this.window.setTimeout(() => {
-      this.taskPageScrollTimer = null;
-      this.snapTaskPageScroll();
-    }, 80);
-  }
-
-  /** Snaps an interrupted outer task-page scroll to either the expanded or collapsed endpoint. */
-  private snapTaskPageScroll(): void {
-    if (this.route.view !== 'tasks' || this.tasksCollapsedScrollY <= 0) return;
-    const midpoint = this.tasksCollapsedScrollY / 2;
-    const target =
-      this.window.scrollY > midpoint ? this.tasksCollapsedScrollY : 0;
-    if (Math.abs(this.window.scrollY - target) < 1) return;
-    this.window.scrollTo({ top: target, behavior: 'auto' });
-  }
-
-  /** Cancels a pending outer task-page snap before leaving the task view. */
-  private clearTaskPageScrollTimer(): void {
-    if (this.taskPageScrollTimer === null) return;
-    this.window.clearTimeout(this.taskPageScrollTimer);
-    this.taskPageScrollTimer = null;
-  }
-
   /** Filters and renders the in-memory task snapshot without network requests. */
   private renderTasks(): void {
+    const documentScrollY = this.window.scrollY;
     const visible = filterTasks(this.tasks, {
       scope: this.route.scope,
       filter: this.route.filter,
@@ -749,6 +674,13 @@ export class AppController {
       visible,
       this.route.scope,
     );
+    if (this.renderedView === 'tasks' && documentScrollY > 0) {
+      this.window.scrollTo({
+        top: documentScrollY,
+        left: 0,
+        behavior: 'instant',
+      });
+    }
   }
 
   /** Renders the loaded administrator overview or leaves the protected view empty. */

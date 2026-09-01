@@ -1609,12 +1609,10 @@ describe('AppController administration management UI', () => {
 });
 
 describe('AppController task scroll state', () => {
-  /** Ensures task query updates keep all scroll layers and top-level restoration uses one instant task state. */
-  it('keeps task scroll through query updates and restores it instantly after leaving the view', () => {
+  /** Ensures task navigation restores only the document position, not obsolete nested scroll layers. */
+  it('restores only the task page document position after leaving the view', () => {
     type ScrollState = {
       windowY: number;
-      taskGridY?: number;
-      taskSidebarY?: number;
     };
     type ScrollController = {
       elements: {
@@ -1638,18 +1636,13 @@ describe('AppController task scroll state', () => {
           behavior?: ScrollBehavior;
         }) => void;
         requestAnimationFrame: (callback: FrameRequestCallback) => number;
-        clearTimeout: (handle: number) => void;
       };
       route: RouteState;
       renderedView: RouteState['view'] | null;
       viewScrollStates: Map<RouteState['view'], ScrollState>;
       pendingScrollRestoreView: RouteState['view'] | null;
       scrollRestoreSequence: number;
-      tasksCollapsedScrollY: number;
-      taskPageScrollTimer: number | null;
       compactTaskQuery: { matches: boolean };
-      document: Document;
-      measureTasksIntroCollapse: () => void;
       restorePendingScrollState: () => void;
       renderView: () => void;
     };
@@ -1687,18 +1680,11 @@ describe('AppController task scroll state', () => {
         callback(0);
         return 0;
       },
-      clearTimeout: () => undefined,
     };
-    controller.document = {
-      documentElement: { classList },
-    } as unknown as Document;
     controller.viewScrollStates = new Map();
     controller.pendingScrollRestoreView = null;
     controller.scrollRestoreSequence = 0;
-    controller.tasksCollapsedScrollY = 0;
-    controller.taskPageScrollTimer = null;
     controller.compactTaskQuery = { matches: false };
-    controller.measureTasksIntroCollapse = vi.fn();
 
     controller.route = {
       view: 'tasks',
@@ -1734,6 +1720,8 @@ describe('AppController task scroll state', () => {
     };
     controller.renderView();
     controller.restorePendingScrollState();
+    controller.elements.taskGrid.scrollTop = 0;
+    sidebar.scrollTop = 0;
     controller.route = {
       view: 'tasks',
       scope: 'all',
@@ -1744,8 +1732,8 @@ describe('AppController task scroll state', () => {
     controller.restorePendingScrollState();
 
     expect(controller.window.scrollY).toBe(180);
-    expect(controller.elements.taskGrid.scrollTop).toBe(42);
-    expect(sidebar.scrollTop).toBe(24);
+    expect(controller.elements.taskGrid.scrollTop).toBe(0);
+    expect(sidebar.scrollTop).toBe(0);
     expect(scrollCalls.every(({ behavior }) => behavior === 'instant')).toBe(
       true,
     );

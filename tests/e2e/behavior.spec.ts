@@ -548,7 +548,6 @@ test('collapses mobile task filters to reveal task cards', async ({
   await expect(page.locator('#filterList')).toBeVisible();
   const expanded = await metrics();
   if (expanded.cardTop === undefined) throw new Error('Task card is missing');
-  expect(collapsed.clientHeight).toBeGreaterThan(expanded.clientHeight + 80);
   expect(collapsed.cardTop).toBeLessThan(expanded.cardTop - 80);
 
   await page.locator('[data-scope="mine"]').click();
@@ -666,213 +665,113 @@ test('keeps task-card content inside its card at narrow widths', async ({
   }
 });
 
-/** Proves the task board opens expanded and snaps the outer page between both title states. */
-test('snaps the task page between expanded and collapsed title states', async ({
-  page,
-}) => {
+/** Proves task copy and cards belong to the document instead of nested or snapping scroll layers. */
+test('scrolls task copy and cards with the document', async ({ page }) => {
   await page.goto('/#tasks?scope=all&filter=全部');
+  await expect(page.locator('.task-card')).toHaveCount(12);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
 
-  const layoutState = () =>
+  const readLayout = () =>
     page.evaluate(() => {
-      const topbar = document.querySelector<HTMLElement>('.topbar');
       const intro = document.querySelector<HTMLElement>('.tasks-intro');
       const board = document.querySelector<HTMLElement>('.board-layout');
-      if (!topbar || !intro || !board)
+      const grid = document.querySelector<HTMLElement>('#taskGrid');
+      const card = document.querySelector<HTMLElement>('.task-card');
+      if (!intro || !board || !grid || !card)
+        throw new Error('Task layout is missing');
+      return {
+        scrollY: window.scrollY,
+        introTop: intro.getBoundingClientRect().top,
+        cardTop: card.getBoundingClientRect().top,
+        boardPosition: getComputedStyle(board).position,
+        gridOverflowY: getComputedStyle(grid).overflowY,
+        gridScrollTop: grid.scrollTop,
+        documentHeight: document.documentElement.scrollHeight,
+        viewportHeight: window.innerHeight,
+      };
+    });
+  const initial = await readLayout();
+  expect(initial.boardPosition).not.toBe('sticky');
+  expect(initial.gridOverflowY).toBe('visible');
+  expect(initial.documentHeight).toBeGreaterThan(initial.viewportHeight);
+
+  await page.locator('#taskGrid').evaluate((grid) => {
+    grid.scrollTop = 120;
+  });
+  await expect.poll(async () => (await readLayout()).gridScrollTop).toBe(0);
+
+  await page.evaluate(() => window.scrollTo({ top: 360, behavior: 'instant' }));
+  await expect.poll(async () => (await readLayout()).scrollY).toBe(360);
+  const scrolled = await readLayout();
+  expect(scrolled.introTop).toBeLessThan(initial.introTop - 300);
+  expect(scrolled.cardTop).toBeLessThan(initial.cardTop - 300);
+});
+
+/** Proves the desktop filter panel sticks below the topbar while task cards keep moving. */
+test('keeps the desktop task sidebar visible during document scrolling', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'Mobile filters remain in normal document flow');
+  await page.setViewportSize({ width: 1440, height: 700 });
+  await page.goto('/#tasks?scope=all&filter=全部');
+  await expect(page.locator('.task-card')).toHaveCount(12);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+
+  const stickyStart = await page.evaluate(() => {
+    const board = document.querySelector<HTMLElement>('.board-layout');
+    const topbar = document.querySelector<HTMLElement>('.topbar');
+    if (!board || !topbar) throw new Error('Task layout is missing');
+    return (
+      board.getBoundingClientRect().top +
+      window.scrollY -
+      topbar.getBoundingClientRect().bottom +
+      120
+    );
+  });
+  await page.evaluate((top) => {
+    window.scrollTo({ top, behavior: 'instant' });
+  }, stickyStart);
+
+  const readPositions = () =>
+    page.evaluate(() => {
+      const topbar = document.querySelector<HTMLElement>('.topbar');
+      const sidebar = document.querySelector<HTMLElement>('.board-sidebar');
+      const card = document.querySelector<HTMLElement>('.task-card');
+      if (!topbar || !sidebar || !card)
         throw new Error('Task layout is missing');
       return {
         scrollY: window.scrollY,
         topbarBottom: topbar.getBoundingClientRect().bottom,
-        introBottom: intro.getBoundingClientRect().bottom,
-        boardTop: board.getBoundingClientRect().top,
+        sidebarTop: sidebar.getBoundingClientRect().top,
+        cardTop: card.getBoundingClientRect().top,
       };
     });
-
   await expect
-    .poll(async () => (await layoutState()).boardTop)
-    .toBeGreaterThan(0);
-  const expanded = await layoutState();
-  expect(expanded.scrollY).toBe(0);
-  expect(expanded.introBottom).toBeGreaterThan(expanded.topbarBottom);
-  expect(expanded.boardTop).toBeGreaterThan(expanded.topbarBottom);
+    .poll(async () => (await readPositions()).sidebarTop)
+    .toBeCloseTo((await readPositions()).topbarBottom, 0);
+  const first = await readPositions();
 
-  await page.locator('.board-sidebar').hover();
-  await page.mouse.wheel(0, 1000);
+  await page.evaluate(() => window.scrollBy({ top: 180, behavior: 'instant' }));
   await expect
-    .poll(async () => (await layoutState()).scrollY)
-    .toBeGreaterThan(0);
-  const recollapsed = await layoutState();
-  expect(recollapsed.introBottom).toBeLessThanOrEqual(
-    recollapsed.topbarBottom + 3,
-  );
-  expect(recollapsed.boardTop).toBeCloseTo(recollapsed.topbarBottom, 0);
-
-  await page.mouse.wheel(0, -1000);
-  await expect.poll(async () => (await layoutState()).scrollY).toBe(0);
-  const reexpanded = await layoutState();
-  expect(reexpanded.introBottom).toBeGreaterThan(reexpanded.topbarBottom);
-  expect(reexpanded.boardTop).toBeGreaterThan(reexpanded.topbarBottom);
+    .poll(async () => (await readPositions()).scrollY)
+    .toBe(first.scrollY + 180);
+  const second = await readPositions();
+  expect(second.sidebarTop).toBeCloseTo(second.topbarBottom, 0);
+  expect(second.cardTop).toBeLessThan(first.cardTop - 150);
 });
 
-/** Proves entering the task page positions instantly while preserving smooth manual scrolling. */
-test('opens the task page expanded with smooth scrolling enabled', async ({
-  page,
-}) => {
-  await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await page.goto('/');
-  const homeScrollY = await page.evaluate(() => {
-    window.scrollTo({
-      top: document.documentElement.scrollHeight,
-      behavior: 'instant',
-    });
-    return window.scrollY;
-  });
-  expect(homeScrollY).toBeGreaterThan(0);
-  await page.waitForTimeout(100);
-  await page.evaluate(() => {
-    const samples: number[] = [];
-    window.addEventListener('scroll', () => samples.push(window.scrollY));
-    (
-      window as Window & { taskEntryScrollSamples?: number[] }
-    ).taskEntryScrollSamples = samples;
-  });
-  await page.getByRole('link', { name: '任务页' }).click();
-
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => getComputedStyle(document.documentElement).scrollBehavior,
-      ),
-    )
-    .toBe('smooth');
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
-  const entryScrollSamples = await page.evaluate(
-    () =>
-      (window as Window & { taskEntryScrollSamples?: number[] })
-        .taskEntryScrollSamples ?? [],
-  );
-  expect(entryScrollSamples.every((scrollY) => scrollY === 0)).toBe(true);
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const intro = document.querySelector<HTMLElement>('.tasks-intro');
-        const topbar = document.querySelector<HTMLElement>('.topbar');
-        if (!intro || !topbar) throw new Error('Task layout is missing');
-        return (
-          intro.getBoundingClientRect().bottom -
-          topbar.getBoundingClientRect().bottom
-        );
-      }),
-    )
-    .toBeGreaterThan(3);
-});
-
-/** Proves leaving and re-entering the task page keeps its title visible by default. */
-test('re-enters the task page with its intro expanded', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await page.goto('/');
-  await page.getByRole('link', { name: '任务页' }).click();
-  await expect(page.locator('.tasks-intro')).toBeVisible();
-
-  await page.getByRole('link', { name: '首页', exact: true }).click();
-  await expect(page.locator('#homeView')).toBeVisible();
-  await page.getByRole('link', { name: '任务页' }).click();
-
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => getComputedStyle(document.documentElement).scrollBehavior,
-      ),
-    )
-    .toBe('smooth');
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const intro = document.querySelector<HTMLElement>('.tasks-intro');
-        const topbar = document.querySelector<HTMLElement>('.topbar');
-        if (!intro || !topbar) throw new Error('Task layout is missing');
-        return (
-          intro.getBoundingClientRect().bottom -
-          topbar.getBoundingClientRect().bottom
-        );
-      }),
-    )
-    .toBeGreaterThan(3);
-});
-
-/** Proves arbitrary outer-page scrolling settles at the expanded or collapsed endpoint. */
-test('settles intermediate outer task-page scroll positions', async ({
-  page,
-}) => {
-  await page.goto('/#tasks?scope=all&filter=全部');
-  await expect(page.locator('.task-card')).toHaveCount(12);
-  await expect(page.locator('.tasks-intro')).toBeVisible();
-  await expect(page.locator('.board-layout')).toBeVisible();
-  await expect(page.locator('#taskGrid')).toBeVisible();
-  const collapsedScrollY = await page.evaluate(() => {
-    const topbar = document.querySelector<HTMLElement>('.topbar');
-    const board = document.querySelector<HTMLElement>('.board-layout');
-    if (!topbar || !board) throw new Error('Task layout is missing');
-    return Math.max(
-      0,
-      board.getBoundingClientRect().top +
-        window.scrollY -
-        topbar.getBoundingClientRect().height,
-    );
-  });
-  expect(collapsedScrollY).toBeGreaterThan(0);
-
-  await page.evaluate(
-    (scrollY) => window.scrollTo(0, scrollY / 2),
-    collapsedScrollY,
-  );
-  await expect
-    .poll(() =>
-      page.evaluate(
-        (collapsedY) =>
-          Math.min(
-            Math.abs(window.scrollY),
-            Math.abs(window.scrollY - collapsedY),
-          ),
-        collapsedScrollY,
-      ),
-    )
-    .toBeLessThan(1);
-});
-
-/** Proves the task list scrolls independently while the board chrome stays in place. */
-test('scrolls task cards without moving board chrome', async ({ page }) => {
-  await page.goto('/#tasks?scope=all&filter=全部');
-  await expect(page.locator('.task-card')).toHaveCount(12);
-
-  const before = await page
-    .locator('.board-sidebar, .board-toolbar')
-    .evaluateAll((elements) =>
-      elements.map((element) => element.getBoundingClientRect().top),
-    );
-  const listMetrics = await page.locator('#taskGrid').evaluate((grid) => ({
-    clientHeight: grid.clientHeight,
-    scrollHeight: grid.scrollHeight,
-    overflowY: getComputedStyle(grid).overflowY,
-  }));
-
-  expect(listMetrics.overflowY).toBe('auto');
-  expect(listMetrics.scrollHeight).toBeGreaterThan(listMetrics.clientHeight);
-  await page.locator('#taskGrid').evaluate((grid) => {
-    grid.scrollTop = grid.scrollHeight;
-  });
-  await expect
-    .poll(() => page.locator('#taskGrid').evaluate((grid) => grid.scrollTop))
-    .toBeGreaterThan(0);
-
-  const after = await page
-    .locator('.board-sidebar, .board-toolbar')
-    .evaluateAll((elements) =>
-      elements.map((element) => element.getBoundingClientRect().top),
-    );
-  expect(after).toEqual(before);
-});
-
-/** Proves top-level view scroll positions and the task list position stay isolated across navigation. */
+/** Proves each top-level view restores its own document position across navigation. */
 test('isolates scroll positions between home and task views', async ({
   page,
 }) => {
@@ -890,33 +789,24 @@ test('isolates scroll positions between home and task views', async ({
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   await page.waitForTimeout(100);
 
-  const taskScrollState = await page.evaluate(() => {
+  const taskScrollY = await page.evaluate(() => {
     const grid = document.querySelector<HTMLElement>('#taskGrid');
-    const sidebar = document.querySelector<HTMLElement>('.board-sidebar');
     const board = document.querySelector<HTMLElement>('.board-layout');
     const topbar = document.querySelector<HTMLElement>('.topbar');
-    if (!grid || !sidebar || !board || !topbar)
-      throw new Error('Task layout is missing');
-    const collapsedScrollY = Math.max(
+    if (!grid || !board || !topbar) throw new Error('Task layout is missing');
+    const boardScrollY = Math.max(
       0,
       board.getBoundingClientRect().top +
         window.scrollY -
         topbar.getBoundingClientRect().height,
     );
-    window.scrollTo(0, collapsedScrollY);
-    grid.scrollTop = Math.min(120, grid.scrollHeight - grid.clientHeight);
-    sidebar.scrollTop = Math.min(
-      40,
-      sidebar.scrollHeight - sidebar.clientHeight,
-    );
-    return {
-      windowY: window.scrollY,
-      gridY: grid.scrollTop,
-      sidebarY: sidebar.scrollTop,
-    };
+    window.scrollTo(0, boardScrollY);
+    grid.scrollTop = 120;
+    if (grid.scrollTop !== 0)
+      throw new Error('Task grid unexpectedly owns a scroll layer');
+    return window.scrollY;
   });
-  expect(taskScrollState.windowY).toBeGreaterThan(0);
-  expect(taskScrollState.gridY).toBeGreaterThan(0);
+  expect(taskScrollY).toBeGreaterThan(0);
 
   await navigateToHash(page, '#home');
   await expect(page.locator('#homeView')).toBeVisible();
@@ -928,15 +818,7 @@ test('isolates scroll positions between home and task views', async ({
   await expect(page.locator('#tasksView')).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.scrollY))
-    .toBe(taskScrollState.windowY);
-  await expect
-    .poll(() => page.locator('#taskGrid').evaluate((grid) => grid.scrollTop))
-    .toBe(taskScrollState.gridY);
-  await expect
-    .poll(() =>
-      page.locator('.board-sidebar').evaluate((sidebar) => sidebar.scrollTop),
-    )
-    .toBe(taskScrollState.sidebarY);
+    .toBe(taskScrollY);
 });
 
 /** Proves active task controls use canonical hash deduplication without growing browser history. */
@@ -1024,20 +906,22 @@ test('restores task scroll after an in-place search route update', async ({
 }) => {
   await page.goto('/#tasks?scope=all&filter=全部');
   await expect(page.locator('.task-card')).toHaveCount(12);
-  await page.locator('#searchInput').fill('北境');
-  await expect(page.locator('.task-card')).toHaveCount(1);
+  await page.locator('#searchInput').fill('用户');
+  await expect
+    .poll(() => page.locator('.task-card').count())
+    .toBeGreaterThan(1);
 
   const taskScrollY = await page.evaluate(() => {
     const board = document.querySelector<HTMLElement>('.board-layout');
     const topbar = document.querySelector<HTMLElement>('.topbar');
     if (!board || !topbar) throw new Error('Task layout is missing');
-    const collapsedScrollY = Math.max(
+    const boardScrollY = Math.max(
       0,
       board.getBoundingClientRect().top +
         window.scrollY -
         topbar.getBoundingClientRect().height,
     );
-    window.scrollTo(0, collapsedScrollY);
+    window.scrollTo(0, boardScrollY);
     return window.scrollY;
   });
   expect(taskScrollY).toBeGreaterThan(0);
@@ -1046,7 +930,7 @@ test('restores task scroll after an in-place search route update', async ({
   await expect(page.locator('#homeView')).toBeVisible();
   await navigateToHash(
     page,
-    '#tasks?scope=all&filter=全部&q=%E5%8C%97%E5%A2%83',
+    '#tasks?scope=all&filter=全部&q=%E7%94%A8%E6%88%B7',
   );
   await expect(page.locator('#tasksView')).toBeVisible();
   await expect
@@ -1164,13 +1048,20 @@ test('restores isolated positions while traversing hash history', async ({
     .toBe(homeScrollY);
 });
 
-/** Proves task filters, scope, and search share all current task-page scroll layers. */
-test('keeps task scroll positions while filtering, changing scope, and searching', async ({
+/** Proves task controls preserve the current document position while replacing cards. */
+test('keeps the task page position while filtering, changing scope, and searching', async ({
   page,
   isMobile,
 }) => {
+  if (!isMobile) await page.setViewportSize({ width: 1440, height: 400 });
   await page.goto('/#tasks?scope=all&filter=全部');
   await expect(page.locator('.task-card')).toHaveCount(12);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
   await openMobileTaskFilters(page, isMobile);
 
   const activate = async (selector: string): Promise<void> => {
@@ -1178,56 +1069,25 @@ test('keeps task scroll positions while filtering, changing scope, and searching
       (element as HTMLElement).click();
     });
   };
-  const readTaskScroll = () =>
-    page.evaluate(() => ({
-      windowY: window.scrollY,
-      gridY: document.querySelector<HTMLElement>('#taskGrid')?.scrollTop ?? 0,
-      sidebarY:
-        document.querySelector<HTMLElement>('.board-sidebar')?.scrollTop ?? 0,
-    }));
+  const readTaskScroll = () => page.evaluate(() => window.scrollY);
   const initial = await page.evaluate(() => {
     const grid = document.querySelector<HTMLElement>('#taskGrid');
-    const sidebar = document.querySelector<HTMLElement>('.board-sidebar');
     const board = document.querySelector<HTMLElement>('.board-layout');
     const topbar = document.querySelector<HTMLElement>('.topbar');
-    if (!grid || !sidebar || !board || !topbar)
-      throw new Error('Task layout is missing');
-    grid.style.height = '240px';
-    grid.style.maxHeight = '240px';
-    sidebar.style.height = '120px';
-    sidebar.style.maxHeight = '120px';
-    sidebar.style.overflowY = 'auto';
-    if (!sidebar.querySelector('[data-scroll-test-spacer]')) {
-      const spacer = document.createElement('div');
-      spacer.dataset.scrollTestSpacer = 'true';
-      spacer.style.height = '400px';
-      sidebar.append(spacer);
-    }
-    if (grid.scrollHeight <= grid.clientHeight)
-      throw new Error('Task grid is not scrollable');
-    if (sidebar.scrollHeight <= sidebar.clientHeight)
-      throw new Error('Task sidebar is not scrollable');
-    const collapsedScrollY = Math.max(
+    if (!grid || !board || !topbar) throw new Error('Task layout is missing');
+    const boardScrollY = Math.max(
       0,
       board.getBoundingClientRect().top +
         window.scrollY -
         topbar.getBoundingClientRect().height,
     );
-    window.scrollTo({ top: collapsedScrollY, behavior: 'instant' });
-    grid.scrollTop = Math.min(40, grid.scrollHeight - grid.clientHeight);
-    sidebar.scrollTop = Math.min(
-      25,
-      sidebar.scrollHeight - sidebar.clientHeight,
-    );
-    return {
-      windowY: window.scrollY,
-      gridY: grid.scrollTop,
-      sidebarY: sidebar.scrollTop,
-    };
+    window.scrollTo({ top: boardScrollY, behavior: 'instant' });
+    grid.scrollTop = 40;
+    if (grid.scrollTop !== 0)
+      throw new Error('Task grid unexpectedly owns a scroll layer');
+    return window.scrollY;
   });
-  expect(initial.windowY).toBeGreaterThan(0);
-  expect(initial.gridY).toBeGreaterThan(0);
-  expect(initial.sidebarY).toBeGreaterThan(0);
+  expect(initial).toBeGreaterThan(0);
   await page.waitForTimeout(120);
 
   await activate('[data-filter="进行中"]');

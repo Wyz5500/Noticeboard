@@ -32,15 +32,9 @@
 * {
   box-sizing: border-box;
 }
-html {
-  scroll-behavior: smooth;
-}
 html,
 body {
-  overflow-x: hidden;
-}
-html.tasks-scroll-mode .app-shell {
-  padding-bottom: 0;
+  overflow-x: clip;
 }
 body {
   margin: 0;
@@ -525,21 +519,17 @@ h1 em {
   font-style: normal;
 }
 .board-layout {
-  position: sticky;
-  top: var(--topbar-offset);
-  z-index: 10;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
   gap: 68px;
-  height: calc(100dvh - var(--topbar-offset));
-  min-height: 0;
   padding-top: 54px;
-  overflow: hidden;
-  background: var(--paper);
   overflow-anchor: none;
 }
 .board-sidebar {
-  min-height: 0;
+  position: sticky;
+  top: var(--topbar-offset);
+  align-self: start;
+  max-height: calc(100dvh - var(--topbar-offset));
   overflow-y: auto;
 }
 .mobile-filter-toggle {
@@ -634,9 +624,7 @@ h1 em {
   line-height: 1.7;
 }
 .board-content {
-  min-height: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
 }
 .board-toolbar {
   min-height: 50px;
@@ -712,14 +700,11 @@ h1 em {
   cursor: not-allowed;
 }
 .task-grid {
-  min-height: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   grid-auto-rows: max-content;
   gap: 14px;
   padding: 20px 6px 20px 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
   align-content: start;
   overflow-anchor: none;
 }
@@ -1440,9 +1425,13 @@ body[data-style='pixel-retro'] .task-card:hover {
   }
   .board-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
     gap: 20px;
     padding-top: 24px;
+  }
+  .board-sidebar {
+    position: static;
+    max-height: none;
+    overflow: visible;
   }
   .tasks-intro {
     padding: 32px 0 28px;
@@ -1482,7 +1471,6 @@ body[data-style='pixel-retro'] .task-card:hover {
   }
   .task-grid {
     padding-top: 14px;
-    overscroll-behavior-y: auto;
   }
   .filter-button {
     padding-right: 8px;
