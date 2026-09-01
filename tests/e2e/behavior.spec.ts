@@ -73,9 +73,10 @@ test('navigates and filters the in-memory task board', async ({
     'aria-label',
     '个人任务概览',
   );
-  await expect(page.locator('.home-stats .section-kicker')).toContainText(
-    '个人任务概览',
-  );
+  await expect(page.locator('#homeView')).not.toContainText('冒险家工会');
+  await expect(page.locator('#homeView')).not.toContainText('个人任务概览');
+  await expect(page.locator('#homeView')).not.toContainText('状态概览');
+  await expect(page.locator('#homeView')).not.toContainText('任务状态概览');
   await expect(page.locator('#statTotal')).toHaveText('5');
   await expect(page.locator('.stat-card')).toHaveCount(6);
   await expect(page.locator('.stat-foot')).toHaveCount(0);
@@ -202,6 +203,148 @@ async function readHomeLayout(page: Page): Promise<{
     };
   });
 }
+
+/** Proves every responsive home composition forms one connected frame with singly owned shared edges. */
+test('closes every major home cell into one continuous grid', async ({
+  page,
+}) => {
+  const viewports = [
+    { width: 1440, height: 1000, state: 'wide' },
+    { width: 1280, height: 650, state: 'compact' },
+    { width: 800, height: 700, state: 'flow' },
+    { width: 412, height: 915, state: 'mobile' },
+  ] as const;
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.goto('/');
+    const grid = await page.evaluate(() => {
+      const element = (selector: string): HTMLElement => {
+        const match = document.querySelector(selector);
+        if (!(match instanceof HTMLElement)) {
+          throw new Error(`Missing grid element: ${selector}`);
+        }
+        return match;
+      };
+      const geometry = (selector: string) => {
+        const rect = element(selector).getBoundingClientRect();
+        return {
+          left: rect.left,
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+        };
+      };
+      const borders = (selector: string) => {
+        const style = getComputedStyle(element(selector));
+        return {
+          top: parseFloat(style.borderTopWidth),
+          right: parseFloat(style.borderRightWidth),
+          bottom: parseFloat(style.borderBottomWidth),
+          left: parseFloat(style.borderLeftWidth),
+        };
+      };
+      return {
+        documentHeight: document.documentElement.scrollHeight,
+        topbar: geometry('.topbar'),
+        layout: geometry('.home-layout'),
+        hero: geometry('.hero-section'),
+        summary: geometry('.home-summary'),
+        summaryBody: geometry('.home-summary-body'),
+        myTasks: geometry('.home-summary .stat-card-total'),
+        nextStep: geometry('.home-next-step'),
+        status: geometry('.home-status-rail'),
+        statusRow: geometry('.home-status-rail .stats-row'),
+        topbarBorders: borders('.topbar'),
+        layoutBorders: borders('.home-layout'),
+        heroBorders: borders('.hero-section'),
+        summaryBorders: borders('.home-summary'),
+        myTasksBorders: borders('.home-summary .stat-card-total'),
+        nextStepBorders: borders('.home-next-step'),
+        statusBorders: borders('.home-status-rail'),
+        statusRowBorders: borders('.home-status-rail .stats-row'),
+      };
+    });
+    const connected = (first: number, second: number): void => {
+      expect(Math.abs(first - second)).toBeLessThanOrEqual(2);
+    };
+
+    connected(grid.topbar.left, grid.layout.left);
+    connected(grid.topbar.right, grid.layout.right);
+    connected(grid.topbar.bottom, grid.layout.top);
+    expect(grid.topbarBorders.bottom).toBe(1);
+    expect(grid.layoutBorders).toEqual({
+      top: 0,
+      right: 1,
+      bottom: 1,
+      left: 1,
+    });
+    expect(grid.documentHeight - grid.layout.bottom).toBeLessThanOrEqual(24);
+    connected(grid.statusRow.left, grid.status.left);
+    connected(grid.statusRow.right, grid.status.right);
+    connected(grid.statusRow.top, grid.status.top);
+    connected(grid.statusRow.bottom, grid.status.bottom);
+    expect(grid.statusRowBorders).toEqual({
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+    });
+    connected(grid.summaryBody.left, grid.summary.left);
+    connected(grid.summaryBody.right, grid.summary.right);
+    connected(grid.summaryBody.top, grid.summary.top);
+    connected(grid.summaryBody.bottom, grid.summary.bottom);
+    expect(grid.summaryBorders).toEqual({
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+    });
+
+    if (viewport.state === 'wide') {
+      connected(grid.hero.right, grid.status.left);
+      connected(grid.hero.bottom, grid.summary.top);
+      connected(grid.summary.right, grid.status.left);
+      connected(grid.summary.bottom, grid.layout.bottom);
+      connected(grid.status.bottom, grid.layout.bottom);
+      expect(grid.heroBorders.bottom).toBe(1);
+      expect(grid.statusBorders.left).toBe(1);
+      expect(grid.statusBorders.top).toBe(0);
+    } else if (viewport.state === 'compact') {
+      connected(grid.hero.bottom, grid.status.top);
+      connected(grid.status.bottom, grid.summary.top);
+      connected(grid.summary.bottom, grid.layout.bottom);
+      expect(grid.heroBorders.bottom).toBe(1);
+      expect(grid.statusBorders).toEqual({
+        top: 0,
+        right: 0,
+        bottom: 1,
+        left: 0,
+      });
+    } else {
+      connected(grid.hero.bottom, grid.summary.top);
+      connected(grid.summary.bottom, grid.status.top);
+      connected(grid.status.bottom, grid.layout.bottom);
+      expect(grid.heroBorders.bottom).toBe(1);
+      expect(grid.statusBorders.top).toBe(1);
+      expect(grid.summaryBorders.bottom).toBe(0);
+    }
+
+    if (viewport.state === 'mobile') {
+      connected(grid.myTasks.bottom, grid.nextStep.top);
+      expect(grid.myTasksBorders.bottom).toBe(0);
+      expect(grid.myTasksBorders.right).toBe(0);
+      expect(grid.nextStepBorders.top).toBe(1);
+      expect(grid.nextStepBorders.left).toBe(0);
+    } else {
+      connected(grid.myTasks.right, grid.nextStep.left);
+      expect(grid.myTasksBorders.right).toBe(0);
+      expect(grid.myTasksBorders.bottom).toBe(0);
+      expect(grid.nextStepBorders.left).toBe(1);
+      expect(grid.nextStepBorders.top).toBe(0);
+    }
+  }
+});
 
 /** Proves the poster dashboard fills a tall viewport with its complete vertical status rail. */
 test('keeps the wide-high home as a complete single-screen dashboard', async ({

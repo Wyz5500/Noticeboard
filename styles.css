@@ -299,13 +299,16 @@ main {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;
   min-height: calc(100dvh - var(--topbar-offset));
+  border-right: var(--border-width) solid var(--line);
+  border-bottom: var(--border-width) solid var(--line);
+  border-left: var(--border-width) solid var(--line);
 }
 .home-main {
   min-width: 0;
 }
 .hero-section {
   min-height: 355px;
-  padding: 74px 42px 62px 0;
+  padding: 74px 42px 62px 20px;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -371,18 +374,17 @@ h1 em {
   display: none;
 }
 .home-summary {
-  padding: 43px 42px 0 0;
+  min-height: 0;
 }
 .home-summary-body {
+  height: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 40px;
-  padding-top: 28px;
 }
 .home-summary .stat-card-total {
   min-height: 240px;
   padding: 28px 26px 28px 20px;
-  border-right: var(--border-width) solid var(--line);
+  border-bottom: 0;
 }
 .home-summary .stat-card-total strong {
   margin: 30px 0 8px;
@@ -399,6 +401,7 @@ h1 em {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  border-left: var(--border-width) solid var(--line);
 }
 .home-next-step-label {
   font-size: 15px;
@@ -442,17 +445,13 @@ h1 em {
 .home-status-rail {
   min-width: 0;
   min-height: calc(100dvh - var(--topbar-offset));
-  padding: 78px 0 0 38px;
   border-left: var(--border-width) solid var(--line);
 }
-.home-status-rail > .section-kicker {
-  margin-bottom: 22px;
-}
 .stats-row {
+  height: 100%;
   display: grid;
   grid-template-columns: 1fr;
-  border-top: var(--border-width) solid var(--line);
-  border-bottom: var(--border-width) solid var(--line);
+  grid-template-rows: repeat(5, minmax(0, 1fr));
 }
 .stat-card {
   position: relative;
@@ -1423,13 +1422,13 @@ body[data-style='pixel-retro'] .task-card:hover {
     grid-template-columns: repeat(3, 1fr);
     border-top: 0;
   }
-  .stat-card {
+  .home-status-rail .stat-card {
     border-right: var(--border-width) solid var(--line);
   }
-  .stat-card:nth-child(3n) {
+  .home-status-rail .stat-card:nth-child(3n) {
     border-right: 0;
   }
-  .stat-card:nth-child(-n + 3) {
+  .home-status-rail .stat-card:nth-child(-n + 3) {
     border-bottom: var(--border-width) solid var(--line);
   }
   .board-layout {
@@ -1554,7 +1553,7 @@ body[data-style='pixel-retro'] .task-card:hover {
     min-height: 185px;
     padding: 28px 16px;
     border-right: 0;
-    border-bottom: var(--border-width) solid var(--line);
+    border-bottom: 0;
   }
   .home-summary .stat-card-total strong {
     margin-top: 25px;
@@ -1567,6 +1566,8 @@ body[data-style='pixel-retro'] .task-card:hover {
   .home-next-step {
     min-height: 0;
     padding: 28px 16px;
+    border-top: var(--border-width) solid var(--line);
+    border-left: 0;
   }
   .home-next-step p {
     max-width: none;
@@ -1582,7 +1583,7 @@ body[data-style='pixel-retro'] .task-card:hover {
     grid-template-columns: repeat(2, 1fr);
     border-top: 0;
   }
-  .stat-card {
+  .home-status-rail .stat-card {
     min-height: 104px;
     padding: 16px 15px 14px;
     border-right: var(--border-width) solid var(--line);
@@ -2010,7 +2011,7 @@ body[data-style='pixel-retro'] .task-card:hover {
   #homeView.is-active .hero-section {
     grid-row: 1;
     min-height: 0;
-    padding: clamp(14px, 3.5dvh, 26px) 0;
+    padding: clamp(14px, 3.5dvh, 26px) 20px;
   }
   #homeView.is-active h1 {
     margin-top: clamp(7px, 1.8dvh, 13px);
@@ -2020,14 +2021,14 @@ body[data-style='pixel-retro'] .task-card:hover {
   #homeView.is-active .home-status-rail {
     grid-row: 2;
     min-height: 0;
-    padding: clamp(8px, 1.8dvh, 13px) 0 0;
+    padding: 0;
+    border-bottom: var(--border-width) solid var(--line);
     border-left: 0;
   }
-  #homeView.is-active .home-status-rail > .section-kicker {
-    margin-bottom: clamp(6px, 1.4dvh, 10px);
-  }
   #homeView.is-active .home-status-rail .stats-row {
+    height: auto;
     grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1fr);
   }
   #homeView.is-active .home-status-rail .stat-card {
     min-height: clamp(72px, 13dvh, 88px);
@@ -2048,11 +2049,11 @@ body[data-style='pixel-retro'] .task-card:hover {
   }
   #homeView.is-active .home-summary {
     grid-row: 3;
-    padding: clamp(8px, 1.8dvh, 13px) 0 0;
+    padding: 0;
   }
   #homeView.is-active .home-summary-body {
     gap: 0;
-    padding-top: clamp(6px, 1.4dvh, 10px);
+    padding: 0;
   }
   #homeView.is-active .home-summary .stat-card-total,
   #homeView.is-active .home-next-step {
@@ -2085,7 +2086,8 @@ body[data-style='pixel-retro'] .task-card:hover {
   body:has(#homeView.is-active) .app-shell {
     height: auto;
     min-height: 100vh;
-    padding-bottom: 120px;
+    padding-top: var(--topbar-offset);
+    padding-bottom: 20px;
   }
   body:has(#homeView.is-active) main,
   #homeView.is-active,
@@ -2101,23 +2103,30 @@ body[data-style='pixel-retro'] .task-card:hover {
   }
   #homeView.is-active .hero-section {
     min-height: 300px;
-    padding: 55px 0 62px;
+    padding: 55px 20px 62px;
   }
   #homeView.is-active .home-summary {
-    padding-right: 0;
+    padding: 0;
+  }
+  #homeView.is-active .home-summary-body {
+    gap: 0;
+    padding: 0;
   }
   #homeView.is-active .home-status-rail {
     min-height: 0;
-    padding: 35px 0 0;
+    padding: 0;
     border-top: var(--border-width) solid var(--line);
     border-left: 0;
   }
   #homeView.is-active .home-status-rail .stats-row {
+    height: auto;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
     border-top: 0;
   }
   #homeView.is-active .home-status-rail .stat-card {
     border-right: var(--border-width) solid var(--line);
+    border-bottom: 0;
   }
   #homeView.is-active .home-status-rail .stat-card:nth-child(3n) {
     border-right: 0;
@@ -2130,13 +2139,20 @@ body[data-style='pixel-retro'] .task-card:hover {
 @media (max-width: 620px) {
   #homeView.is-active .hero-section {
     min-height: 260px;
-    padding: 43px 0 40px;
+    padding: 43px 16px 40px;
   }
   #homeView.is-active h1 {
     font-size: clamp(36px, 11vw, 45px);
   }
   #homeView.is-active .home-status-rail .stats-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+  }
+  #homeView.is-active .home-status-rail .stat-card {
+    border-bottom: var(--border-width) solid var(--line);
+  }
+  #homeView.is-active .home-status-rail .stat-card:last-child {
+    border-bottom: 0;
   }
   #homeView.is-active .home-status-rail .stat-card:nth-child(3n) {
     border-right: var(--border-width) solid var(--line);
