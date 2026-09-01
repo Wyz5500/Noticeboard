@@ -26,7 +26,8 @@
     sans-serif;
   --meta-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --max-width: 1440px;
-  --topbar-offset: 86px;
+  --topbar-offset: 72px;
+  --sticky-controls-gap: 16px;
 }
 
 * {
@@ -66,7 +67,7 @@ select:focus-visible {
 
 .app-shell {
   min-height: 100vh;
-  padding: 86px 32px 120px;
+  padding: var(--topbar-offset) 32px 120px;
 }
 .topbar {
   position: fixed;
@@ -75,7 +76,7 @@ select:focus-visible {
   right: 32px;
   z-index: 30;
   isolation: isolate;
-  height: 86px;
+  height: var(--topbar-offset);
   max-width: var(--max-width);
   margin: 0 auto;
   display: flex;
@@ -527,9 +528,9 @@ h1 em {
 }
 .board-sidebar {
   position: sticky;
-  top: var(--topbar-offset);
+  top: calc(var(--topbar-offset) + var(--sticky-controls-gap));
   align-self: start;
-  max-height: calc(100dvh - var(--topbar-offset));
+  max-height: calc(100dvh - var(--topbar-offset) - var(--sticky-controls-gap));
   overflow-y: auto;
 }
 .mobile-filter-toggle {
@@ -636,6 +637,14 @@ h1 em {
   position: relative;
   z-index: 1;
   background: var(--paper);
+}
+@media (min-width: 841px) {
+  .board-toolbar {
+    position: sticky;
+    top: calc(var(--topbar-offset) + var(--sticky-controls-gap));
+    z-index: 2;
+    box-shadow: 0 calc(-1 * var(--sticky-controls-gap)) 0 var(--paper);
+  }
 }
 .result-count {
   margin: 12px 0 0;

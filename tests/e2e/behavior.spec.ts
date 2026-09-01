@@ -712,8 +712,8 @@ test('scrolls task copy and cards with the document', async ({ page }) => {
   expect(scrolled.cardTop).toBeLessThan(initial.cardTop - 300);
 });
 
-/** Proves the desktop filter panel sticks below the topbar while task cards keep moving. */
-test('keeps the desktop task sidebar visible during document scrolling', async ({
+/** Proves the desktop task controls stick together below the compact topbar while cards keep moving. */
+test('keeps the desktop task controls visible during document scrolling', async ({
   page,
   isMobile,
 }) => {
@@ -747,19 +747,26 @@ test('keeps the desktop task sidebar visible during document scrolling', async (
     page.evaluate(() => {
       const topbar = document.querySelector<HTMLElement>('.topbar');
       const sidebar = document.querySelector<HTMLElement>('.board-sidebar');
+      const toolbar = document.querySelector<HTMLElement>('.board-toolbar');
       const card = document.querySelector<HTMLElement>('.task-card');
-      if (!topbar || !sidebar || !card)
+      if (!topbar || !sidebar || !toolbar || !card)
         throw new Error('Task layout is missing');
       return {
         scrollY: window.scrollY,
+        topbarHeight: topbar.getBoundingClientRect().height,
         topbarBottom: topbar.getBoundingClientRect().bottom,
         sidebarTop: sidebar.getBoundingClientRect().top,
+        toolbarTop: toolbar.getBoundingClientRect().top,
         cardTop: card.getBoundingClientRect().top,
       };
     });
+  expect((await readPositions()).topbarHeight).toBe(72);
   await expect
     .poll(async () => (await readPositions()).sidebarTop)
-    .toBeCloseTo((await readPositions()).topbarBottom, 0);
+    .toBeCloseTo((await readPositions()).topbarBottom + 16, 0);
+  await expect
+    .poll(async () => (await readPositions()).toolbarTop)
+    .toBeCloseTo((await readPositions()).topbarBottom + 16, 0);
   const first = await readPositions();
 
   await page.evaluate(() => window.scrollBy({ top: 180, behavior: 'instant' }));
@@ -767,7 +774,8 @@ test('keeps the desktop task sidebar visible during document scrolling', async (
     .poll(async () => (await readPositions()).scrollY)
     .toBe(first.scrollY + 180);
   const second = await readPositions();
-  expect(second.sidebarTop).toBeCloseTo(second.topbarBottom, 0);
+  expect(second.sidebarTop).toBeCloseTo(second.topbarBottom + 16, 0);
+  expect(second.toolbarTop).toBeCloseTo(second.topbarBottom + 16, 0);
   expect(second.cardTop).toBeLessThan(first.cardTop - 150);
 });
 
