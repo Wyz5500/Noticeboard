@@ -1965,3 +1965,148 @@ body[data-style='pixel-retro'] .task-card:hover {
     padding: 20px;
   }
 }
+
+/* Keeps the landing view fluid and contained while other routes retain natural page scrolling. */
+body:has(#homeView.is-active) {
+  height: 100dvh;
+  overflow-y: hidden;
+}
+body:has(#homeView.is-active) .app-shell {
+  height: 100dvh;
+  min-height: 0;
+  padding-bottom: 0;
+}
+body:has(#homeView.is-active) main,
+#homeView.is-active,
+#homeView.is-active .home-layout {
+  height: 100%;
+  min-height: 0;
+}
+
+@media (max-height: 760px) {
+  #homeView.is-active .home-layout {
+    display: block;
+  }
+  #homeView.is-active .home-main {
+    height: 100%;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  #homeView.is-active .hero-section {
+    min-height: 0;
+    padding-top: clamp(20px, 7vh, 50px);
+    padding-bottom: clamp(20px, 7vh, 50px);
+  }
+  #homeView.is-active h1 {
+    margin-top: clamp(10px, 2.5vh, 18px);
+    margin-bottom: clamp(10px, 2.5vh, 20px);
+    font-size: clamp(34px, 5vw, 64px);
+  }
+  #homeView.is-active .home-summary {
+    padding-top: clamp(12px, 3vh, 24px);
+    padding-right: 0;
+  }
+  #homeView.is-active .home-summary-body {
+    gap: clamp(12px, 3vw, 28px);
+    padding-top: clamp(10px, 2.5vh, 20px);
+  }
+  #homeView.is-active .home-summary .stat-card-total,
+  #homeView.is-active .home-next-step {
+    min-height: clamp(150px, 31vh, 210px);
+  }
+  #homeView.is-active .home-summary .stat-card-total strong {
+    margin-top: clamp(14px, 4vh, 28px);
+    font-size: clamp(54px, 9vh, 76px);
+  }
+  #homeView.is-active .home-status-rail {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  #homeView.is-active .home-layout {
+    display: block;
+  }
+  #homeView.is-active .home-main {
+    height: 100%;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  #homeView.is-active .hero-section {
+    min-height: 0;
+    padding-top: clamp(24px, 7vh, 43px);
+    padding-bottom: clamp(24px, 7vh, 40px);
+  }
+  #homeView.is-active .home-summary {
+    padding-top: clamp(16px, 4vh, 30px);
+  }
+  #homeView.is-active .home-summary-body {
+    gap: clamp(12px, 3vh, 28px);
+    padding-top: clamp(12px, 3vh, 22px);
+  }
+  #homeView.is-active .home-status-rail {
+    display: none;
+  }
+}
+
+@media (min-aspect-ratio: 8 / 5) and (max-height: 760px) {
+  #homeView.is-active .home-main {
+    grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  #homeView.is-active .hero-section {
+    height: 100%;
+    padding-right: clamp(28px, 4vw, 56px);
+    border-bottom: 0;
+  }
+  #homeView.is-active .home-summary {
+    height: 100%;
+    padding: 0 0 0 clamp(20px, 3vw, 42px);
+    border-left: var(--border-width) solid var(--line);
+  }
+  #homeView.is-active .home-summary > .section-kicker {
+    display: none;
+  }
+  #homeView.is-active .home-summary-body {
+    height: 100%;
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0;
+    padding-top: 0;
+  }
+  #homeView.is-active .home-summary .stat-card-total,
+  #homeView.is-active .home-next-step {
+    min-height: 0;
+  }
+  #homeView.is-active .home-summary .stat-card-total {
+    height: 100%;
+    padding: clamp(20px, 5vh, 32px) clamp(16px, 2vw, 26px);
+    border-right: 0;
+    border-bottom: var(--border-width) solid var(--line);
+  }
+  #homeView.is-active .home-next-step {
+    padding: clamp(18px, 4vh, 28px) clamp(16px, 2vw, 26px);
+  }
+}
+
+@media (min-aspect-ratio: 8 / 5) and (max-height: 560px) {
+  #homeView.is-active .home-summary-body {
+    grid-template-rows: minmax(0, 1fr);
+  }
+  #homeView.is-active .home-summary .stat-card-total {
+    border-bottom: 0;
+  }
+  #homeView.is-active .home-next-step {
+    display: none;
+  }
+}
+
+@media (max-height: 650px) and (max-aspect-ratio: 8 / 5) {
+  #homeView.is-active .hero-copy,
+  #homeView.is-active .home-next-step {
+    display: none;
+  }
+  #homeView.is-active .home-summary-body {
+    grid-template-columns: 1fr;
+  }
+}

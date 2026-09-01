@@ -95,10 +95,17 @@ test('navigates and filters the in-memory task board', async ({
   expect(desktopStatusColumns).toBe(isMobile ? 2 : 1);
   await expect(page.locator('.home-summary .stat-card')).toHaveCount(1);
   await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(5);
-  await page.locator('.stat-card').nth(1).click();
-  await expect(
-    page.evaluate(() => decodeURI(window.location.hash)),
-  ).resolves.toBe('#tasks?scope=mine&filter=未开始');
+  if (isMobile) {
+    await page.locator('.home-summary .stat-card-total').click();
+    await expect(
+      page.evaluate(() => decodeURI(window.location.hash)),
+    ).resolves.toBe('#tasks?scope=mine&filter=全部');
+  } else {
+    await page.locator('.stat-card').nth(1).click();
+    await expect(
+      page.evaluate(() => decodeURI(window.location.hash)),
+    ).resolves.toBe('#tasks?scope=mine&filter=未开始');
+  }
   await page.goto('/#tasks?scope=all&filter=全部&q=北境');
   await page.locator('.brand').click();
   await page.locator('.stat-card').first().click();
@@ -147,6 +154,67 @@ test('renders the action-first home overview layout', async ({ page }) => {
   await expect(
     page.evaluate(() => decodeURI(window.location.hash)),
   ).resolves.toBe('#tasks?scope=mine&filter=全部');
+});
+
+/** Proves the home view always fits inside a constrained viewport without page scrolling. */
+test('keeps the responsive home view inside the viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 600 });
+  await page.goto('/');
+
+  const viewportFit = await page.evaluate(() => ({
+    clientHeight: document.documentElement.clientHeight,
+    scrollHeight: document.documentElement.scrollHeight,
+    bodyOverflowY: getComputedStyle(document.body).overflowY,
+  }));
+
+  expect(viewportFit).toEqual({
+    clientHeight: 600,
+    scrollHeight: 600,
+    bodyOverflowY: 'hidden',
+  });
+  await expect(page.locator('.home-status-rail')).toBeHidden();
+  await expect(page.locator('.home-summary .stat-card-total')).toBeVisible();
+});
+
+/** Proves a wide, short home view keeps My Tasks beside the slogan and drops optional content by height. */
+test('reflows the wide-short home view around its required content', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 500 });
+  await page.goto('/');
+
+  const heroBox = await page.locator('.hero-section').boundingBox();
+  const myTasksBox = await page
+    .locator('.home-summary .stat-card-total')
+    .boundingBox();
+
+  expect(heroBox).not.toBeNull();
+  expect(myTasksBox).not.toBeNull();
+  expect(myTasksBox!.x).toBeGreaterThan(heroBox!.x + heroBox!.width - 2);
+  await expect(page.locator('.home-next-step')).toBeHidden();
+  await expect(page.locator('.home-status-rail')).toBeHidden();
+  await expect(page.locator('.home-summary .stat-card-total')).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.documentElement.scrollHeight ===
+          document.documentElement.clientHeight,
+      ),
+    )
+    .toBe(true);
+});
+
+/** Proves a less compressed wide home view retains the optional next-step advice. */
+test('retains next-step advice when a wide home view has enough height', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 700 });
+  await page.goto('/');
+
+  await expect(page.locator('.home-next-step')).toBeVisible();
+  await expect(page.locator('.home-summary .stat-card-total')).toBeVisible();
+  await expect(page.locator('.home-status-rail')).toBeHidden();
 });
 
 /** Proves administrators can manage roles and users while ordinary users cannot enter the route. */
@@ -791,8 +859,8 @@ test('keeps the desktop task controls visible during document scrolling', async 
   expect(second.cardTop).toBeLessThan(first.cardTop - 150);
 });
 
-/** Proves each top-level view restores its own document position across navigation. */
-test('isolates scroll positions between home and task views', async ({
+/** Proves the fixed home remains at zero while the task view restores its document position. */
+test('keeps home fixed while restoring the task view position', async ({
   page,
 }) => {
   await page.goto('/');
@@ -802,7 +870,7 @@ test('isolates scroll positions between home and task views', async ({
     window.scrollTo(0, document.documentElement.scrollHeight);
     return window.scrollY;
   });
-  expect(homeScrollY).toBeGreaterThan(0);
+  expect(homeScrollY).toBe(0);
 
   await navigateToHash(page, '#tasks?scope=all&filter=全部');
   await expect(page.locator('#tasksView')).toBeVisible();
@@ -881,14 +949,14 @@ test('does not intercept modified or non-primary hash clicks', async ({
     .toBe(initialHistoryLength);
 });
 
-/** Proves an active primary hash link is prevented before canonical deduplication can expose native fragment scrolling. */
+/** Proves an active primary hash link cannot trigger native fragment scrolling on the fixed home. */
 test('prevents native scrolling for an active hash link', async ({ page }) => {
   await page.goto('/#home');
   const homeScrollY = await page.evaluate(() => {
     window.scrollTo(0, document.documentElement.scrollHeight);
     return window.scrollY;
   });
-  expect(homeScrollY).toBeGreaterThan(0);
+  expect(homeScrollY).toBe(0);
   const initialHistoryLength = await page.evaluate(() => history.length);
   await page.evaluate(() => {
     document.addEventListener(
@@ -958,8 +1026,8 @@ test('restores task scroll after an in-place search route update', async ({
     .toBe(taskScrollY);
 });
 
-/** Proves the management view has its own window position instead of inheriting the task board position. */
-test('isolates scroll positions across home, tasks, and admin views', async ({
+/** Proves task and management positions remain isolated while the fixed home stays at zero. */
+test('isolates task and admin positions from the fixed home', async ({
   page,
 }) => {
   await page.goto('/');
@@ -977,7 +1045,7 @@ test('isolates scroll positions across home, tasks, and admin views', async ({
     );
     return window.scrollY;
   });
-  expect(homeScrollY).toBeGreaterThan(0);
+  expect(homeScrollY).toBe(0);
 
   await navigateToHash(page, '#tasks?scope=all&filter=全部');
   await expect(page.locator('#tasksView')).toBeVisible();
