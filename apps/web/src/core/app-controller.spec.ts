@@ -1609,8 +1609,8 @@ describe('AppController administration management UI', () => {
 });
 
 describe('AppController task scroll state', () => {
-  /** Ensures each task route retains its own scroll layers instead of overwriting another route. */
-  it('restores the matching task route after two task routes were visited', () => {
+  /** Ensures task query updates keep all scroll layers and top-level restoration uses one instant task state. */
+  it('keeps task scroll through query updates and restores it instantly after leaving the view', () => {
     type ScrollState = {
       windowY: number;
       taskGridY?: number;
@@ -1622,85 +1622,132 @@ describe('AppController task scroll state', () => {
         boardLayout: {
           querySelector: <T extends Element>(selector: string) => T | null;
         };
+        homeView: { classList: { toggle: ReturnType<typeof vi.fn> } };
+        tasksView: { classList: { toggle: ReturnType<typeof vi.fn> } };
+        adminView: { classList: { toggle: ReturnType<typeof vi.fn> } };
+        viewNav: {
+          querySelectorAll: <T extends Element>(selector: string) => T[];
+        };
+        filterDisclosure: { open: boolean };
       };
       window: {
         scrollY: number;
-        scrollTo: (options: { top: number }) => void;
+        scrollTo: (options: {
+          top: number;
+          left?: number;
+          behavior?: ScrollBehavior;
+        }) => void;
         requestAnimationFrame: (callback: FrameRequestCallback) => number;
+        clearTimeout: (handle: number) => void;
       };
       route: RouteState;
-      renderedView: RouteState['view'];
-      renderedRoute: RouteState;
-      viewScrollStates: Map<string, ScrollState>;
-      pendingScrollRestoreView: RouteState['view'];
+      renderedView: RouteState['view'] | null;
+      viewScrollStates: Map<RouteState['view'], ScrollState>;
+      pendingScrollRestoreView: RouteState['view'] | null;
       scrollRestoreSequence: number;
+      tasksCollapsedScrollY: number;
+      taskPageScrollTimer: number | null;
+      compactTaskQuery: { matches: boolean };
+      document: Document;
       measureTasksIntroCollapse: () => void;
-      captureRenderedViewScroll: () => void;
       restorePendingScrollState: () => void;
+      renderView: () => void;
     };
     const sidebar = { scrollTop: 0 } as HTMLElement;
+    const scrollCalls: Array<{
+      top: number;
+      left?: number;
+      behavior?: ScrollBehavior;
+    }> = [];
     const controller = Object.create(
       AppController.prototype,
     ) as ScrollController;
+    const classList = { toggle: vi.fn() };
     controller.elements = {
       taskGrid: { scrollTop: 0 },
       boardLayout: {
         querySelector: <T extends Element>() => sidebar as unknown as T,
       },
+      homeView: { classList },
+      tasksView: { classList },
+      adminView: { classList },
+      viewNav: {
+        querySelectorAll: <T extends Element>() => [] as T[],
+      },
+      filterDisclosure: { open: false },
     };
     controller.window = {
       scrollY: 0,
-      scrollTo: ({ top }) => {
+      scrollTo: (options) => {
+        scrollCalls.push(options);
+        const { top } = options;
         controller.window.scrollY = top;
       },
       requestAnimationFrame: (callback) => {
         callback(0);
         return 0;
       },
+      clearTimeout: () => undefined,
     };
+    controller.document = {
+      documentElement: { classList },
+    } as unknown as Document;
     controller.viewScrollStates = new Map();
-    controller.pendingScrollRestoreView = 'tasks';
+    controller.pendingScrollRestoreView = null;
     controller.scrollRestoreSequence = 0;
+    controller.tasksCollapsedScrollY = 0;
+    controller.taskPageScrollTimer = null;
+    controller.compactTaskQuery = { matches: false };
     controller.measureTasksIntroCollapse = vi.fn();
 
-    const routeA: RouteState = {
+    controller.route = {
       view: 'tasks',
       scope: 'all',
       filter: '全部',
       query: '北境',
     };
-    const routeB: RouteState = {
+    controller.renderedView = null;
+    controller.renderView();
+    controller.restorePendingScrollState();
+
+    controller.window.scrollY = 180;
+    controller.elements.taskGrid.scrollTop = 42;
+    sidebar.scrollTop = 24;
+    controller.route = {
       view: 'tasks',
       scope: 'mine',
       filter: '进行中',
       query: '',
     };
-    const capture = (
-      route: RouteState,
-      windowY: number,
-      taskGridY: number,
-      taskSidebarY: number,
-    ): void => {
-      controller.route = route;
-      controller.renderedRoute = route;
-      controller.window.scrollY = windowY;
-      controller.elements.taskGrid.scrollTop = taskGridY;
-      sidebar.scrollTop = taskSidebarY;
-      controller.captureRenderedViewScroll();
-    };
-
-    controller.renderedView = 'tasks';
-    capture(routeA, 180, 42, 24);
-    capture(routeB, 320, 88, 56);
-    controller.route = routeA;
-    controller.window.scrollY = 0;
-    controller.elements.taskGrid.scrollTop = 0;
-    sidebar.scrollTop = 0;
-
+    controller.renderView();
     controller.restorePendingScrollState();
 
     expect(controller.window.scrollY).toBe(180);
     expect(controller.elements.taskGrid.scrollTop).toBe(42);
     expect(sidebar.scrollTop).toBe(24);
+
+    controller.route = {
+      view: 'home',
+      scope: 'all',
+      filter: '全部',
+      query: '',
+    };
+    controller.renderView();
+    controller.restorePendingScrollState();
+    controller.route = {
+      view: 'tasks',
+      scope: 'all',
+      filter: '未开始',
+      query: '采集',
+    };
+    controller.renderView();
+    controller.restorePendingScrollState();
+
+    expect(controller.window.scrollY).toBe(180);
+    expect(controller.elements.taskGrid.scrollTop).toBe(42);
+    expect(sidebar.scrollTop).toBe(24);
+    expect(scrollCalls.every(({ behavior }) => behavior === 'instant')).toBe(
+      true,
+    );
   });
 });

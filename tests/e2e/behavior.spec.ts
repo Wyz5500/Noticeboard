@@ -713,12 +713,28 @@ test('snaps the task page between expanded and collapsed title states', async ({
   expect(reexpanded.boardTop).toBeGreaterThan(reexpanded.topbarBottom);
 });
 
-/** Proves entering the task page leaves the title visible and preserves smooth scrolling. */
+/** Proves entering the task page positions instantly while preserving smooth manual scrolling. */
 test('opens the task page expanded with smooth scrolling enabled', async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.goto('/');
+  const homeScrollY = await page.evaluate(() => {
+    window.scrollTo({
+      top: document.documentElement.scrollHeight,
+      behavior: 'instant',
+    });
+    return window.scrollY;
+  });
+  expect(homeScrollY).toBeGreaterThan(0);
+  await page.waitForTimeout(100);
+  await page.evaluate(() => {
+    const samples: number[] = [];
+    window.addEventListener('scroll', () => samples.push(window.scrollY));
+    (
+      window as Window & { taskEntryScrollSamples?: number[] }
+    ).taskEntryScrollSamples = samples;
+  });
   await page.getByRole('link', { name: '任务页' }).click();
 
   await expect
@@ -729,6 +745,12 @@ test('opens the task page expanded with smooth scrolling enabled', async ({
     )
     .toBe('smooth');
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  const entryScrollSamples = await page.evaluate(
+    () =>
+      (window as Window & { taskEntryScrollSamples?: number[] })
+        .taskEntryScrollSamples ?? [],
+  );
+  expect(entryScrollSamples.every((scrollY) => scrollY === 0)).toBe(true);
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -915,179 +937,6 @@ test('isolates scroll positions between home and task views', async ({
       page.locator('.board-sidebar').evaluate((sidebar) => sidebar.scrollTop),
     )
     .toBe(taskScrollState.sidebarY);
-});
-
-/** Proves a different task route entered after home starts every task scroll layer at the top on mobile. */
-test('resets all task scroll layers when entering a different task route', async ({
-  page,
-  isMobile,
-}) => {
-  test.skip(
-    !isMobile,
-    'Route-scoped task scroll restoration is covered by the mobile project.',
-  );
-  await page.goto('/#tasks?scope=all&filter=进行中');
-  await expect(page.locator('.task-card')).toHaveCount(3);
-  await openMobileTaskFilters(page, isMobile);
-
-  const scrolled = await page.evaluate(() => {
-    const grid = document.querySelector<HTMLElement>('#taskGrid');
-    const sidebar = document.querySelector<HTMLElement>('.board-sidebar');
-    const board = document.querySelector<HTMLElement>('.board-layout');
-    const topbar = document.querySelector<HTMLElement>('.topbar');
-    if (!grid || !sidebar || !board || !topbar)
-      throw new Error('Task layout is missing');
-    sidebar.style.height = '120px';
-    sidebar.style.overflowY = 'auto';
-    if (sidebar.scrollHeight <= sidebar.clientHeight)
-      throw new Error('Task sidebar is not scrollable');
-    const collapsedScrollY = Math.max(
-      0,
-      board.getBoundingClientRect().top +
-        window.scrollY -
-        topbar.getBoundingClientRect().height,
-    );
-    window.scrollTo(0, collapsedScrollY);
-    grid.scrollTop = Math.min(80, grid.scrollHeight - grid.clientHeight);
-    sidebar.scrollTop = Math.min(
-      40,
-      sidebar.scrollHeight - sidebar.clientHeight,
-    );
-    return {
-      windowY: window.scrollY,
-      gridY: grid.scrollTop,
-      sidebarY: sidebar.scrollTop,
-    };
-  });
-  expect(scrolled.windowY).toBeGreaterThan(0);
-  expect(scrolled.gridY).toBeGreaterThan(0);
-  expect(scrolled.sidebarY).toBeGreaterThan(0);
-
-  await navigateToHash(page, '#home');
-  await expect(page.locator('#homeView')).toBeVisible();
-  await navigateToHash(page, '#tasks?scope=all&filter=全部');
-  await expect(page.locator('#tasksView')).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
-  await expect
-    .poll(() => page.locator('#taskGrid').evaluate((grid) => grid.scrollTop))
-    .toBe(0);
-  await expect
-    .poll(() =>
-      page.locator('.board-sidebar').evaluate((sidebar) => sidebar.scrollTop),
-    )
-    .toBe(0);
-});
-
-/** Proves direct task-route changes capture and restore each route's three scroll layers independently. */
-test('isolates scroll positions between direct task routes', async ({
-  page,
-  isMobile,
-}) => {
-  test.skip(!isMobile, '独立滚动容器的直接任务路由切换在移动端验证。');
-  const routeA = '#tasks?scope=all&filter=进行中';
-  const routeB = '#tasks?scope=all&filter=全部';
-  await page.goto(routeA);
-  await expect(page.locator('.task-card')).toHaveCount(3);
-  await openMobileTaskFilters(page, isMobile);
-
-  const setTaskScroll = async (
-    gridTarget: number,
-    sidebarTarget: number,
-  ): Promise<{ windowY: number; gridY: number; sidebarY: number }> =>
-    page.evaluate(
-      ({ gridTarget: nextGridTarget, sidebarTarget: nextSidebarTarget }) => {
-        const grid = document.querySelector<HTMLElement>('#taskGrid');
-        const sidebar = document.querySelector<HTMLElement>('.board-sidebar');
-        const disclosure = document.querySelector<HTMLDetailsElement>(
-          '#taskFilterDisclosure',
-        );
-        const board = document.querySelector<HTMLElement>('.board-layout');
-        const topbar = document.querySelector<HTMLElement>('.topbar');
-        if (!grid || !sidebar || !disclosure || !board || !topbar)
-          throw new Error('Task layout is missing');
-        disclosure.open = true;
-        sidebar.style.height = '120px';
-        sidebar.style.maxHeight = '120px';
-        sidebar.style.overflowY = 'auto';
-        if (!sidebar.querySelector('[data-scroll-test-spacer]')) {
-          const spacer = document.createElement('div');
-          spacer.dataset.scrollTestSpacer = 'true';
-          spacer.style.height = '400px';
-          sidebar.append(spacer);
-        }
-        if (sidebar.scrollHeight <= sidebar.clientHeight)
-          throw new Error('Task sidebar is not scrollable');
-        const collapsedScrollY = Math.max(
-          0,
-          board.getBoundingClientRect().top +
-            window.scrollY -
-            topbar.getBoundingClientRect().height,
-        );
-        window.scrollTo(0, collapsedScrollY);
-        grid.scrollTop = Math.min(
-          nextGridTarget,
-          grid.scrollHeight - grid.clientHeight,
-        );
-        sidebar.scrollTop = Math.min(
-          nextSidebarTarget,
-          sidebar.scrollHeight - sidebar.clientHeight,
-        );
-        return {
-          windowY: window.scrollY,
-          gridY: grid.scrollTop,
-          sidebarY: sidebar.scrollTop,
-        };
-      },
-      { gridTarget, sidebarTarget },
-    );
-
-  const routeAState = await setTaskScroll(60, 20);
-  expect(routeAState.windowY).toBeGreaterThan(0);
-  expect(routeAState.gridY).toBeGreaterThan(0);
-  expect(routeAState.sidebarY).toBeGreaterThan(0);
-
-  await navigateToHash(page, routeB);
-  await expect(page.locator('.task-card')).toHaveCount(12);
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
-  await expect
-    .poll(() => page.locator('#taskGrid').evaluate((grid) => grid.scrollTop))
-    .toBe(0);
-  await expect
-    .poll(() =>
-      page.locator('.board-sidebar').evaluate((sidebar) => sidebar.scrollTop),
-    )
-    .toBe(0);
-
-  const routeBState = await setTaskScroll(120, 45);
-  expect(routeBState.windowY).toBeGreaterThan(0);
-  expect(routeBState.gridY).toBeGreaterThan(0);
-  expect(routeBState.sidebarY).toBeGreaterThan(0);
-
-  await navigateToHash(page, routeA);
-  await expect(page.locator('.task-card')).toHaveCount(3);
-  await expect
-    .poll(() =>
-      page.evaluate(() => ({
-        windowY: window.scrollY,
-        gridY: document.querySelector<HTMLElement>('#taskGrid')?.scrollTop ?? 0,
-        sidebarY:
-          document.querySelector<HTMLElement>('.board-sidebar')?.scrollTop ?? 0,
-      })),
-    )
-    .toEqual(routeAState);
-
-  await navigateToHash(page, routeB);
-  await expect(page.locator('.task-card')).toHaveCount(12);
-  await expect
-    .poll(() =>
-      page.evaluate(() => ({
-        windowY: window.scrollY,
-        gridY: document.querySelector<HTMLElement>('#taskGrid')?.scrollTop ?? 0,
-        sidebarY:
-          document.querySelector<HTMLElement>('.board-sidebar')?.scrollTop ?? 0,
-      })),
-    )
-    .toEqual(routeBState);
 });
 
 /** Proves active task controls use canonical hash deduplication without growing browser history. */
@@ -1315,46 +1164,100 @@ test('restores isolated positions while traversing hash history', async ({
     .toBe(homeScrollY);
 });
 
-/** Proves changing task filters and search does not leave the list stranded at an old scroll offset. */
-test('resets the task list scroll after filtering and searching', async ({
+/** Proves task filters, scope, and search share all current task-page scroll layers. */
+test('keeps task scroll positions while filtering, changing scope, and searching', async ({
   page,
   isMobile,
 }) => {
   await page.goto('/#tasks?scope=all&filter=全部');
   await expect(page.locator('.task-card')).toHaveCount(12);
-  const grid = page.locator('#taskGrid');
+  await openMobileTaskFilters(page, isMobile);
+
+  const activate = async (selector: string): Promise<void> => {
+    await page.locator(selector).evaluate((element) => {
+      (element as HTMLElement).click();
+    });
+  };
+  const readTaskScroll = () =>
+    page.evaluate(() => ({
+      windowY: window.scrollY,
+      gridY: document.querySelector<HTMLElement>('#taskGrid')?.scrollTop ?? 0,
+      sidebarY:
+        document.querySelector<HTMLElement>('.board-sidebar')?.scrollTop ?? 0,
+    }));
+  const initial = await page.evaluate(() => {
+    const grid = document.querySelector<HTMLElement>('#taskGrid');
+    const sidebar = document.querySelector<HTMLElement>('.board-sidebar');
+    const board = document.querySelector<HTMLElement>('.board-layout');
+    const topbar = document.querySelector<HTMLElement>('.topbar');
+    if (!grid || !sidebar || !board || !topbar)
+      throw new Error('Task layout is missing');
+    grid.style.height = '240px';
+    grid.style.maxHeight = '240px';
+    sidebar.style.height = '120px';
+    sidebar.style.maxHeight = '120px';
+    sidebar.style.overflowY = 'auto';
+    if (!sidebar.querySelector('[data-scroll-test-spacer]')) {
+      const spacer = document.createElement('div');
+      spacer.dataset.scrollTestSpacer = 'true';
+      spacer.style.height = '400px';
+      sidebar.append(spacer);
+    }
+    if (grid.scrollHeight <= grid.clientHeight)
+      throw new Error('Task grid is not scrollable');
+    if (sidebar.scrollHeight <= sidebar.clientHeight)
+      throw new Error('Task sidebar is not scrollable');
+    const collapsedScrollY = Math.max(
+      0,
+      board.getBoundingClientRect().top +
+        window.scrollY -
+        topbar.getBoundingClientRect().height,
+    );
+    window.scrollTo({ top: collapsedScrollY, behavior: 'instant' });
+    grid.scrollTop = Math.min(40, grid.scrollHeight - grid.clientHeight);
+    sidebar.scrollTop = Math.min(
+      25,
+      sidebar.scrollHeight - sidebar.clientHeight,
+    );
+    return {
+      windowY: window.scrollY,
+      gridY: grid.scrollTop,
+      sidebarY: sidebar.scrollTop,
+    };
+  });
+  expect(initial.windowY).toBeGreaterThan(0);
+  expect(initial.gridY).toBeGreaterThan(0);
+  expect(initial.sidebarY).toBeGreaterThan(0);
+  await page.waitForTimeout(120);
+
+  await activate('[data-filter="进行中"]');
+  await expect(page.locator('.task-card')).toHaveCount(3);
+  await expect.poll(() => readTaskScroll()).toEqual(initial);
+
+  await expect
+    .poll(() => page.locator('[data-scope="all"]').getAttribute('aria-pressed'))
+    .toBe('true');
+  await activate('[data-scope="mine"]');
+  await expect(page.locator('[data-scope="mine"]')).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect.poll(() => readTaskScroll()).toEqual(initial);
+
+  await activate('[data-filter="全部"]');
   await expect
     .poll(() =>
-      grid.evaluate((element) => element.scrollHeight - element.clientHeight),
+      page.locator('[data-filter="全部"]').getAttribute('aria-pressed'),
     )
-    .toBeGreaterThan(0);
-  await page.waitForTimeout(100);
-  await grid.evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
-  });
-  await expect
-    .poll(() => grid.evaluate((element) => element.scrollTop))
-    .toBeGreaterThan(0);
+    .toBe('true');
+  await expect.poll(() => readTaskScroll()).toEqual(initial);
 
-  await openMobileTaskFilters(page, isMobile);
-  await page.getByRole('button', { name: /进行中/ }).click();
+  await page.locator('#searchInput').fill('用户');
+  await expect(page.locator('#searchInput')).toHaveValue('用户');
   await expect
-    .poll(() => grid.evaluate((element) => element.scrollTop))
-    .toBe(0);
-
-  await openMobileTaskFilters(page, isMobile);
-  await page.locator('[data-filter="全部"]').click();
-  await expect(page.locator('.task-card')).toHaveCount(12);
-  await grid.evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
-  });
-  await expect
-    .poll(() => grid.evaluate((element) => element.scrollTop))
+    .poll(() => page.locator('.task-card').count())
     .toBeGreaterThan(0);
-  await page.locator('#searchInput').fill('北境');
-  await expect
-    .poll(() => grid.evaluate((element) => element.scrollTop))
-    .toBe(0);
+  await expect.poll(() => readTaskScroll()).toEqual(initial);
 });
 
 /** Proves the mobile two-column status rail keeps its middle vertical separators. */

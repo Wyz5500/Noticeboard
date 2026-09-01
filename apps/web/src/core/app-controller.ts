@@ -131,8 +131,6 @@ interface ViewScrollState {
   taskSidebarY?: number;
 }
 
-type ViewScrollStateKey = RouteState['view'] | `tasks:${string}`;
-
 /** Resolves the preserved HTML shell once so contract drift fails during startup. */
 function collectElements(document: Document): Elements {
   return {
@@ -201,9 +199,8 @@ export class AppController {
   private route: RouteState;
   private selectedTaskId: string | null = null;
   private renderedView: RouteState['view'] | null = null;
-  private renderedRoute: RouteState | null = null;
   private readonly viewScrollStates = new Map<
-    ViewScrollStateKey,
+    RouteState['view'],
     ViewScrollState
   >();
   private pendingScrollRestoreView: RouteState['view'] | null = null;
@@ -588,13 +585,7 @@ export class AppController {
       return;
     }
     const enteringView = this.renderedView !== this.route.view;
-    const taskRouteChanged =
-      this.route.view === 'tasks' &&
-      this.renderedView === 'tasks' &&
-      this.renderedRoute?.view === 'tasks' &&
-      this.scrollStateKey(this.renderedRoute) !==
-        this.scrollStateKey(this.route);
-    if (enteringView || taskRouteChanged) {
+    if (enteringView) {
       this.clearTaskPageScrollBeforeRouteChange();
       this.captureRenderedViewScroll();
       if (this.renderedView !== null || tasksVisible) {
@@ -602,8 +593,6 @@ export class AppController {
         this.scrollRestoreSequence += 1;
       }
     }
-    const enteringTaskRoute =
-      tasksVisible && (enteringView || taskRouteChanged);
     const enteringTasks = tasksVisible && enteringView;
     this.elements.homeView.classList.toggle(
       'is-active',
@@ -624,11 +613,9 @@ export class AppController {
       else link.removeAttribute('aria-current');
     }
     this.renderedView = this.route.view;
-    this.renderedRoute = this.route;
-    if (enteringTaskRoute) {
-      if (enteringTasks) this.syncTaskFilterDisclosure(true);
-      this.resetTaskInnerScroll();
-      this.window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    if (enteringTasks) {
+      this.syncTaskFilterDisclosure(true);
+      this.window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
       this.measureTasksIntroCollapse();
     } else if (!tasksVisible) {
       this.clearTaskPageScrollTimer();
@@ -651,18 +638,13 @@ export class AppController {
   private captureRenderedViewScroll(): void {
     if (this.renderedView == null) return;
     const state: ViewScrollState = { windowY: this.window?.scrollY ?? 0 };
-    const route = this.renderedRoute;
     if (this.renderedView === 'tasks') {
       state.taskGridY = this.elements.taskGrid.scrollTop;
       const sidebar =
         this.elements.boardLayout.querySelector<HTMLElement>('.board-sidebar');
       if (sidebar) state.taskSidebarY = sidebar.scrollTop;
     }
-    const key =
-      route?.view === this.renderedView
-        ? this.scrollStateKey(route)
-        : this.renderedView;
-    this.viewScrollStates.set(key, state);
+    this.viewScrollStates.set(this.renderedView, state);
   }
 
   /** Cancels task-page snapping before another top-level view takes over. */
@@ -692,13 +674,11 @@ export class AppController {
           return;
         this.pendingScrollRestoreView = null;
         if (view === 'tasks') this.measureTasksIntroCollapse();
-        const state = this.viewScrollStates.get(
-          view === 'tasks' ? this.scrollStateKey(this.route) : view,
-        );
+        const state = this.viewScrollStates.get(view);
         this.window.scrollTo({
           left: 0,
           top: state?.windowY ?? 0,
-          behavior: 'auto',
+          behavior: 'instant',
         });
         if (view !== 'tasks') return;
         this.elements.taskGrid.scrollTop = state?.taskGridY ?? 0;
@@ -709,13 +689,6 @@ export class AppController {
         if (sidebar) sidebar.scrollTop = state?.taskSidebarY ?? 0;
       });
     });
-  }
-
-  /** Returns a stable scroll-cache key for a top-level view and its task route. */
-  private scrollStateKey(route: RouteState): ViewScrollStateKey {
-    return route.view === 'tasks'
-      ? `tasks:${normalizeHash(buildTaskHash(route))}`
-      : route.view;
   }
 
   /** Caches the outer-page position where the task intro becomes fully hidden. */
@@ -971,12 +944,9 @@ export class AppController {
 
   /** Replaces only the search portion of the current hash to avoid navigation churn while typing. */
   private handleSearch(): void {
-    this.cancelPendingScrollRestore();
     this.route = { ...this.route, query: this.elements.searchInput.value };
     this.window.history.replaceState(null, '', buildTaskHash(this.route));
-    this.resetTaskInnerScroll();
     this.renderTasks();
-    this.renderedRoute = this.route;
   }
 
   /** Navigates to one normalized task-board hash. */
@@ -989,21 +959,6 @@ export class AppController {
     if (hash === normalizeHash(this.window.location.hash)) return;
     this.window.history.pushState(null, '', hash);
     void this.handleRouteChange();
-  }
-
-  /** Resets the independently scrolling task grid and sidebar after task-route edits. */
-  private resetTaskInnerScroll(): void {
-    this.elements.taskGrid.scrollTop = 0;
-    const sidebar =
-      this.elements.boardLayout.querySelector<HTMLElement>('.board-sidebar');
-    if (sidebar) sidebar.scrollTop = 0;
-  }
-
-  /** Cancels an older frame-based view restoration when typing becomes the new source of truth. */
-  private cancelPendingScrollRestore(): void {
-    if (this.pendingScrollRestoreView === null) return;
-    this.pendingScrollRestoreView = null;
-    this.scrollRestoreSequence += 1;
   }
 
   /** Opens a task from pointer activation using event delegation. */
