@@ -398,16 +398,40 @@ function createButton(
   return button;
 }
 
-/** Renders the management landing page with exactly two navigational cards. */
+/** Renders the management landing page with two complete navigational cards. */
 function landing(document: Document): HTMLElement {
   const section = createNode(document, 'section', 'admin-landing');
-  for (const [label, href] of [
-    ['用户管理', '#admin/users'],
-    ['角色管理', '#admin/roles'],
+  for (const entry of [
+    {
+      number: '01',
+      title: '用户管理',
+      description: '管理系统用户、账户状态与角色分配',
+      details: ['用户列表', '账户状态', '角色分配'],
+      href: '#admin/users',
+    },
+    {
+      number: '02',
+      title: '角色管理',
+      description: '维护系统角色及其权限范围',
+      details: ['角色列表', '权限配置', '角色成员'],
+      href: '#admin/roles',
+    },
   ] as const) {
     const card = createNode(document, 'article', 'admin-entry-card');
-    const link = createNode(document, 'a', 'admin-entry-link', label);
-    link.href = href;
+    const link = createNode(document, 'a', 'admin-entry-link');
+    link.href = entry.href;
+    const details = createNode(document, 'ul', 'admin-entry-details');
+    for (const detail of entry.details)
+      details.append(createNode(document, 'li', undefined, detail));
+    const arrow = createNode(document, 'span', 'admin-entry-arrow', '↗');
+    arrow.setAttribute('aria-hidden', 'true');
+    link.append(
+      createNode(document, 'span', 'admin-entry-number', entry.number),
+      createNode(document, 'h2', 'admin-entry-title', entry.title),
+      createNode(document, 'p', 'admin-entry-description', entry.description),
+      details,
+      arrow,
+    );
     card.append(link);
     section.append(card);
   }
@@ -496,20 +520,33 @@ export function renderAdminView(
   state: AdminRenderState = {},
 ): void {
   const section = state.section ?? 'overview';
-  const intro = createNode(document, 'section', 'admin-intro');
-  intro.append(
-    createNode(document, 'p', 'eyebrow', '公会管理 / 管理'),
-    createNode(
-      document,
-      'h1',
-      undefined,
-      section === 'overview'
-        ? '管理用户与角色'
-        : section === 'users'
-          ? '用户管理'
-          : '角色管理',
-    ),
+  const intro = createNode(
+    document,
+    'section',
+    section === 'overview' ? 'admin-intro admin-intro-overview' : 'admin-intro',
   );
+  if (section === 'overview') {
+    intro.append(
+      createNode(document, 'p', 'eyebrow', 'ADMINISTRATION'),
+      createNode(document, 'h1', undefined, '管理'),
+      createNode(
+        document,
+        'p',
+        'admin-intro-description',
+        '用户、角色与权限配置',
+      ),
+    );
+  } else {
+    intro.append(
+      createNode(document, 'p', 'eyebrow', '公会管理 / 管理'),
+      createNode(
+        document,
+        'h1',
+        undefined,
+        section === 'users' ? '用户管理' : '角色管理',
+      ),
+    );
+  }
   if (section === 'overview') {
     container.replaceChildren(intro, landing(document));
     return;

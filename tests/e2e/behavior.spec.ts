@@ -631,6 +631,119 @@ test('manages roles and users from the admin view', async ({
   await expect(page.locator('#homeView')).toBeVisible();
 });
 
+/** Reads the management landing geometry and overflow at the active viewport. */
+async function readAdminLandingLayout(page: Page): Promise<{
+  columns: number;
+  cardWidths: number[];
+  linksFillCards: boolean;
+  horizontalOverflow: number;
+  scrollHeight: number;
+  viewportHeight: number;
+}> {
+  return page.evaluate(() => {
+    const landing = document.querySelector('.admin-landing');
+    const cards = Array.from(document.querySelectorAll('.admin-entry-card'));
+    const links = Array.from(document.querySelectorAll('.admin-entry-link'));
+    if (!(landing instanceof HTMLElement) || cards.length !== 2) {
+      throw new Error('Expected the management landing and two cards');
+    }
+    const cardRects = cards.map((card) => card.getBoundingClientRect());
+    const linkRects = links.map((link) => link.getBoundingClientRect());
+    const [firstCard, secondCard] = cardRects;
+    if (!firstCard || !secondCard) {
+      throw new Error('Expected both management card rectangles');
+    }
+    return {
+      columns: Math.abs(firstCard.y - secondCard.y) < 1 ? 2 : 1,
+      cardWidths: cardRects.map((rect) => rect.width),
+      linksFillCards: cardRects.every((card, index) => {
+        const link = linkRects[index];
+        return (
+          link !== undefined &&
+          Math.abs(card.width - link.width) < 1 &&
+          Math.abs(card.height - link.height) < 1
+        );
+      }),
+      horizontalOverflow:
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+      scrollHeight: document.documentElement.scrollHeight,
+      viewportHeight: window.innerHeight,
+    };
+  });
+}
+
+/** Proves the management landing reflows by available space without clipping content or interactions. */
+test('keeps the management landing fluid across width and height changes', async ({
+  page,
+}) => {
+  await page.locator('#profileButton').click();
+  await page.locator('#identitySelect').selectOption('noticeboard-admin');
+  await page.keyboard.press('Escape');
+  await page.goto('/#admin');
+  await expect(page.locator('#adminView h1')).toHaveText('管理');
+  await expect(page.locator('.admin-entry-link')).toHaveCount(2);
+
+  for (const viewport of [
+    { width: 1440, height: 900, columns: 2 },
+    { width: 1280, height: 720, columns: 2 },
+    { width: 1024, height: 768, columns: 2 },
+    { width: 900, height: 720, columns: 2 },
+    { width: 430, height: 840, columns: 1 },
+    { width: 375, height: 667, columns: 1 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const layout = await readAdminLandingLayout(page);
+    expect(layout.columns).toBe(viewport.columns);
+    expect(layout.cardWidths.every((width) => width >= 300)).toBe(true);
+    expect(layout.linksFillCards).toBe(true);
+    expect(layout.horizontalOverflow).toBeLessThanOrEqual(0);
+  }
+
+  const sampledColumns: number[] = [];
+  for (let width = 920; width >= 820; width -= 10) {
+    await page.setViewportSize({ width, height: 700 });
+    const layout = await readAdminLandingLayout(page);
+    sampledColumns.push(layout.columns);
+    expect(layout.horizontalOverflow).toBeLessThanOrEqual(0);
+    expect(layout.cardWidths.every((cardWidth) => cardWidth >= 300)).toBe(true);
+  }
+  expect(sampledColumns[0]).toBe(2);
+  expect(sampledColumns.at(-1)).toBe(1);
+  expect(
+    sampledColumns.filter(
+      (columns, index) => index > 0 && columns !== sampledColumns[index - 1],
+    ),
+  ).toHaveLength(1);
+
+  await page.setViewportSize({ width: 1280, height: 600 });
+  const lowLayout = await readAdminLandingLayout(page);
+  expect(lowLayout.columns).toBe(2);
+  expect(lowLayout.scrollHeight).toBeGreaterThan(lowLayout.viewportHeight);
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBeGreaterThan(0);
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const firstLink = page.locator('.admin-entry-link').first();
+  const arrow = firstLink.locator('.admin-entry-arrow');
+  const initialTransform = await arrow.evaluate(
+    (element) => getComputedStyle(element).transform,
+  );
+  await firstLink.hover();
+  await expect(firstLink).toHaveCSS('background-color', 'rgb(17, 17, 17)');
+  await expect(firstLink).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await expect
+    .poll(() =>
+      arrow.evaluate((element) => getComputedStyle(element).transform),
+    )
+    .not.toBe(initialTransform);
+  await firstLink.focus();
+  await expect(firstLink).toBeFocused();
+  await expect(firstLink).toHaveCSS('outline-style', 'solid');
+});
+
 /** Proves mobile management uses cards and a sticky sort control below the fixed topbar. */
 test('renders mobile admin cards and sorting controls', async ({
   page,

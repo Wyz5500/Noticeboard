@@ -208,8 +208,8 @@ describe('admin renderer', () => {
     expect(selectedRole?.value).toBe('role-user');
   });
 
-  /** Ensures the landing route exposes exactly the two management entry points. */
-  it('renders users and roles as the only landing cards with canonical hrefs', () => {
+  /** Ensures the landing route presents the compact hierarchy and complete management entry content. */
+  it('renders the management introduction and complete linked entry cards', () => {
     const document = new FakeDocument();
     const container = document.createElement('main');
 
@@ -222,11 +222,34 @@ describe('admin renderer', () => {
       },
     );
 
-    const links = findAll(container, (element) => element.tagName === 'a');
-    expect(links.map((link) => [link.textContent, link.href])).toEqual([
-      ['用户管理', '#admin/users'],
-      ['角色管理', '#admin/roles'],
+    const intro = findAll(container, (element) =>
+      element.className.split(' ').includes('admin-intro'),
+    )[0]!;
+    expect(intro.children.map((child) => child.textContent)).toEqual([
+      'ADMINISTRATION',
+      '管理',
+      '用户、角色与权限配置',
     ]);
+
+    const links = findAll(
+      container,
+      (element) => element.className === 'admin-entry-link',
+    );
+    expect(links.map((link) => [link.textContent, link.href])).toEqual([
+      [
+        '01用户管理管理系统用户、账户状态与角色分配用户列表账户状态角色分配↗',
+        '#admin/users',
+      ],
+      [
+        '02角色管理维护系统角色及其权限范围角色列表权限配置角色成员↗',
+        '#admin/roles',
+      ],
+    ]);
+    expect(
+      findAll(container, (element) => element.tagName === 'article').map(
+        (card) => card.children[0]?.tagName,
+      ),
+    ).toEqual(['a', 'a']);
   });
 
   /** Ensures desktop tables expose ordered records and semantic sortable headers. */

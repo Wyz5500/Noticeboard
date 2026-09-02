@@ -45,6 +45,8 @@ async function stabilizeDynamicAdminRecords(
           kind === 'users' ? '角色：用户' : `代码：role-${index + 1}`;
         card.querySelector('.admin-updated-at')!.textContent =
           '修改时间：2026-08-31 00:00';
+        card.querySelector('.admin-status')!.textContent =
+          kind === 'users' ? '活跃' : '自定义角色';
         if (kind === 'roles') {
           // Role baselines model seeded built-in roles, which have no lifecycle actions.
           card
