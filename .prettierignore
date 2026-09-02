@@ -4,6 +4,7 @@ node_modules/
 playwright-report/
 test-results/
 .agents/
+.claude/skills/
 .worktrees/
 package-lock.json
 tests/e2e/__snapshots__/
