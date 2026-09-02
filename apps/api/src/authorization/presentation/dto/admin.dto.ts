@@ -5,7 +5,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ALL_PERMISSION_CODES,
   type PermissionCode,
-} from '../../domain/permission.js';
+} from '../../public/permission.js';
 import type {
   AdminRoleModel,
   AdminUserModel,

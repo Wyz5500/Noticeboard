@@ -11,7 +11,7 @@ import { AppError } from '../../common/application/app-error.js';
 import {
   IDENTITY_DIRECTORY,
   type IdentityDirectoryPort,
-} from '../application/ports/identity-directory.port.js';
+} from '../public/identity-directory.port.js';
 
 @Injectable()
 export class DemoUserGuard implements CanActivate {

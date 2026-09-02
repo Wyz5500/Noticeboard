@@ -7,8 +7,8 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { AppError } from '../common/application/app-error.js';
-import { AUTHORIZATION } from '../authorization/application/ports/authorization.port.js';
-import { ALL_PERMISSION_CODES } from '../authorization/domain/permission.js';
+import { AUTHORIZATION } from '../authorization/public/authorization.port.js';
+import { ALL_PERMISSION_CODES } from '../authorization/public/permission.js';
 import { AdminController } from '../authorization/presentation/admin.controller.js';
 import {
   CreateAdminRole,
@@ -28,7 +28,7 @@ import { HealthService } from '../health/application/health.service.js';
 import {
   IDENTITY_DIRECTORY,
   type IdentityDirectoryPort,
-} from '../identity/application/ports/identity-directory.port.js';
+} from '../identity/public/identity-directory.port.js';
 import { ListDemoActors } from '../identity/application/use-cases/list-demo-actors.js';
 import { DemoController } from '../identity/presentation/demo.controller.js';
 import { DemoUserGuard } from '../identity/presentation/demo-user.guard.js';
@@ -39,6 +39,7 @@ import { ListTasks } from '../tasks/application/use-cases/list-tasks.js';
 import { ResetDemoTasks } from '../tasks/application/use-cases/reset-demo-tasks.js';
 import type { TaskReadModel } from '../tasks/application/read-models/task-read-model.js';
 import { DomainError } from '../tasks/domain/domain-error.js';
+import { DemoTasksController } from '../tasks/presentation/demo-tasks.controller.js';
 import { TasksController } from '../tasks/presentation/tasks.controller.js';
 
 const TASK: TaskReadModel = {
@@ -89,6 +90,7 @@ describe('HTTP API contract', () => {
       controllers: [
         TasksController,
         DemoController,
+        DemoTasksController,
         HealthController,
         AdminController,
       ],
@@ -98,7 +100,10 @@ describe('HTTP API contract', () => {
         { provide: IDENTITY_DIRECTORY, useValue: IDENTITIES },
         {
           provide: AUTHORIZATION,
-          useValue: { hasPermission: () => Promise.resolve(true) },
+          useValue: {
+            hasPermission: (actorId: string) =>
+              Promise.resolve(actorId === TASK.publisher.id),
+          },
         },
         { provide: GetAdminOverview, useValue: { execute: () => undefined } },
         { provide: CreateAdminUser, useValue: { execute: () => undefined } },
@@ -216,6 +221,20 @@ describe('HTTP API contract', () => {
     ]);
     expect(response.body).not.toContain('publisherId');
     expect(response.body).not.toContain('__entity');
+  });
+
+  /** Proves permission-protected routes authenticate unknown identities before authorizing them. */
+  it('returns 401 before permission checks reject an unknown identity', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/tasks',
+      headers: { 'x-demo-user-id': 'unknown' },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({
+      error: { code: 'UNKNOWN_IDENTITY' },
+    });
   });
 
   /** Proves the demo identity list is public and includes stable role labels. */

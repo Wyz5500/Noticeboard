@@ -1,7 +1,10 @@
 /** Maps append-only task timeline events with a per-task sequence key. */
 import { Column, Entity, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
 
-import { AccountOrmEntity } from '../../../../identity/infrastructure/persistence/entities/account.orm-entity.js';
+import {
+  IDENTITY_ACCOUNT_ENTITY,
+  type IdentityAccountPersistenceRecord,
+} from '../../../../identity/public/persistence.js';
 import type { TaskOrmEntity } from './task.orm-entity.js';
 
 @Entity({ name: 'task_events' })
@@ -22,9 +25,9 @@ export class TaskEventOrmEntity {
   @Column({ name: 'actor_id', type: 'varchar', length: 64 })
   actorId!: string;
 
-  @ManyToOne(() => AccountOrmEntity, { nullable: false })
+  @ManyToOne(IDENTITY_ACCOUNT_ENTITY, { nullable: false })
   @JoinColumn({ name: 'actor_id' })
-  actor!: AccountOrmEntity;
+  actor!: IdentityAccountPersistenceRecord;
 
   @Column({ name: 'actor_name', type: 'varchar', length: 80 })
   actorName!: string;

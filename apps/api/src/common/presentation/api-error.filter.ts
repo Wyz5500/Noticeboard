@@ -11,7 +11,7 @@ import {
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { AppError } from '../application/app-error.js';
-import { DomainError } from '../../tasks/domain/domain-error.js';
+import { CodedDomainError } from '../domain/domain-error.js';
 
 interface ErrorDescription {
   status: number;
@@ -40,7 +40,7 @@ function describeError(exception: unknown): ErrorDescription {
       message: exception.message,
     };
   }
-  if (exception instanceof DomainError) {
+  if (exception instanceof CodedDomainError) {
     const status =
       exception.code === 'ACTION_FORBIDDEN'
         ? HttpStatus.FORBIDDEN

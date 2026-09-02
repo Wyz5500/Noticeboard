@@ -1,7 +1,7 @@
 /** Seeds the three demo account records required by task foreign keys. */
 import type { DataSource, EntityManager } from 'typeorm';
 
-import { DEMO_ACTORS } from '../../domain/demo-actors.js';
+import { DEMO_ACTORS } from '../../public/demo-actors.js';
 import { AccountOrmEntity } from './entities/account.orm-entity.js';
 
 const DEMO_ADMIN = {

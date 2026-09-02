@@ -3,11 +3,11 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { loadRuntimeConfig } from './common/infrastructure/config/runtime-config.js';
-import { HealthModule } from './health/health.module.js';
-import { AuthorizationModule } from './authorization/authorization.module.js';
-import { IdentityModule } from './identity/identity.module.js';
-import { postgresDataSourceOptions } from './tasks/infrastructure/persistence/data-source.js';
-import { TasksModule } from './tasks/tasks.module.js';
+import { postgresDataSourceOptions } from './database.js';
+import { HealthModule } from './health/public/health.module.js';
+import { AuthorizationModule } from './authorization/public/authorization.module.js';
+import { IdentityModule } from './identity/public/identity.module.js';
+import { TasksModule } from './tasks/public/tasks.module.js';
 
 @Module({
   imports: [

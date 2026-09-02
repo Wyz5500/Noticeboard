@@ -8,7 +8,6 @@ import {
   Param,
   Patch,
   Post,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -25,9 +24,7 @@ import {
 } from '@nestjs/swagger';
 
 import { ApiErrorResponseDto } from '../../common/presentation/api-error-response.dto.js';
-import { DemoUserGuard } from '../../identity/presentation/demo-user.guard.js';
-import { PermissionGuard } from './permission.guard.js';
-import { RequirePermission } from './require-permission.decorator.js';
+import { RequirePermission } from '../public/require-permission.decorator.js';
 import {
   CreateAdminRole,
   CreateAdminUser,
@@ -54,7 +51,6 @@ import {
 
 @ApiTags('admin')
 @Controller({ path: 'admin', version: '1' })
-@UseGuards(DemoUserGuard, PermissionGuard)
 @RequirePermission('system.manage')
 @ApiSecurity('demo-user')
 @ApiHeader({ name: 'X-Demo-User-Id', required: true })

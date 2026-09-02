@@ -1,11 +1,6 @@
 /** Implements authorization decisions and admin mutations with explicit PostgreSQL transactions. */
 import { randomUUID } from 'node:crypto';
-import {
-  IsNull,
-  QueryFailedError,
-  type DataSource,
-  type EntityManager,
-} from 'typeorm';
+import { QueryFailedError, type DataSource, type EntityManager } from 'typeorm';
 
 import { AppError } from '../../common/application/app-error.js';
 import {
@@ -24,10 +19,13 @@ import type {
   UpdateAdminRoleCommand,
   UpdateAdminUserCommand,
 } from '../application/ports/authorization-management.port.js';
-import type { AuthorizationPort } from '../application/ports/authorization.port.js';
+import type { AuthorizationPort } from '../public/authorization.port.js';
 import { RolePermissionOrmEntity } from './persistence/entities/role-permission.orm-entity.js';
 import { RoleOrmEntity } from './persistence/entities/role.orm-entity.js';
-import { AccountOrmEntity } from '../../identity/infrastructure/persistence/entities/account.orm-entity.js';
+import type {
+  IdentityAccountPersistence,
+  IdentityAccountPersistenceRecord,
+} from '../../identity/public/persistence.js';
 
 const PERMISSIONS: readonly {
   code: PermissionCode;
@@ -63,7 +61,7 @@ function isRoleNameUniqueViolation(error: unknown): boolean {
 }
 
 /** Converts an account relation into the admin-facing detached user model. */
-function toUser(account: AccountOrmEntity): AdminUserModel {
+function toUser(account: IdentityAccountPersistenceRecord): AdminUserModel {
   return {
     id: account.id,
     name: account.name,
@@ -110,13 +108,11 @@ async function findRole(
 
 /** Returns an account with its role relation loaded for one transaction. */
 async function findAccount(
+  accounts: IdentityAccountPersistence,
   manager: EntityManager,
   id: string,
-): Promise<AccountOrmEntity> {
-  const account = await manager.getRepository(AccountOrmEntity).findOne({
-    where: { id },
-    relations: { roleEntity: { rolePermissions: true } },
-  });
+): Promise<IdentityAccountPersistenceRecord> {
+  const account = await accounts.findById(manager, id);
   if (!account) throw new AppError('USER_NOT_FOUND', '用户不存在');
   return account;
 }
@@ -125,23 +121,20 @@ export class PostgresAuthorization
   implements AuthorizationPort, AuthorizationManagementPort
 {
   /** Binds authorization decisions and management commands to the shared DataSource. */
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly accounts: IdentityAccountPersistence,
+  ) {}
 
   /** Checks active account, active role, and role permission membership atomically. */
   async hasPermission(
     userId: string,
     permission: PermissionCode,
   ): Promise<boolean> {
-    const account = await this.dataSource
-      .getRepository(AccountOrmEntity)
-      .findOne({
-        where: {
-          id: userId,
-          deletedAt: IsNull(),
-          roleEntity: { deletedAt: IsNull() },
-        },
-        relations: { roleEntity: { rolePermissions: true } },
-      });
+    const account = await this.accounts.findActiveById(
+      this.dataSource.manager,
+      userId,
+    );
     return Boolean(
       account?.roleEntity.rolePermissions.some(
         (candidate) => candidate.permissionCode === permission,
@@ -152,10 +145,7 @@ export class PostgresAuthorization
   /** Returns all accounts and roles, including soft-deleted records for administrators. */
   async overview(): Promise<AdminOverviewModel> {
     const [users, roles] = await Promise.all([
-      this.dataSource.getRepository(AccountOrmEntity).find({
-        relations: { roleEntity: true },
-        order: { id: 'ASC' },
-      }),
+      this.accounts.list(this.dataSource.manager),
       this.dataSource.getRepository(RoleOrmEntity).find({
         relations: { rolePermissions: true },
         order: { builtin: 'DESC', name: 'ASC', id: 'ASC' },
@@ -176,14 +166,13 @@ export class PostgresAuthorization
       if (role.deletedAt) throw new AppError('CONFLICT', '不能绑定已删除角色');
       const name = command.name.trim();
       if (!name) throw new AppError('VALIDATION_FAILED', '请填写用户名称');
-      const account = manager.getRepository(AccountOrmEntity).create({
+      const account = await this.accounts.create(manager, {
         id: `user-${randomUUID()}`,
         name,
         roleId: role.id,
         deletedAt: null,
         roleEntity: role,
       });
-      await manager.getRepository(AccountOrmEntity).save(account);
       return toUser(account);
     });
   }
@@ -196,7 +185,7 @@ export class PostgresAuthorization
     return this.dataSource.transaction(async (manager) => {
       await this.lockRoleAssignment(manager);
       await this.lockManagementInvariant(manager);
-      const account = await findAccount(manager, id);
+      const account = await findAccount(this.accounts, manager, id);
       const nextRole = command.roleId
         ? await findRole(manager, command.roleId)
         : account.roleEntity;
@@ -218,7 +207,7 @@ export class PostgresAuthorization
       }
       account.roleId = nextRole.id;
       account.roleEntity = nextRole;
-      await manager.getRepository(AccountOrmEntity).save(account);
+      await this.accounts.save(manager, account);
       return toUser(account);
     });
   }
@@ -227,14 +216,14 @@ export class PostgresAuthorization
   softDeleteUser(id: string): Promise<void> {
     return this.dataSource.transaction(async (manager) => {
       await this.lockManagementInvariant(manager);
-      const account = await findAccount(manager, id);
+      const account = await findAccount(this.accounts, manager, id);
       if (!account.deletedAt) {
         const hasManagement = account.roleEntity.rolePermissions.some(
           (permission) => permission.permissionCode === 'system.manage',
         );
         if (hasManagement) await this.assertNotLastManagementUser(manager);
         account.deletedAt = new Date();
-        await manager.getRepository(AccountOrmEntity).save(account);
+        await this.accounts.save(manager, account);
       }
     });
   }
@@ -244,11 +233,11 @@ export class PostgresAuthorization
     return this.dataSource.transaction(async (manager) => {
       await this.lockRoleAssignment(manager);
       await this.lockManagementInvariant(manager);
-      const account = await findAccount(manager, id);
+      const account = await findAccount(this.accounts, manager, id);
       if (account.roleEntity.deletedAt)
         throw new AppError('CONFLICT', '请先恢复用户绑定的角色');
       account.deletedAt = null;
-      await manager.getRepository(AccountOrmEntity).save(account);
+      await this.accounts.save(manager, account);
       return toUser(account);
     });
   }
@@ -427,17 +416,7 @@ export class PostgresAuthorization
 
   /** Counts active accounts whose active role has the management permission. */
   private countActiveManagementUsers(manager: EntityManager): Promise<number> {
-    return manager
-      .getRepository(AccountOrmEntity)
-      .createQueryBuilder('account')
-      .innerJoin('account.roleEntity', 'role')
-      .innerJoin('role.rolePermissions', 'permission')
-      .where('account.deleted_at IS NULL')
-      .andWhere('role.deleted_at IS NULL')
-      .andWhere('permission.permission_code = :permission', {
-        permission: 'system.manage',
-      })
-      .getCount();
+    return this.accounts.countActiveManagementUsers(manager);
   }
 
   /** Counts active accounts assigned to one role. */
@@ -445,9 +424,7 @@ export class PostgresAuthorization
     manager: EntityManager,
     roleId: string,
   ): Promise<number> {
-    return manager.getRepository(AccountOrmEntity).count({
-      where: { roleId, deletedAt: IsNull() },
-    });
+    return this.accounts.countActiveForRole(manager, roleId);
   }
 
   /** Counts all accounts assigned to one role for safe role deletion. */
@@ -455,7 +432,7 @@ export class PostgresAuthorization
     manager: EntityManager,
     roleId: string,
   ): Promise<number> {
-    return manager.getRepository(AccountOrmEntity).count({ where: { roleId } });
+    return this.accounts.countForRole(manager, roleId);
   }
 
   /** Rejects active role-name duplicates while allowing a role to retain its own name. */

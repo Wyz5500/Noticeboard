@@ -1,22 +1,13 @@
-/** Defines the fixed authorization catalog shared by domain and presentation adapters. */
+/** Keeps permission normalization inside Domain while the catalog remains a public contract. */
+import {
+  ALL_PERMISSION_CODES,
+  type PermissionCode,
+} from '../public/permission.js';
 
-export const ALL_PERMISSION_CODES = [
-  'system.manage',
-  'tasks.view',
-  'tasks.create',
-  'tasks.accept',
-  'tasks.complete',
-  'tasks.review',
-  'tasks.close',
-  'demo.reset',
-] as const;
-
-export type PermissionCode = (typeof ALL_PERMISSION_CODES)[number];
-
-/** Returns whether an unknown input belongs to the fixed permission catalog. */
-export function isPermissionCode(value: string): value is PermissionCode {
-  return ALL_PERMISSION_CODES.includes(value as PermissionCode);
-}
+export {
+  ALL_PERMISSION_CODES,
+  type PermissionCode,
+} from '../public/permission.js';
 
 /** Removes duplicates and returns permission codes in stable catalog order. */
 export function normalizePermissions(

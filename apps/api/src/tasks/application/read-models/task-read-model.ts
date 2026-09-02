@@ -1,6 +1,6 @@
 /** Defines database-independent read projections returned by task queries. */
+import type { Actor } from '../../../identity/public/actor.js';
 import type {
-  Actor,
   TaskEventAction,
   TaskStatus,
   TaskType,

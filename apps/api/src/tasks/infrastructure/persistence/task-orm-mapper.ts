@@ -1,17 +1,17 @@
 /** Converts TypeORM graphs into domain snapshots and independent read projections. */
+import type { Actor } from '../../../identity/public/actor.js';
+import type { IdentityAccountPersistenceRecord } from '../../../identity/public/persistence.js';
 import type {
-  Actor,
   TaskEventAction,
   TaskSnapshot,
   TaskStatus,
   TaskType,
 } from '../../domain/task.types.js';
 import type { TaskReadModel } from '../../application/read-models/task-read-model.js';
-import type { AccountOrmEntity } from '../../../identity/infrastructure/persistence/entities/account.orm-entity.js';
 import type { TaskOrmEntity } from './entities/task.orm-entity.js';
 
 /** Converts an account record to a detached domain actor value. */
-function toActor(entity: AccountOrmEntity): Actor {
+function toActor(entity: IdentityAccountPersistenceRecord): Actor {
   return {
     id: entity.id,
     name: entity.name,

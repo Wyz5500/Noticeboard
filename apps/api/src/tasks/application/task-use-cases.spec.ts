@@ -1,11 +1,11 @@
 /** Verifies task use cases through real domain objects and in-memory port adapters. */
 import { describe, expect, it } from 'vitest';
 
-import type { AuthorizationPort } from '../../authorization/application/ports/authorization.port.js';
+import type { AuthorizationPort } from '../../authorization/public/authorization.port.js';
 import { AppError } from '../../common/application/app-error.js';
-import type { IdentityDirectoryPort } from '../../identity/application/ports/identity-directory.port.js';
+import type { Actor } from '../../identity/public/actor.js';
+import type { IdentityDirectoryPort } from '../../identity/public/identity-directory.port.js';
 import { ListDemoActors } from '../../identity/application/use-cases/list-demo-actors.js';
-import type { Actor } from '../domain/task.types.js';
 import { Task } from '../domain/task.js';
 import type { TaskQueryPort } from './ports/task-query.port.js';
 import type { TaskRepositoryPort } from './ports/task-repository.port.js';

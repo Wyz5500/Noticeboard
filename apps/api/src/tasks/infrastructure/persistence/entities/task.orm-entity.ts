@@ -9,7 +9,10 @@ import {
   VersionColumn,
 } from 'typeorm';
 
-import { AccountOrmEntity } from '../../../../identity/infrastructure/persistence/entities/account.orm-entity.js';
+import {
+  IDENTITY_ACCOUNT_ENTITY,
+  type IdentityAccountPersistenceRecord,
+} from '../../../../identity/public/persistence.js';
 import type { TaskEventOrmEntity } from './task-event.orm-entity.js';
 
 @Entity({ name: 'tasks' })
@@ -35,16 +38,16 @@ export class TaskOrmEntity {
   @Column({ name: 'publisher_id', type: 'varchar', length: 64 })
   publisherId!: string;
 
-  @ManyToOne(() => AccountOrmEntity, { nullable: false })
+  @ManyToOne(IDENTITY_ACCOUNT_ENTITY, { nullable: false })
   @JoinColumn({ name: 'publisher_id' })
-  publisher!: AccountOrmEntity;
+  publisher!: IdentityAccountPersistenceRecord;
 
   @Column({ name: 'assignee_id', type: 'varchar', length: 64, nullable: true })
   assigneeId!: string | null;
 
-  @ManyToOne(() => AccountOrmEntity, { nullable: true })
+  @ManyToOne(IDENTITY_ACCOUNT_ENTITY, { nullable: true })
   @JoinColumn({ name: 'assignee_id' })
-  assignee!: AccountOrmEntity | null;
+  assignee!: IdentityAccountPersistenceRecord | null;
 
   @Column({ type: 'varchar', length: 32 })
   status!: string;

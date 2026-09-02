@@ -1,7 +1,8 @@
 /** Recreates the twelve deterministic demo aggregates without importing browser persistence state. */
-import { DEMO_ACTORS } from '../../../identity/domain/demo-actors.js';
+import type { Actor } from '../../../identity/public/actor.js';
+import { DEMO_ACTORS } from '../../../identity/public/demo-actors.js';
 import { Task } from '../../domain/task.js';
-import type { Actor, TaskSnapshot } from '../../domain/task.types.js';
+import type { TaskSnapshot } from '../../domain/task.types.js';
 
 const [PUBLISHER, ADVENTURER_A, ADVENTURER_B] = DEMO_ACTORS as readonly [
   Actor,

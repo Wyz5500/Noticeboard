@@ -1,7 +1,7 @@
 /** Maps application read models to the stable API resource with Chinese presentation labels. */
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-import { ALL_PERMISSION_CODES } from '../../../authorization/domain/permission.js';
+import { ALL_PERMISSION_CODES } from '../../../authorization/public/permission.js';
 import type { TaskReadModel } from '../../application/read-models/task-read-model.js';
 import {
   TASK_EVENT_ACTIONS,
@@ -152,17 +152,5 @@ export function toTaskResponse(
       actionLabel: EVENT_LABELS[event.action],
       actor: actor(event.actor),
     })),
-  };
-}
-
-/** Adds the Chinese role label to one demo identity response. */
-export function toActorResponse(
-  actor: TaskReadModel['publisher'],
-): ActorResponseDto {
-  return {
-    ...actor,
-    roleLabel:
-      actor.roleLabel ??
-      (actor.role === 'system_admin' ? '系统管理员' : '演示用户'),
   };
 }

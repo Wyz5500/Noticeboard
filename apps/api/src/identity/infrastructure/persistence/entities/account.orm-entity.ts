@@ -8,10 +8,14 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-import type { RoleOrmEntity } from '../../../../authorization/infrastructure/persistence/entities/role.orm-entity.js';
+import {
+  AUTHORIZATION_ROLE_ENTITY,
+  type AuthorizationRolePersistenceRecord,
+} from '../../../../authorization/public/persistence.js';
+import type { IdentityAccountPersistenceRecord } from '../../../public/persistence.js';
 
 @Entity({ name: 'accounts' })
-export class AccountOrmEntity {
+export class AccountOrmEntity implements IdentityAccountPersistenceRecord {
   @PrimaryColumn({ type: 'varchar', length: 64 })
   id!: string;
 
@@ -21,9 +25,9 @@ export class AccountOrmEntity {
   @Column({ name: 'role_id', type: 'varchar', length: 64 })
   roleId!: string;
 
-  @ManyToOne('RoleOrmEntity', { nullable: false })
+  @ManyToOne(AUTHORIZATION_ROLE_ENTITY, { nullable: false })
   @JoinColumn({ name: 'role_id' })
-  roleEntity!: RoleOrmEntity;
+  roleEntity!: AuthorizationRolePersistenceRecord;
 
   @Column({ name: 'deleted_at', type: 'timestamptz', nullable: true })
   deletedAt!: Date | null;

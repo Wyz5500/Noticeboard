@@ -7,7 +7,6 @@ import {
   HttpCode,
   Param,
   Post,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -23,9 +22,8 @@ import {
 } from '@nestjs/swagger';
 
 import { ApiErrorResponseDto } from '../../common/presentation/api-error-response.dto.js';
-import { DemoUserGuard } from '../../identity/presentation/demo-user.guard.js';
-import { PermissionGuard } from '../../authorization/presentation/permission.guard.js';
-import { RequirePermission } from '../../authorization/presentation/require-permission.decorator.js';
+import { RequirePermission } from '../../authorization/public/require-permission.decorator.js';
+import { RequireDemoIdentity } from '../../identity/public/require-demo-identity.decorator.js';
 import { ActOnTask } from '../application/use-cases/act-on-task.js';
 import { CreateTask } from '../application/use-cases/create-task.js';
 import { GetTask } from '../application/use-cases/get-task.js';
@@ -47,7 +45,6 @@ export class TasksController {
 
   /** Lists all task projections for client-side filtering and statistics. */
   @Get()
-  @UseGuards(DemoUserGuard, PermissionGuard)
   @ApiSecurity('demo-user')
   @ApiHeader({ name: 'X-Demo-User-Id', required: true })
   @ApiOkResponse({ type: [TaskResponseDto] })
@@ -62,7 +59,6 @@ export class TasksController {
 
   /** Returns one complete task projection including its ordered timeline. */
   @Get(':taskId')
-  @UseGuards(DemoUserGuard, PermissionGuard)
   @ApiSecurity('demo-user')
   @ApiHeader({ name: 'X-Demo-User-Id', required: true })
   @ApiOkResponse({ type: TaskResponseDto })
@@ -79,7 +75,7 @@ export class TasksController {
 
   /** Creates a task as the recognized demo actor from the request header. */
   @Post()
-  @UseGuards(DemoUserGuard)
+  @RequireDemoIdentity()
   @ApiSecurity('demo-user')
   @ApiHeader({ name: 'X-Demo-User-Id', required: true })
   @ApiCreatedResponse({ type: TaskResponseDto })
@@ -96,7 +92,7 @@ export class TasksController {
   /** Applies one optimistic task action and returns the freshly synchronized projection. */
   @Post(':taskId/actions')
   @HttpCode(200)
-  @UseGuards(DemoUserGuard)
+  @RequireDemoIdentity()
   @ApiSecurity('demo-user')
   @ApiHeader({ name: 'X-Demo-User-Id', required: true })
   @ApiOkResponse({ type: TaskResponseDto })

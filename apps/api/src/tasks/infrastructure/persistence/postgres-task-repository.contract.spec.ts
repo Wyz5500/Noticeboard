@@ -4,18 +4,20 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { DataSource, QueryRunner } from 'typeorm';
 
 import { PostgresAuthorization } from '../../../authorization/infrastructure/postgres-authorization.js';
-import { DEMO_ACTORS } from '../../../identity/domain/demo-actors.js';
+import { createPostgresDataSource } from '../../../database.js';
+import { PostgresAccountPersistence } from '../../../identity/infrastructure/persistence/postgres-account-persistence.js';
 import { seedDemoAccounts } from '../../../identity/infrastructure/persistence/seed-demo-accounts.js';
+import { DEMO_ACTORS } from '../../../identity/public/demo-actors.js';
+import { seedDemoData } from '../../../seed-demo-data.js';
 import { Task } from '../../domain/task.js';
-import { createPostgresDataSource } from './data-source.js';
 import { PostgresTaskQuery } from './postgres-task-query.js';
 import { PostgresTaskRepository } from './postgres-task-repository.js';
 import { PostgresTaskTransaction } from './postgres-task-transaction.js';
-import { seedDemoData } from './seed-demo-data.js';
 
 const DATABASE_URL = process.env.DATABASE_URL_TEST;
 const describeDatabase = DATABASE_URL ? describe : describe.skip;
 const MANAGEMENT_INVARIANT_LOCK_KEY = 1788062402;
+const ACCOUNT_PERSISTENCE = new PostgresAccountPersistence();
 
 /** Holds one transaction-scoped advisory lock until the caller releases the query runner. */
 async function lockTransactionAdvisoryKey(
@@ -337,7 +339,10 @@ describeDatabase('PostgreSQL task repository contract', () => {
 
   /** Proves concurrent administrator deletion cannot remove the final management user. */
   it('serializes concurrent final-administrator deletions', async () => {
-    const authorization = new PostgresAuthorization(dataSource);
+    const authorization = new PostgresAuthorization(
+      dataSource,
+      ACCOUNT_PERSISTENCE,
+    );
     await dataSource.query(
       "UPDATE accounts SET role_id = 'role-system-admin', deleted_at = NULL WHERE id IN ('adventurer-a', 'adventurer-b')",
     );
@@ -376,7 +381,10 @@ describeDatabase('PostgreSQL task repository contract', () => {
 
   /** Proves concurrent active role-name creation resolves the database race as a conflict. */
   it('maps concurrent duplicate role names to conflicts', async () => {
-    const authorization = new PostgresAuthorization(dataSource);
+    const authorization = new PostgresAuthorization(
+      dataSource,
+      ACCOUNT_PERSISTENCE,
+    );
     const name = `并发角色-${Date.now()}`;
     const results = await Promise.allSettled([
       authorization.createRole({ name }),
@@ -400,7 +408,10 @@ describeDatabase('PostgreSQL task repository contract', () => {
 
   /** Proves concurrent role deletion and user reassignment cannot leave a deleted role assigned. */
   it('serializes role deletion with user reassignment', async () => {
-    const authorization = new PostgresAuthorization(dataSource);
+    const authorization = new PostgresAuthorization(
+      dataSource,
+      ACCOUNT_PERSISTENCE,
+    );
     const role = await authorization.createRole({
       name: `角色改派竞态-${Date.now()}`,
     });
@@ -432,7 +443,10 @@ describeDatabase('PostgreSQL task repository contract', () => {
 
   /** Proves concurrent role edits cannot resurrect a role that another transaction deleted. */
   it('keeps a concurrently edited custom role soft-deleted', async () => {
-    const authorization = new PostgresAuthorization(dataSource);
+    const authorization = new PostgresAuthorization(
+      dataSource,
+      ACCOUNT_PERSISTENCE,
+    );
     const role = await authorization.createRole({
       name: `角色生命周期竞态-${Date.now()}`,
       permissions: ['system.manage'],
@@ -474,7 +488,10 @@ describeDatabase('PostgreSQL task repository contract', () => {
 
   /** Proves concurrent user restore and reassignment end with the latest active role assignment. */
   it('restores a reassigned deleted user with the latest active role', async () => {
-    const authorization = new PostgresAuthorization(dataSource);
+    const authorization = new PostgresAuthorization(
+      dataSource,
+      ACCOUNT_PERSISTENCE,
+    );
     const role = await authorization.createRole({
       name: `用户恢复竞态角色-${Date.now()}`,
     });
@@ -529,7 +546,10 @@ describeDatabase('PostgreSQL task repository contract', () => {
 
   /** Proves invalid built-in role identity edits use the documented validation error. */
   it('maps built-in role rename attempts to validation errors', async () => {
-    const authorization = new PostgresAuthorization(dataSource);
+    const authorization = new PostgresAuthorization(
+      dataSource,
+      ACCOUNT_PERSISTENCE,
+    );
 
     await expect(
       authorization.updateRole('role-user', {

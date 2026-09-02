@@ -12,8 +12,8 @@ import { AppError } from '../../common/application/app-error.js';
 import {
   AUTHORIZATION,
   type AuthorizationPort,
-} from '../application/ports/authorization.port.js';
-import { REQUIRED_PERMISSION } from './require-permission.decorator.js';
+} from '../public/authorization.port.js';
+import { REQUIRED_PERMISSION } from './required-permission.metadata.js';
 
 @Injectable()
 export class PermissionGuard implements CanActivate {

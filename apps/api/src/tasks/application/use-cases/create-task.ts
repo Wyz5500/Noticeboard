@@ -1,11 +1,11 @@
 /** Coordinates identity resolution, aggregate creation, and transactional insertion. */
-import type { IdentityDirectoryPort } from '../../../identity/application/ports/identity-directory.port.js';
-import { requireDemoActor } from '../../../identity/application/require-demo-actor.js';
-import { requirePermission } from '../../../authorization/application/require-permission.js';
-import type { AuthorizationPort } from '../../../authorization/application/ports/authorization.port.js';
+import type { AuthorizationPort } from '../../../authorization/public/authorization.port.js';
+import type { IdentityDirectoryPort } from '../../../identity/public/identity-directory.port.js';
 import { Task } from '../../domain/task.js';
 import type { TaskSnapshot, TaskType } from '../../domain/task.types.js';
 import type { TaskTransactionPort } from '../ports/task-transaction.port.js';
+import { requireDemoActor } from '../require-demo-actor.js';
+import { requirePermission } from '../require-permission.js';
 
 export interface CreateTaskCommand {
   title: string;

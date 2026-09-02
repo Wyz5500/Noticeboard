@@ -1,8 +1,8 @@
 /** Implements the pure task aggregate, including permissions, transitions, and event ordering. */
 import { DomainError } from './domain-error.js';
+import type { Actor } from '../../identity/public/actor.js';
 import {
   TASK_TYPES,
-  type Actor,
   type CreateTaskValues,
   type TaskAction,
   type TaskEvent,

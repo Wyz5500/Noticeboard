@@ -16,14 +16,20 @@
 
 ## 模块与依赖方向
 
-`tasks`、`identity`、`authorization`、`health` 是功能模块。业务模块内部遵循：
+`tasks`、`identity`、`authorization`、`health` 是一级 Feature 边界；Domain / Application / Presentation / Infrastructure 是 Feature 内部的二级边界。一个 Feature 只能导入另一个 Feature 的 `public/` 合同，不能直接访问其领域、用例、控制器、Guard、ORM 实体等内部实现。公共合同保持窄小，只包含实际需要的类型、port/token 和声明式 Nest integration；public 文件不得通过 re-export 将内部实现伪装成公共 API。
+
+业务模块内部遵循：
 
 - Domain：纯 TypeScript 的聚合、值和规则；不依赖框架或基础设施。
 - Application：协调用例与事务；只依赖领域和窄端口。允许有限 Nest DI，但当前用例保持普通类。
 - Presentation：控制器、DTO 校验、demo guard、OpenAPI 和统一 HTTP 错误映射。
 - Infrastructure：TypeORM 实体、映射器、查询、仓储、迁移、seed、日志和运行配置。
 
-DTO、领域 `Task`、读取投影与 ORM 实体分别建模。ORM 实体不会从控制器返回。`scripts/check-architecture.ts` 检查循环、逆向层依赖、核心层框架泄漏和通用仓储/服务基类。
+DTO、领域 `Task`、读取投影与 ORM 实体分别建模。ORM 实体不会从控制器返回。Feature-specific ORM 映射仍由所属 Feature 管理；需要共享事务的跨 Feature 基础设施协作使用明确的 public persistence contract，不把实体搬入 `common`。
+
+`apps/api/src` 的直接顶层文件是 Composition Root，负责 Nest Module、全局 DataSource、migration 和 seed 组装。只有这些文件可以导入 Feature 的 `public/composition/` 注册入口；普通 Feature、`common` 和嵌套顶层代码不能使用该入口，Composition Root 也不能直接导入 Feature 私有实现。`common` 只能被 Feature 依赖，不能反向依赖任何 Feature。
+
+`scripts/check-architecture.ts` 自动识别任意 `apps/api/src/<feature>/...`，检查 Feature Boundary、Composition Root 例外、循环、逆向层依赖、核心层框架泄漏和通用仓储/服务基类；新增 Feature 无需修改规则名单。
 
 ## 用例、查询与事务
 

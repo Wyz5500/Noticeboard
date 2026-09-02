@@ -1,8 +1,8 @@
 /** Exposes the task-list query without hydrating aggregates. */
-import { requirePermission } from '../../../authorization/application/require-permission.js';
-import type { AuthorizationPort } from '../../../authorization/application/ports/authorization.port.js';
+import type { AuthorizationPort } from '../../../authorization/public/authorization.port.js';
 import type { TaskQueryPort } from '../ports/task-query.port.js';
 import type { TaskReadModel } from '../read-models/task-read-model.js';
+import { requirePermission } from '../require-permission.js';
 
 export class ListTasks {
   /** Receives the read-only projection port required by the list use case. */

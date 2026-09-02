@@ -1,9 +1,10 @@
 /** Verifies the task aggregate's state machine, permissions, and immutable event history. */
 import { describe, expect, it } from 'vitest';
 
+import type { Actor } from '../../identity/public/actor.js';
 import { DomainError } from './domain-error.js';
 import { Task } from './task.js';
-import type { Actor, TaskSnapshot } from './task.types.js';
+import type { TaskSnapshot } from './task.types.js';
 
 const PUBLISHER: Actor = {
   id: 'noticeboard-master',

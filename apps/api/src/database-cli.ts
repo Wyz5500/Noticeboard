@@ -1,7 +1,7 @@
 /** Runs explicit migration, rollback, and deterministic demo seed operations for deployment jobs. */
 import { loadRuntimeConfig } from './common/infrastructure/config/runtime-config.js';
-import { createPostgresDataSource } from './tasks/infrastructure/persistence/data-source.js';
-import { seedDemoData } from './tasks/infrastructure/persistence/seed-demo-data.js';
+import { createPostgresDataSource } from './database.js';
+import { seedDemoData } from './seed-demo-data.js';
 
 /** Executes exactly one database command and always closes the connection pool. */
 async function run(): Promise<void> {

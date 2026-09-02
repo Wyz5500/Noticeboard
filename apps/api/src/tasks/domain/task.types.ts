@@ -1,4 +1,5 @@
 /** Defines framework-free task domain values and persistence snapshots. */
+import type { Actor } from '../../identity/public/actor.js';
 
 export const TASK_STATUSES = [
   'not_started',
@@ -36,14 +37,6 @@ export const TASK_EVENT_ACTIONS = [
   'closed',
 ] as const;
 export type TaskEventAction = (typeof TASK_EVENT_ACTIONS)[number];
-
-export interface Actor {
-  id: string;
-  name: string;
-  role: string;
-  roleLabel?: string;
-  permissions?: string[];
-}
 
 export interface CreateTaskValues {
   id: string;

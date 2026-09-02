@@ -4,10 +4,8 @@ import { dirname, join, relative, resolve } from 'node:path';
 import ts from 'typescript';
 
 const ROOT = process.cwd();
-const SOURCE_ROOTS = [
-  join(ROOT, 'apps', 'api', 'src'),
-  join(ROOT, 'apps', 'web', 'src'),
-];
+const API_SOURCE_ROOT = join(ROOT, 'apps', 'api', 'src');
+const SOURCE_ROOTS = [API_SOURCE_ROOT, join(ROOT, 'apps', 'web', 'src')];
 const LAYERS = [
   'domain',
   'application',
@@ -15,6 +13,11 @@ const LAYERS = [
   'infrastructure',
 ] as const;
 type Layer = (typeof LAYERS)[number];
+
+interface FeatureLocation {
+  name: string;
+  segments: readonly string[];
+}
 
 /** Recursively discovers production TypeScript sources while excluding test files. */
 function sourceFiles(directory: string): string[] {
@@ -30,6 +33,34 @@ function sourceFiles(directory: string): string[] {
 /** Identifies a four-layer directory segment when the module has one. */
 function layerOf(path: string): Layer | null {
   return LAYERS.find((layer) => path.split('/').includes(layer)) ?? null;
+}
+
+/** Identifies API Feature ownership without enumerating current Feature names. */
+function featureOf(path: string): FeatureLocation | null {
+  const local = relative(API_SOURCE_ROOT, path);
+  if (local.startsWith('..') || local === '') return null;
+  const segments = local.split(/[\\/]/);
+  const first = segments[0];
+  if (
+    segments.length < 2 ||
+    !first ||
+    first === 'common' ||
+    LAYERS.includes(first as Layer)
+  )
+    return null;
+  return { name: first, segments };
+}
+
+/** Returns whether an API source belongs to the Feature-independent common area. */
+function isCommon(path: string): boolean {
+  const local = relative(API_SOURCE_ROOT, path);
+  return !local.startsWith('..') && local.split(/[\\/]/)[0] === 'common';
+}
+
+/** Returns whether a source file sits directly in the API Composition Root. */
+function isCompositionRoot(path: string): boolean {
+  const local = relative(API_SOURCE_ROOT, path);
+  return !local.startsWith('..') && !/[\\/]/.test(local);
 }
 
 /** Resolves a relative ESM specifier back to the checked TypeScript source. */
@@ -48,15 +79,19 @@ function resolveLocalImport(
 }
 
 /** Reads static import and export edges using the TypeScript syntax tree. */
-function importsOf(
-  path: string,
-): Array<{ specifier: string; target: string | null; typeOnly: boolean }> {
+function importsOf(path: string): Array<{
+  specifier: string;
+  target: string | null;
+  typeOnly: boolean;
+  reExport: boolean;
+}> {
   const text = readFileSync(path, 'utf8');
   const file = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
   const imports: Array<{
     specifier: string;
     target: string | null;
     typeOnly: boolean;
+    reExport: boolean;
   }> = [];
   for (const statement of file.statements) {
     if (
@@ -72,6 +107,7 @@ function importsOf(
         specifier,
         target: resolveLocalImport(path, specifier),
         typeOnly,
+        reExport: ts.isExportDeclaration(statement),
       });
     }
   }
@@ -98,6 +134,8 @@ function checkBoundaries(
   for (const file of files) {
     const local = relative(ROOT, file);
     const sourceLayer = layerOf(file);
+    const sourceFeature = featureOf(file);
+    const sourceIsCommon = isCommon(file);
     const text = readFileSync(file, 'utf8');
     if (/\b(?:GenericRepository|BaseRepository|BaseService)\b/.test(text)) {
       errors.push(
@@ -105,6 +143,61 @@ function checkBoundaries(
       );
     }
     for (const imported of importsOf(file)) {
+      const targetFeature = imported.target ? featureOf(imported.target) : null;
+      if (sourceIsCommon && targetFeature) {
+        errors.push(
+          `[common-feature-import] ${local} -> ${relative(ROOT, imported.target!)}: common code cannot depend on a Feature`,
+        );
+      }
+      if (
+        isCompositionRoot(file) &&
+        targetFeature &&
+        targetFeature.segments[1] !== 'public'
+      ) {
+        errors.push(
+          `[composition-private-feature-import] ${local} -> ${relative(ROOT, imported.target!)}: API Composition Root must use declared Feature entry points`,
+        );
+      }
+      if (
+        !sourceFeature &&
+        !sourceIsCommon &&
+        !isCompositionRoot(file) &&
+        targetFeature?.segments[1] === 'public' &&
+        targetFeature.segments[2] === 'composition'
+      ) {
+        errors.push(
+          `[composition-root-only-import] ${local} -> ${relative(ROOT, imported.target!)}: only direct API Composition Root files can import Feature composition entries`,
+        );
+      }
+      if (
+        imported.reExport &&
+        sourceFeature?.segments[1] === 'public' &&
+        targetFeature?.name === sourceFeature.name &&
+        targetFeature.segments[1] !== 'public'
+      ) {
+        errors.push(
+          `[public-internal-re-export] ${local} -> ${relative(ROOT, imported.target!)}: public code cannot re-export Feature internals`,
+        );
+      }
+      if (
+        sourceFeature &&
+        targetFeature?.segments[1] === 'public' &&
+        targetFeature.segments[2] === 'composition'
+      ) {
+        errors.push(
+          `[feature-composition-import] ${local} -> ${relative(ROOT, imported.target!)}: Feature code cannot import root-only Feature composition entries`,
+        );
+      }
+      if (
+        sourceFeature &&
+        targetFeature &&
+        sourceFeature.name !== targetFeature.name &&
+        targetFeature.segments[1] !== 'public'
+      ) {
+        errors.push(
+          `[feature-private-import] ${local} -> ${relative(ROOT, imported.target!)}: Feature ${sourceFeature.name} can only import Feature ${targetFeature.name} through its public API`,
+        );
+      }
       if (
         sourceLayer === 'domain' &&
         /^(?:@nestjs|typeorm|fastify|@fastify|pg$)/.test(imported.specifier)
