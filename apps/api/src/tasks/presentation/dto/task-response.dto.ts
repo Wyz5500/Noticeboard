@@ -1,8 +1,18 @@
-/** Maps application read models to the stable API resource with Chinese presentation labels. */
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+/** Maps application task models to the discriminated public timeline API resource. */
+import {
+  ApiExtraModels,
+  ApiProperty,
+  ApiPropertyOptional,
+  getSchemaPath,
+} from '@nestjs/swagger';
 
 import { ALL_PERMISSION_CODES } from '../../../authorization/public/permission.js';
-import type { TaskReadModel } from '../../application/read-models/task-read-model.js';
+import type { Actor } from '../../../identity/public/actor.js';
+import { projectTaskTimeline } from '../../application/read-models/project-task-timeline.js';
+import type {
+  TaskReadModel,
+  TaskTimelineReadModel,
+} from '../../application/read-models/task-read-model.js';
 import {
   TASK_EVENT_ACTIONS,
   TASK_STATUSES,
@@ -43,6 +53,9 @@ export class ActorResponseDto {
   id!: string;
 
   @ApiProperty()
+  username!: string;
+
+  @ApiProperty()
   name!: string;
 
   @ApiProperty({ example: 'user' })
@@ -55,7 +68,10 @@ export class ActorResponseDto {
   permissions?: string[];
 }
 
-export class TaskEventResponseDto {
+export class TaskActivityResponseDto {
+  @ApiProperty({ enum: ['activity'] })
+  kind!: 'activity';
+
   @ApiProperty()
   sequence!: number;
 
@@ -75,6 +91,39 @@ export class TaskEventResponseDto {
   detail!: string;
 }
 
+export class TaskCommentResponseDto {
+  @ApiProperty({ enum: ['comment'] })
+  kind!: 'comment';
+
+  @ApiProperty()
+  sequence!: number;
+
+  @ApiProperty()
+  commentId!: string;
+
+  @ApiProperty({ type: ActorResponseDto })
+  actor!: ActorResponseDto;
+
+  @ApiProperty({ format: 'date-time' })
+  at!: string;
+
+  @ApiProperty({ nullable: true, maxLength: 1000 })
+  content!: string | null;
+
+  @ApiProperty()
+  deleted!: boolean;
+
+  @ApiProperty({ format: 'date-time', nullable: true })
+  deletedAt!: string | null;
+
+  @ApiProperty({ nullable: true })
+  deletedByUsername!: string | null;
+}
+
+export type TaskTimelineResponseDto =
+  TaskActivityResponseDto | TaskCommentResponseDto;
+
+@ApiExtraModels(TaskActivityResponseDto, TaskCommentResponseDto)
 export class TaskResponseDto {
   @ApiProperty()
   id!: string;
@@ -118,20 +167,69 @@ export class TaskResponseDto {
   @ApiProperty()
   version!: number;
 
-  @ApiProperty({ type: [TaskEventResponseDto] })
-  timeline!: TaskEventResponseDto[];
+  @ApiProperty({
+    type: 'array',
+    items: {
+      oneOf: [
+        { $ref: getSchemaPath(TaskActivityResponseDto) },
+        { $ref: getSchemaPath(TaskCommentResponseDto) },
+      ],
+      discriminator: { propertyName: 'kind' },
+    },
+  })
+  timeline!: TaskTimelineResponseDto[];
+}
+
+/** Adds the role label fallback while preserving the immutable username value. */
+function toActorResponse(actor: Actor): ActorResponseDto {
+  return {
+    ...actor,
+    roleLabel:
+      actor.roleLabel ??
+      (actor.role === 'system_admin' ? '系统管理员' : '演示用户'),
+  };
+}
+
+/** Converts one lifecycle event into the labeled activity response branch. */
+function activityResponse(
+  event: Extract<TaskTimelineReadModel, { kind: 'activity' }>,
+): TaskActivityResponseDto {
+  return {
+    kind: 'activity',
+    sequence: event.sequence,
+    action: event.action,
+    actionLabel: EVENT_LABELS[event.action],
+    actor: toActorResponse(event.actor),
+    at: event.at,
+    detail: event.detail,
+  };
+}
+
+/** Recognizes an already projected timeline without depending on its first item. */
+function isProjectedTimeline(
+  timeline: TaskSnapshot['timeline'] | TaskReadModel['timeline'],
+): timeline is TaskReadModel['timeline'] {
+  return timeline.every((event) => 'kind' in event);
+}
+
+/** Adds response labels to a shared safe timeline projection. */
+function timelineResponse(
+  timeline: TaskSnapshot['timeline'] | TaskReadModel['timeline'],
+): TaskTimelineResponseDto[] {
+  const projected = isProjectedTimeline(timeline)
+    ? timeline
+    : projectTaskTimeline(timeline);
+  return projected.map((event) =>
+    event.kind === 'activity'
+      ? activityResponse(event)
+      : { ...event, actor: toActorResponse(event.actor) },
+  );
 }
 
 /** Adds presentation labels while preserving stable machine codes and detached values. */
 export function toTaskResponse(
   task: TaskReadModel | TaskSnapshot,
 ): TaskResponseDto {
-  const actor = (value: TaskReadModel['publisher']): ActorResponseDto => ({
-    ...value,
-    roleLabel:
-      value.roleLabel ??
-      (value.role === 'system_admin' ? '系统管理员' : '演示用户'),
-  });
   return {
     id: task.id,
     title: task.title,
@@ -140,17 +238,13 @@ export function toTaskResponse(
     description: task.description,
     reward: task.reward,
     dueDate: task.dueDate,
-    publisher: actor(task.publisher),
-    assignee: task.assignee ? actor(task.assignee) : null,
+    publisher: toActorResponse(task.publisher),
+    assignee: task.assignee ? toActorResponse(task.assignee) : null,
     status: task.status,
     statusLabel: STATUS_LABELS[task.status],
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
     version: task.version,
-    timeline: task.timeline.map((event) => ({
-      ...event,
-      actionLabel: EVENT_LABELS[event.action],
-      actor: actor(event.actor),
-    })),
+    timeline: timelineResponse(task.timeline),
   };
 }

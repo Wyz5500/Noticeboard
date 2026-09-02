@@ -33,7 +33,9 @@ import { ListDemoActors } from '../identity/application/use-cases/list-demo-acto
 import { DemoController } from '../identity/presentation/demo.controller.js';
 import { DemoUserGuard } from '../identity/presentation/demo-user.guard.js';
 import { ActOnTask } from '../tasks/application/use-cases/act-on-task.js';
+import { AddTaskComment } from '../tasks/application/use-cases/add-task-comment.js';
 import { CreateTask } from '../tasks/application/use-cases/create-task.js';
+import { DeleteTaskComment } from '../tasks/application/use-cases/delete-task-comment.js';
 import { GetTask } from '../tasks/application/use-cases/get-task.js';
 import { ListTasks } from '../tasks/application/use-cases/list-tasks.js';
 import { ResetDemoTasks } from '../tasks/application/use-cases/reset-demo-tasks.js';
@@ -49,7 +51,12 @@ const TASK: TaskReadModel = {
   description: '响应不得泄漏 ORM 实体',
   reward: '15 金币',
   dueDate: '2026-09-08',
-  publisher: { id: 'noticeboard-master', name: '用户 A', role: 'user' },
+  publisher: {
+    id: 'noticeboard-master',
+    username: 'noticeboard-master',
+    name: '用户 A',
+    role: 'user',
+  },
   assignee: null,
   status: 'not_started',
   createdAt: '2026-08-30T09:00:00.000Z',
@@ -57,11 +64,42 @@ const TASK: TaskReadModel = {
   version: 1,
   timeline: [
     {
+      kind: 'activity',
       sequence: 1,
       action: 'created',
-      actor: { id: 'noticeboard-master', name: '用户 A', role: 'user' },
+      actor: {
+        id: 'noticeboard-master',
+        username: 'noticeboard-master',
+        name: '用户 A',
+        role: 'user',
+      },
       at: '2026-08-30T09:00:00.000Z',
       detail: '任务发布至冒险家工会',
+    },
+  ],
+};
+
+const COMMENT_TASK: TaskReadModel = {
+  ...TASK,
+  id: 'task-comment',
+  version: 3,
+  timeline: [
+    ...TASK.timeline,
+    {
+      kind: 'comment',
+      sequence: 2,
+      commentId: 'comment-http',
+      actor: {
+        id: 'adventurer-a',
+        username: 'adventurer-a',
+        name: '用户 B',
+        role: 'user',
+      },
+      at: '2026-08-30T10:00:00.000Z',
+      content: null,
+      deleted: true,
+      deletedAt: '2026-08-30T11:00:00.000Z',
+      deletedByUsername: 'noticeboard-master',
     },
   ],
 };
@@ -71,7 +109,12 @@ const IDENTITIES: IdentityDirectoryPort = {
   list: () =>
     Promise.resolve([
       TASK.publisher,
-      { id: 'adventurer-a', name: '用户 B', role: 'user' },
+      {
+        id: 'adventurer-a',
+        username: 'adventurer-a',
+        name: '用户 B',
+        role: 'user',
+      },
     ]),
   /** Resolves only recognized demo identity header values. */
   findById: (id) =>
@@ -125,7 +168,11 @@ describe('HTTP API contract', () => {
             execute: (id: string) =>
               id === TASK.id
                 ? Promise.resolve(TASK)
-                : Promise.reject(new AppError('TASK_NOT_FOUND', '任务不存在')),
+                : id === COMMENT_TASK.id
+                  ? Promise.resolve(COMMENT_TASK)
+                  : Promise.reject(
+                      new AppError('TASK_NOT_FOUND', '任务不存在'),
+                    ),
           },
         },
         {
@@ -154,6 +201,50 @@ describe('HTTP API contract', () => {
                 return Promise.reject(new Error('database password leaked'));
               }
               return Promise.resolve();
+            },
+          },
+        },
+        {
+          provide: AddTaskComment,
+          useValue: {
+            execute: (_actorId: string, id: string, content: string) => {
+              if (!content.trim()) {
+                return Promise.reject(
+                  new DomainError(
+                    'INVALID_COMMENT',
+                    '评论内容必须为 1 至 1000 个字符',
+                  ),
+                );
+              }
+              if (id === 'task-conflict') {
+                return Promise.reject(
+                  new AppError('CONFLICT', '任务已被其他操作更新'),
+                );
+              }
+              return Promise.resolve({ ...COMMENT_TASK, id });
+            },
+          },
+        },
+        {
+          provide: DeleteTaskComment,
+          useValue: {
+            execute: (_actorId: string, id: string, commentId: string) => {
+              if (commentId === 'missing') {
+                return Promise.reject(
+                  new DomainError('COMMENT_NOT_FOUND', '评论不存在'),
+                );
+              }
+              if (commentId === 'forbidden') {
+                return Promise.reject(
+                  new DomainError('COMMENT_FORBIDDEN', '只能删除自己的评论'),
+                );
+              }
+              if (id === 'task-conflict') {
+                return Promise.reject(
+                  new DomainError('COMMENT_CONFLICT', '评论已被删除'),
+                );
+              }
+              return Promise.resolve({ ...COMMENT_TASK, id });
             },
           },
         },
@@ -248,12 +339,14 @@ describe('HTTP API contract', () => {
     expect(response.json()).toEqual([
       {
         id: 'noticeboard-master',
+        username: 'noticeboard-master',
         name: '用户 A',
         role: 'user',
         roleLabel: '演示用户',
       },
       {
         id: 'adventurer-a',
+        username: 'adventurer-a',
         name: '用户 B',
         role: 'user',
         roleLabel: '演示用户',
@@ -325,6 +418,188 @@ describe('HTTP API contract', () => {
     expect(response.json()).toMatchObject({
       id: TASK.id,
       statusLabel: '未开始',
+    });
+  });
+
+  /** Proves public task timelines discriminate activities and deleted comment tombstones. */
+  it('returns comments in place without exposing raw deletion events', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/tasks/task-comment',
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().timeline).toEqual([
+      expect.objectContaining({
+        kind: 'activity',
+        action: 'created',
+        actor: expect.objectContaining({ username: 'noticeboard-master' }),
+      }),
+      expect.objectContaining({
+        kind: 'comment',
+        commentId: 'comment-http',
+        content: null,
+        deleted: true,
+        deletedAt: '2026-08-30T11:00:00.000Z',
+        deletedByUsername: 'noticeboard-master',
+        actor: expect.objectContaining({ username: 'adventurer-a' }),
+      }),
+    ]);
+    expect(response.body).not.toContain('comment_deleted');
+    expect(response.body).not.toContain('数据库保留正文');
+  });
+
+  /** Proves comment creation uses the approved request and returns the latest complete task. */
+  it('creates a task comment with status 200', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tasks/task-comment/comments',
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
+      payload: { content: '进度说明', expectedVersion: 2 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      id: 'task-comment',
+      version: 3,
+      timeline: expect.arrayContaining([
+        expect.objectContaining({ kind: 'comment', commentId: 'comment-http' }),
+      ]),
+    });
+  });
+
+  /** Proves comment creation responds from the committed snapshot without a second read. */
+  it('returns a committed comment snapshot when detail lookup would fail', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tasks/task-write-response/comments',
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
+      payload: { content: '提交后直接响应', expectedVersion: 2 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().id).toBe('task-write-response');
+  });
+
+  /** Proves trimming happens before the public 1000-character limit is enforced. */
+  it('accepts a 1000-character comment surrounded by whitespace', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tasks/task-comment/comments',
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
+      payload: { content: `  ${'x'.repeat(1000)}  `, expectedVersion: 2 },
+    });
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  /** Proves comment deletion accepts an optimistic body and returns the latest complete task. */
+  it('deletes a task comment with status 200', async () => {
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/tasks/task-comment/comments/comment-http',
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
+      payload: { expectedVersion: 2 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      id: 'task-comment',
+      timeline: expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'comment',
+          deleted: true,
+          content: null,
+        }),
+      ]),
+    });
+  });
+
+  /** Proves comment deletion responds from the committed snapshot without a second read. */
+  it('returns a committed deletion snapshot when detail lookup would fail', async () => {
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/tasks/task-delete-response/comments/comment-http',
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
+      payload: { expectedVersion: 2 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().id).toBe('task-delete-response');
+  });
+
+  /** Proves NUL is rejected as a client validation failure before PostgreSQL. */
+  it('rejects comment content containing NUL', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tasks/task-comment/comments',
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
+      payload: { content: '前缀\0后缀', expectedVersion: 2 },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: { code: 'VALIDATION_FAILED' },
+    });
+  });
+
+  /** Proves comment validation rejects blank and oversized public content. */
+  it.each(['   ', 'x'.repeat(1001)])(
+    'validates comment content at the HTTP and domain boundaries',
+    async (content) => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/tasks/task-comment/comments',
+        headers: { 'x-demo-user-id': 'noticeboard-master' },
+        payload: { content, expectedVersion: 2 },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({
+        error: expect.objectContaining({
+          code: expect.stringMatching(/^(INVALID_COMMENT|VALIDATION_FAILED)$/),
+        }),
+      });
+    },
+  );
+
+  /** Proves stable comment deletion failures map to their approved HTTP statuses. */
+  it.each([
+    ['task-comment', 'missing', 404, 'COMMENT_NOT_FOUND'],
+    ['task-comment', 'forbidden', 403, 'COMMENT_FORBIDDEN'],
+    ['task-conflict', 'comment-http', 409, 'COMMENT_CONFLICT'],
+  ])(
+    'maps comment deletion failures',
+    async (taskId, commentId, status, code) => {
+      const response = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/tasks/${taskId}/comments/${commentId}`,
+        headers: { 'x-demo-user-id': 'noticeboard-master' },
+        payload: { expectedVersion: 2 },
+      });
+
+      expect(response.statusCode).toBe(status);
+      expect(response.json()).toMatchObject({ error: { code } });
+    },
+  );
+
+  /** Proves clients cannot choose the server-derived account username. */
+  it('rejects a client-supplied username when creating an admin user', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/admin/users',
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
+      payload: {
+        username: 'client-choice',
+        name: '新用户',
+        roleId: 'role-user',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: { code: 'VALIDATION_FAILED' },
     });
   });
 
@@ -445,7 +720,13 @@ describe('HTTP API contract', () => {
               {
                 enum?: string[];
                 format?: string;
-                items?: { enum?: string[] };
+                maxLength?: number;
+                minLength?: number;
+                items?: {
+                  enum?: string[];
+                  oneOf?: Array<{ $ref?: string }>;
+                  discriminator?: { propertyName?: string };
+                };
               }
             >;
           }
@@ -481,6 +762,22 @@ describe('HTTP API contract', () => {
     expect(
       document.paths['/api/v1/tasks/{taskId}/actions']?.post?.responses,
     ).toHaveProperty('409');
+    expect(
+      document.paths['/api/v1/tasks/{taskId}/comments']?.post?.responses,
+    ).toMatchObject({
+      '200': expect.any(Object),
+      '403': expect.any(Object),
+      '409': expect.any(Object),
+    });
+    expect(
+      document.paths['/api/v1/tasks/{taskId}/comments/{commentId}']?.delete
+        ?.responses,
+    ).toMatchObject({
+      '200': expect.any(Object),
+      '403': expect.any(Object),
+      '404': expect.any(Object),
+      '409': expect.any(Object),
+    });
     expect(document.paths['/health/ready']?.get?.responses).toHaveProperty(
       '503',
     );
@@ -496,6 +793,36 @@ describe('HTTP API contract', () => {
       'reopened',
       'closed',
     ]);
+    expect(
+      document.components.schemas.AddTaskCommentDto?.properties?.content,
+    ).toMatchObject({ minLength: 1, maxLength: 1000 });
+    expect(
+      document.components.schemas.TaskResponseDto?.properties?.timeline?.items,
+    ).toMatchObject({
+      oneOf: expect.arrayContaining([
+        expect.objectContaining({
+          $ref: expect.stringContaining('TaskActivityResponseDto'),
+        }),
+        expect.objectContaining({
+          $ref: expect.stringContaining('TaskCommentResponseDto'),
+        }),
+      ]),
+      discriminator: { propertyName: 'kind' },
+    });
+    expect(
+      document.components.schemas.TaskActivityResponseDto?.properties?.kind
+        ?.enum,
+    ).toEqual(['activity']);
+    expect(
+      document.components.schemas.TaskCommentResponseDto?.properties?.kind
+        ?.enum,
+    ).toEqual(['comment']);
+    expect(
+      document.components.schemas.ActorResponseDto?.properties?.username,
+    ).toBeDefined();
+    expect(
+      document.components.schemas.CreateAdminUserDto?.properties,
+    ).not.toHaveProperty('username');
     expect(
       document.components.schemas.ActorResponseDto?.properties?.permissions
         ?.items?.enum,

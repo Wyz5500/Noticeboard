@@ -3,6 +3,7 @@ import type { PermissionCode } from '../../domain/permission.js';
 
 export interface AdminUserModel {
   id: string;
+  username: string;
   name: string;
   roleId: string;
   roleCode: string;

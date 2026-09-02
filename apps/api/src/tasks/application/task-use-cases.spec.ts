@@ -6,21 +6,43 @@ import { AppError } from '../../common/application/app-error.js';
 import type { Actor } from '../../identity/public/actor.js';
 import type { IdentityDirectoryPort } from '../../identity/public/identity-directory.port.js';
 import { ListDemoActors } from '../../identity/application/use-cases/list-demo-actors.js';
+import { DomainError } from '../domain/domain-error.js';
 import { Task } from '../domain/task.js';
 import type { TaskQueryPort } from './ports/task-query.port.js';
 import type { TaskRepositoryPort } from './ports/task-repository.port.js';
 import type { TaskTransactionPort } from './ports/task-transaction.port.js';
 import type { TaskReadModel } from './read-models/task-read-model.js';
 import { ActOnTask } from './use-cases/act-on-task.js';
+import { AddTaskComment } from './use-cases/add-task-comment.js';
 import { CreateTask } from './use-cases/create-task.js';
+import { DeleteTaskComment } from './use-cases/delete-task-comment.js';
 import { GetTask } from './use-cases/get-task.js';
 import { ListTasks } from './use-cases/list-tasks.js';
 import { ResetDemoTasks } from './use-cases/reset-demo-tasks.js';
 
+const ALLOW_ALL_AUTHORIZATION: AuthorizationPort = {
+  hasPermission: () => Promise.resolve(true),
+};
+
 const ACTORS: Actor[] = [
-  { id: 'noticeboard-master', name: '用户 A', role: 'user' },
-  { id: 'adventurer-a', name: '用户 B', role: 'user' },
-  { id: 'adventurer-b', name: '用户 C', role: 'user' },
+  {
+    id: 'noticeboard-master',
+    username: 'noticeboard-master',
+    name: '用户 A',
+    role: 'user',
+  },
+  {
+    id: 'adventurer-a',
+    username: 'adventurer-a',
+    name: '用户 B',
+    role: 'user',
+  },
+  {
+    id: 'adventurer-b',
+    username: 'adventurer-b',
+    name: '用户 C',
+    role: 'user',
+  },
 ];
 
 /** Supplies the fixed demo identity directory used by application tests. */
@@ -223,6 +245,206 @@ describe('task application use cases', () => {
       status: 'not_started',
       version: 1,
     });
+  });
+
+  /** Proves comment creation coordinates identity, deterministic providers, and one versioned save. */
+  it('adds a comment with the resolved actor, generated ID, and expected version', async () => {
+    const repository = new MemoryTaskRepository();
+    await publish(repository);
+    const useCase = new AddTaskComment(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      ALLOW_ALL_AUTHORIZATION,
+      () => 'comment-created',
+      () => '2026-08-30T10:00:00.000Z',
+    );
+
+    const committed = await useCase.execute(
+      ACTORS[1]!.id,
+      'task-created',
+      '  进度正常\n明日完成  ',
+      1,
+    );
+
+    expect(committed).toMatchObject({ id: 'task-created', version: 2 });
+    expect((await repository.findById('task-created'))!.toSnapshot()).toEqual(
+      committed,
+    );
+    expect(
+      (await repository.findById('task-created'))!.toSnapshot().timeline.at(-1),
+    ).toEqual({
+      sequence: 2,
+      action: 'comment_created',
+      commentId: 'comment-created',
+      content: '进度正常\n明日完成',
+      actor: ACTORS[1],
+      at: '2026-08-30T10:00:00.000Z',
+    });
+  });
+
+  /** Proves missing tasks.view authority stops comment creation before persistence. */
+  it('requires task-read permission before adding a comment', async () => {
+    const repository = new MemoryTaskRepository();
+    await publish(repository);
+    const authorization: AuthorizationPort = {
+      hasPermission: (_userId, permission) =>
+        Promise.resolve(permission !== 'tasks.view'),
+    };
+    const useCase = new AddTaskComment(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      authorization,
+      () => 'comment-created',
+      () => '2026-08-30T10:00:00.000Z',
+    );
+
+    await expect(
+      useCase.execute(ACTORS[1]!.id, 'task-created', '不能写入', 1),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(
+      (await repository.findById('task-created'))!.toSnapshot().timeline,
+    ).toHaveLength(1);
+  });
+
+  /** Proves optimistic conflicts and closed tasks leave comment history unchanged. */
+  it('rejects stale and closed comment creation without committing an event', async () => {
+    const repository = new MemoryTaskRepository();
+    const task = await publish(repository);
+    const useCase = new AddTaskComment(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      ALLOW_ALL_AUTHORIZATION,
+      () => 'comment-created',
+      () => '2026-08-30T13:00:00.000Z',
+    );
+
+    await expect(
+      useCase.execute(ACTORS[1]!.id, 'task-created', '版本过期', 99),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+
+    task.act('accept', ACTORS[1]!, '2026-08-30T10:00:00.000Z');
+    task.act('complete', ACTORS[1]!, '2026-08-30T11:00:00.000Z');
+    task.act('approve', ACTORS[0]!, '2026-08-30T12:00:00.000Z');
+    await repository.save(task, 1);
+    await expect(
+      useCase.execute(ACTORS[1]!.id, 'task-created', '关闭后评论', 4),
+    ).rejects.toMatchObject({ code: 'COMMENT_CONFLICT' });
+    expect(
+      (await repository.findById('task-created'))!.toSnapshot().version,
+    ).toBe(4);
+  });
+
+  /** Proves stable actor ownership is sufficient to append a deletion marker. */
+  it('lets the author delete a comment without system management', async () => {
+    const repository = new MemoryTaskRepository();
+    await publish(repository);
+    await new AddTaskComment(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      ALLOW_ALL_AUTHORIZATION,
+      () => 'comment-created',
+      () => '2026-08-30T10:00:00.000Z',
+    ).execute(ACTORS[1]!.id, 'task-created', '作者评论', 1);
+    const authorization: AuthorizationPort = {
+      hasPermission: (_userId, permission) =>
+        Promise.resolve(permission === 'tasks.view'),
+    };
+    const useCase = new DeleteTaskComment(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      authorization,
+      () => '2026-08-30T11:00:00.000Z',
+    );
+
+    const committed = await useCase.execute(
+      ACTORS[1]!.id,
+      'task-created',
+      'comment-created',
+      2,
+    );
+
+    expect(committed).toEqual(
+      (await repository.findById('task-created'))!.toSnapshot(),
+    );
+    expect(committed.timeline.at(-1)).toMatchObject({
+      action: 'comment_deleted',
+      targetCommentId: 'comment-created',
+      actor: ACTORS[1],
+    });
+  });
+
+  /** Proves deletion consults current system.manage authority instead of an event snapshot. */
+  it('uses the actor current system management permission for comment deletion', async () => {
+    const repository = new MemoryTaskRepository();
+    await publish(repository);
+    await new AddTaskComment(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      ALLOW_ALL_AUTHORIZATION,
+      () => 'comment-created',
+      () => '2026-08-30T10:00:00.000Z',
+    ).execute(ACTORS[1]!.id, 'task-created', '管理员可删', 1);
+    let canManage = false;
+    const authorization: AuthorizationPort = {
+      hasPermission: (_userId, permission) =>
+        Promise.resolve(
+          permission === 'tasks.view' ||
+            (permission === 'system.manage' && canManage),
+        ),
+    };
+    const useCase = new DeleteTaskComment(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      authorization,
+      () => '2026-08-30T11:00:00.000Z',
+    );
+
+    await expect(
+      useCase.execute(ACTORS[2]!.id, 'task-created', 'comment-created', 2),
+    ).rejects.toMatchObject({ code: 'COMMENT_FORBIDDEN' });
+    canManage = true;
+    await expect(
+      useCase.execute(ACTORS[2]!.id, 'task-created', 'comment-created', 2),
+    ).resolves.toMatchObject({ version: 3 });
+  });
+
+  /** Proves a missing comment retains its stable domain not-found code. */
+  it('reports a missing comment as an application not-found failure', async () => {
+    const repository = new MemoryTaskRepository();
+    await publish(repository);
+    const useCase = new DeleteTaskComment(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      ALLOW_ALL_AUTHORIZATION,
+      () => '2026-08-30T11:00:00.000Z',
+    );
+
+    try {
+      await useCase.execute(ACTORS[0]!.id, 'task-created', 'missing', 1);
+      throw new Error('Expected missing comment deletion to fail');
+    } catch (error) {
+      expect(error).toBeInstanceOf(DomainError);
+      expect(error).toMatchObject({ code: 'COMMENT_NOT_FOUND' });
+    }
+  });
+
+  /** Proves missing tasks.view authority stops deletion before comment lookup. */
+  it('requires task-read permission before deleting a comment', async () => {
+    const repository = new MemoryTaskRepository();
+    await publish(repository);
+    const authorization: AuthorizationPort = {
+      hasPermission: () => Promise.resolve(false),
+    };
+    const useCase = new DeleteTaskComment(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      authorization,
+      () => '2026-08-30T11:00:00.000Z',
+    );
+
+    await expect(
+      useCase.execute(ACTORS[0]!.id, 'task-created', 'missing', 1),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 
   it('returns stable not-found errors from mutation and detail use cases', async () => {

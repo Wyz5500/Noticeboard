@@ -8,11 +8,22 @@ import type { TaskSnapshot } from './task.types.js';
 
 const PUBLISHER: Actor = {
   id: 'noticeboard-master',
+  username: 'noticeboard-master',
   name: '用户 A',
   role: 'user',
 };
-const ASSIGNEE: Actor = { id: 'adventurer-a', name: '用户 B', role: 'user' };
-const REPLACEMENT: Actor = { id: 'adventurer-b', name: '用户 C', role: 'user' };
+const ASSIGNEE: Actor = {
+  id: 'adventurer-a',
+  username: 'adventurer-a',
+  name: '用户 B',
+  role: 'user',
+};
+const REPLACEMENT: Actor = {
+  id: 'adventurer-b',
+  username: 'adventurer-b',
+  name: '用户 C',
+  role: 'user',
+};
 const CREATED_AT = '2026-08-29T12:00:00.000Z';
 
 /** Creates one deterministic task so assertions remain independent from clocks and IDs. */
@@ -188,7 +199,232 @@ describe('Task aggregate', () => {
     expect(task.toSnapshot().status).toBe('closed');
   });
 
-  it('assigns mine scope to the last event actor that still exists', () => {
+  /** Proves optimistic version checks avoid requiring a detached aggregate snapshot. */
+  it('matches only the aggregate current version', () => {
+    const task = createTask();
+
+    expect(task.matchesVersion(1)).toBe(true);
+    expect(task.matchesVersion(2)).toBe(false);
+    task.addComment(
+      'comment-version',
+      '版本递增',
+      ASSIGNEE,
+      '2026-08-29T13:00:00.000Z',
+    );
+    expect(task.matchesVersion(1)).toBe(false);
+    expect(task.matchesVersion(2)).toBe(true);
+  });
+
+  /** Proves normalized multiline content appends once without changing lifecycle ownership. */
+  it('adds a trimmed multiline comment as an append-only event and increments version once', () => {
+    const task = createTask();
+
+    task.addComment(
+      'comment-1',
+      '  第一行\n第二行  ',
+      REPLACEMENT,
+      '2026-08-29T13:00:00.000Z',
+    );
+
+    expect(task.toSnapshot()).toMatchObject({
+      status: 'not_started',
+      updatedAt: '2026-08-29T13:00:00.000Z',
+      version: 2,
+    });
+    expect(task.toSnapshot().timeline.at(-1)).toEqual({
+      sequence: 2,
+      action: 'comment_created',
+      commentId: 'comment-1',
+      content: '第一行\n第二行',
+      actor: REPLACEMENT,
+      at: '2026-08-29T13:00:00.000Z',
+    });
+    expect(task.latestActorId(new Set([PUBLISHER.id, REPLACEMENT.id]))).toBe(
+      PUBLISHER.id,
+    );
+  });
+
+  /** Proves normalized content must remain within the non-empty 1000-character contract. */
+  it.each(['', '   ', 'x'.repeat(1001)])(
+    'rejects empty or oversized comment content',
+    (content) => {
+      const task = createTask();
+
+      expect(() =>
+        task.addComment(
+          'comment-invalid',
+          content,
+          ASSIGNEE,
+          '2026-08-29T13:00:00.000Z',
+        ),
+      ).toThrowError(expect.objectContaining({ code: 'INVALID_COMMENT' }));
+      expect(task.toSnapshot().version).toBe(1);
+    },
+  );
+
+  /** Proves supplementary Unicode characters count as one public character each. */
+  it('accepts 600 emoji within the 1000-character limit', () => {
+    const task = createTask();
+
+    expect(() =>
+      task.addComment(
+        'comment-emoji',
+        '😀'.repeat(600),
+        ASSIGNEE,
+        '2026-08-29T13:00:00.000Z',
+      ),
+    ).not.toThrow();
+  });
+
+  /** Proves one thousand and one Unicode code points exceed the domain limit. */
+  it('rejects 1001 Unicode code points', () => {
+    const task = createTask();
+
+    expect(() =>
+      task.addComment(
+        'comment-too-long',
+        '😀'.repeat(1001),
+        ASSIGNEE,
+        '2026-08-29T13:00:00.000Z',
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'INVALID_COMMENT' }));
+  });
+
+  /** Proves PostgreSQL-incompatible NUL characters are rejected at the domain boundary. */
+  it('rejects comment content containing NUL', () => {
+    const task = createTask();
+
+    expect(() =>
+      task.addComment(
+        'comment-nul',
+        '前缀\0后缀',
+        ASSIGNEE,
+        '2026-08-29T13:00:00.000Z',
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'INVALID_COMMENT' }));
+  });
+
+  /** Proves closed tasks reject new comments without changing their version. */
+  it('rejects new comments after the task is closed', () => {
+    const task = completedTask();
+    task.act('approve', PUBLISHER, '2026-08-29T15:00:00.000Z');
+
+    expect(() =>
+      task.addComment(
+        'comment-closed',
+        '不能新增',
+        ASSIGNEE,
+        '2026-08-29T16:00:00.000Z',
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'COMMENT_CONFLICT' }));
+  });
+
+  /** Proves author deletion appends a marker while preserving raw created content. */
+  it('lets the author delete a comment while retaining its original content in raw history', () => {
+    const task = createTask();
+    task.addComment(
+      'comment-1',
+      '保留原始正文',
+      ASSIGNEE,
+      '2026-08-29T13:00:00.000Z',
+    );
+
+    task.deleteComment(
+      'comment-1',
+      ASSIGNEE,
+      false,
+      '2026-08-29T14:00:00.000Z',
+    );
+
+    expect(task.toSnapshot()).toMatchObject({
+      updatedAt: '2026-08-29T14:00:00.000Z',
+      version: 3,
+    });
+    expect(task.toSnapshot().timeline.slice(-2)).toEqual([
+      {
+        sequence: 2,
+        action: 'comment_created',
+        commentId: 'comment-1',
+        content: '保留原始正文',
+        actor: ASSIGNEE,
+        at: '2026-08-29T13:00:00.000Z',
+      },
+      {
+        sequence: 3,
+        action: 'comment_deleted',
+        targetCommentId: 'comment-1',
+        actor: ASSIGNEE,
+        at: '2026-08-29T14:00:00.000Z',
+      },
+    ]);
+  });
+
+  /** Proves live management authority may delete existing comments on closed tasks. */
+  it('lets a manager delete an existing comment after the task is closed', () => {
+    const task = completedTask();
+    task.addComment(
+      'comment-1',
+      '关闭前评论',
+      ASSIGNEE,
+      '2026-08-29T14:30:00.000Z',
+    );
+    task.act('approve', PUBLISHER, '2026-08-29T15:00:00.000Z');
+
+    expect(() =>
+      task.deleteComment(
+        'comment-1',
+        REPLACEMENT,
+        true,
+        '2026-08-29T16:00:00.000Z',
+      ),
+    ).not.toThrow();
+  });
+
+  /** Proves deletion distinguishes absent, unauthorized, and already-deleted comments. */
+  it('rejects missing, unauthorized, and repeated comment deletion', () => {
+    const task = createTask();
+    task.addComment(
+      'comment-1',
+      '待删除',
+      ASSIGNEE,
+      '2026-08-29T13:00:00.000Z',
+    );
+
+    expect(() =>
+      task.deleteComment(
+        'missing',
+        ASSIGNEE,
+        false,
+        '2026-08-29T14:00:00.000Z',
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'COMMENT_NOT_FOUND' }));
+    expect(() =>
+      task.deleteComment(
+        'comment-1',
+        REPLACEMENT,
+        false,
+        '2026-08-29T14:00:00.000Z',
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'COMMENT_FORBIDDEN' }));
+
+    task.deleteComment(
+      'comment-1',
+      ASSIGNEE,
+      false,
+      '2026-08-29T14:00:00.000Z',
+    );
+    expect(() =>
+      task.deleteComment(
+        'comment-1',
+        ASSIGNEE,
+        false,
+        '2026-08-29T15:00:00.000Z',
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'COMMENT_CONFLICT' }));
+  });
+
+  /** Proves comment actors never replace the latest recognized lifecycle actor. */
+  it('assigns mine scope to the last lifecycle actor that still exists', () => {
     const task = createTask();
     const persisted: TaskSnapshot = {
       ...task.toSnapshot(),
@@ -203,8 +439,21 @@ describe('Task aggregate', () => {
         },
         {
           sequence: 3,
+          action: 'comment_created',
+          actor: REPLACEMENT,
+          at: '2026-08-29T13:30:00.000Z',
+          commentId: 'comment-ignored',
+          content: '评论不影响 mine',
+        },
+        {
+          sequence: 4,
           action: 'reopened',
-          actor: { id: 'removed-user', name: '旧成员', role: 'user' },
+          actor: {
+            id: 'removed-user',
+            username: 'removed-user',
+            name: '旧成员',
+            role: 'user',
+          },
           at: '2026-08-29T14:00:00.000Z',
           detail: '历史事件',
         },
@@ -213,7 +462,7 @@ describe('Task aggregate', () => {
 
     expect(
       Task.restore(persisted).latestActorId(
-        new Set([PUBLISHER.id, ASSIGNEE.id]),
+        new Set([PUBLISHER.id, ASSIGNEE.id, REPLACEMENT.id]),
       ),
     ).toBe(ASSIGNEE.id);
   });

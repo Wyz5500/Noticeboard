@@ -6,6 +6,7 @@ import { AccountOrmEntity } from './entities/account.orm-entity.js';
 
 const DEMO_ADMIN = {
   id: 'noticeboard-admin',
+  username: 'noticeboard-admin',
   name: '公会管理员',
   roleId: 'role-system-admin',
   deletedAt: null,
@@ -24,6 +25,7 @@ export async function seedDemoAccounts(
       DEMO_ADMIN,
       ...DEMO_ACTORS.map((actor) => ({
         id: actor.id,
+        username: actor.username,
         name: actor.name,
         roleId: 'role-user',
         deletedAt: null,

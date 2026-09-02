@@ -64,6 +64,7 @@ function isRoleNameUniqueViolation(error: unknown): boolean {
 function toUser(account: IdentityAccountPersistenceRecord): AdminUserModel {
   return {
     id: account.id,
+    username: account.username,
     name: account.name,
     roleId: account.roleId,
     roleCode: account.roleEntity.code,
@@ -166,8 +167,9 @@ export class PostgresAuthorization
       if (role.deletedAt) throw new AppError('CONFLICT', '不能绑定已删除角色');
       const name = command.name.trim();
       if (!name) throw new AppError('VALIDATION_FAILED', '请填写用户名称');
+      const id = `user-${randomUUID()}`;
       const account = await this.accounts.create(manager, {
-        id: `user-${randomUUID()}`,
+        id,
         name,
         roleId: role.id,
         deletedAt: null,

@@ -33,6 +33,7 @@ export class DemoIdentityDirectory implements IdentityDirectoryPort {
     );
     return accounts.map((account) => ({
       id: account.id,
+      username: account.username,
       name: account.name,
       role: account.roleEntity.code,
       roleLabel: account.roleEntity.name,
@@ -53,6 +54,7 @@ export class DemoIdentityDirectory implements IdentityDirectoryPort {
       ? account.deletedAt === null
         ? {
             id: account.id,
+            username: account.username,
             name: account.name,
             role: account.roleEntity.code,
             roleLabel: account.roleEntity.name,

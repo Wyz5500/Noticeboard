@@ -9,6 +9,9 @@ export class ActorResponseDto {
   id!: string;
 
   @ApiProperty()
+  username!: string;
+
+  @ApiProperty()
   name!: string;
 
   @ApiProperty({ example: 'user' })

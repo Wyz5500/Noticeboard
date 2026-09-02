@@ -1,49 +1,43 @@
-/** Coordinates authorized task actions inside an explicit optimistic transaction. */
-import { AppError } from '../../../common/application/app-error.js';
+/** Coordinates authorized comment deletion inside the task optimistic transaction. */
 import type { AuthorizationPort } from '../../../authorization/public/authorization.port.js';
+import { AppError } from '../../../common/application/app-error.js';
 import type { IdentityDirectoryPort } from '../../../identity/public/identity-directory.port.js';
-import type { TaskAction } from '../../domain/task.types.js';
+import type { TaskSnapshot } from '../../domain/task.types.js';
 import type { TaskTransactionPort } from '../ports/task-transaction.port.js';
 import { requireDemoActor } from '../require-demo-actor.js';
 import { requirePermission } from '../require-permission.js';
 
-export class ActOnTask {
-  /** Receives only identity resolution, task transaction, and clock capabilities. */
+export class DeleteTaskComment {
+  /** Receives the task transaction, identity, clock, and live authorization capabilities. */
   constructor(
     private readonly transaction: TaskTransactionPort,
     private readonly identities: IdentityDirectoryPort,
-    private readonly now: () => string,
-    private readonly authorization?: AuthorizationPort,
+    private readonly authorization: AuthorizationPort,
+    private readonly now: () => string = () => new Date().toISOString(),
   ) {}
 
-  /** Applies one action if both the loaded and persisted versions match the request. */
+  /** Appends a deletion marker for the author or a current system manager. */
   async execute(
     actorId: string,
     taskId: string,
-    action: TaskAction,
+    commentId: string,
     expectedVersion: number,
-  ): Promise<void> {
-    if (this.authorization) {
-      const permission =
-        action === 'accept'
-          ? 'tasks.accept'
-          : action === 'complete'
-            ? 'tasks.complete'
-            : action === 'approve' || action === 'reopen'
-              ? 'tasks.review'
-              : 'tasks.close';
-      await requirePermission(this.authorization, actorId, permission);
-      await requirePermission(this.authorization, actorId, 'tasks.view');
-    }
+  ): Promise<TaskSnapshot> {
+    await requirePermission(this.authorization, actorId, 'tasks.view');
     const actor = await requireDemoActor(this.identities, actorId);
+    const canManage = await this.authorization.hasPermission(
+      actorId,
+      'system.manage',
+    );
     return this.transaction.run(async (repository) => {
       const task = await repository.findById(taskId);
       if (!task) throw new AppError('TASK_NOT_FOUND', '任务不存在');
       if (!task.matchesVersion(expectedVersion)) {
         throw new AppError('CONFLICT', '任务已被其他操作更新');
       }
-      task.act(action, actor, this.now());
+      task.deleteComment(commentId, actor, canManage, this.now());
       await repository.save(task, expectedVersion);
+      return task.toSnapshot();
     });
   }
 }

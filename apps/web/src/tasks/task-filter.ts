@@ -25,7 +25,8 @@ export function latestKnownActorId(
 ): string | null {
   for (let index = task.timeline.length - 1; index >= 0; index -= 1) {
     const event = task.timeline[index];
-    if (event && knownUserIds.has(event.actor.id)) return event.actor.id;
+    if (event?.kind === 'activity' && knownUserIds.has(event.actor.id))
+      return event.actor.id;
   }
   return null;
 }

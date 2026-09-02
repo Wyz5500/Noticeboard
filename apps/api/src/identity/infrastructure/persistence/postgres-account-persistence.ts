@@ -49,7 +49,9 @@ export class PostgresAccountPersistence implements IdentityAccountPersistence {
     values: CreateIdentityAccountRecord,
   ): Promise<AccountOrmEntity> {
     const repository = manager.getRepository(AccountOrmEntity);
-    return repository.save(repository.create(values));
+    return repository.save(
+      repository.create({ ...values, username: values.id }),
+    );
   }
 
   /** Persists a loaded account through the identity-owned repository. */

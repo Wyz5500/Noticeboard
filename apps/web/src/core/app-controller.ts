@@ -182,6 +182,7 @@ export class AppController {
   private readonly elements: Elements;
   private readonly styles = new StyleRegistry(THEMES);
   private readonly gate = new RequestGate();
+  private readonly commentDrafts = new Map<string, string>();
   private readonly compactTaskQuery: MediaQueryList;
   private users: ActorResource[] = [];
   private tasks: TaskResource[] = [];
@@ -335,6 +336,13 @@ export class AppController {
     this.elements.drawerInner.addEventListener(
       'click',
       (event) => void this.handleDrawerClick(event),
+    );
+    this.elements.drawerInner.addEventListener('input', (event) =>
+      this.handleDrawerInput(event),
+    );
+    this.elements.drawerInner.addEventListener(
+      'submit',
+      (event) => void this.handleDrawerSubmit(event),
     );
     this.elements.drawerBackdrop.addEventListener('click', () =>
       this.closeDrawer(),
@@ -717,6 +725,20 @@ export class AppController {
     );
   }
 
+  /** Builds an identity-scoped key for one task comment draft. */
+  private commentDraftKey(actorId: string, taskId: string): string {
+    return `${actorId}\u0000${taskId}`;
+  }
+
+  /** Returns the active identity's in-memory draft for one task. */
+  private commentDraft(taskId: string): string {
+    return (
+      this.commentDrafts.get(
+        this.commentDraftKey(this.currentUserId, taskId),
+      ) ?? ''
+    );
+  }
+
   /** Re-renders the selected drawer or closes it if a refresh removed the task. */
   private renderDrawer(): void {
     const task = this.tasks.find(
@@ -732,6 +754,7 @@ export class AppController {
       task,
       this.currentUserId,
       this.currentUser()?.permissions,
+      this.commentDraft(task.id),
     );
     this.elements.drawer.classList.add('is-open');
     this.elements.drawerBackdrop.classList.add('is-open');
@@ -927,18 +950,101 @@ export class AppController {
     }
   }
 
-  /** Handles drawer close and optimistic action buttons through one delegated listener. */
+  /** Stores delegated textarea input in the active identity's task-scoped memory draft. */
+  private handleDrawerInput(event: Event): void {
+    if (!(event.target instanceof Element)) return;
+    const input = event.target.closest<HTMLTextAreaElement>(
+      '[data-comment-input]',
+    );
+    const taskId = input?.dataset.commentInput;
+    if (!input || !taskId) return;
+    this.commentDrafts.set(
+      this.commentDraftKey(this.currentUserId, taskId),
+      input.value,
+    );
+  }
+
+  /** Creates one timeline comment while retaining its draft through command failures. */
+  private async handleDrawerSubmit(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.dataset.commentForm) return;
+    const task = this.tasks.find(
+      (candidate) =>
+        candidate.id === form.dataset.commentForm &&
+        candidate.id === this.selectedTaskId,
+    );
+    if (!task) return;
+    const content = formText(new FormData(form), 'content');
+    const draftKey = this.commentDraftKey(this.currentUserId, task.id);
+    this.commentDrafts.set(draftKey, content);
+    await this.gate.run(`task:${task.id}`, async () => {
+      const request = this.requestSnapshot();
+      try {
+        const updated = await this.api.createTaskComment(
+          request.actorId,
+          task.id,
+          {
+            content,
+            expectedVersion: task.version,
+          },
+        );
+        this.commentDrafts.delete(
+          this.commentDraftKey(request.actorId, task.id),
+        );
+        if (!this.isCurrentRequest(request)) return;
+        this.replaceTask(updated);
+        this.render();
+        this.showToast('评论已发表');
+      } catch (error) {
+        if (!this.isCurrentRequest(request)) return;
+        await this.resynchronizeTasks(request);
+        if (!this.isCurrentRequest(request)) return;
+        this.showToast(this.errorMessage(error));
+      }
+    });
+  }
+
+  /** Handles drawer close, comment deletion, and task actions through one delegated listener. */
   private async handleDrawerClick(event: Event): Promise<void> {
     if (!(event.target instanceof Element)) return;
     if (event.target.closest('[data-close-drawer]')) {
       this.closeDrawer();
       return;
     }
-    const button = event.target.closest<HTMLElement>('[data-action]');
     const task = this.tasks.find(
       (candidate) => candidate.id === this.selectedTaskId,
     );
-    if (!button?.dataset.action || !task) return;
+    if (!task) return;
+    const deleteButton = event.target.closest<HTMLElement>(
+      '[data-delete-comment-id]',
+    );
+    if (deleteButton?.dataset.deleteCommentId) {
+      const commentId = deleteButton.dataset.deleteCommentId;
+      await this.gate.run(`task:${task.id}`, async () => {
+        const request = this.requestSnapshot();
+        try {
+          const updated = await this.api.deleteTaskComment(
+            request.actorId,
+            task.id,
+            commentId,
+            { expectedVersion: task.version },
+          );
+          if (!this.isCurrentRequest(request)) return;
+          this.replaceTask(updated);
+          this.render();
+          this.showToast('评论已删除');
+        } catch (error) {
+          if (!this.isCurrentRequest(request)) return;
+          await this.resynchronizeTasks(request);
+          if (!this.isCurrentRequest(request)) return;
+          this.showToast(this.errorMessage(error));
+        }
+      });
+      return;
+    }
+    const button = event.target.closest<HTMLElement>('[data-action]');
+    if (!button?.dataset.action) return;
     const action = button.dataset.action as TaskAction;
     await this.gate.run(`task:${task.id}`, async () => {
       const request = this.requestSnapshot();
@@ -1096,6 +1202,7 @@ export class AppController {
       try {
         await this.api.resetDemo(request.actorId);
         if (!this.isCurrentRequest(request)) return;
+        this.commentDrafts.clear();
         const taskReader =
           this.users.find((user) => user.permissions?.includes('tasks.view')) ??
           this.users[0];

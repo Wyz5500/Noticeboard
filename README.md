@@ -52,9 +52,10 @@ npm run verify
 
 - 独立的 `noticeboard-admin` 演示身份负责用户与角色管理；`noticeboard-master`、`adventurer-a`、`adventurer-b` 保持普通用户任务身份。
 - 角色权限控制任务 API 和管理 API；管理员拥有全部权限，普通用户拥有全部任务操作权限但不能管理用户、角色或重置演示数据。
-- “我的任务”归属于时间线中最后一位仍有效的操作人。
-- 列表筛选、搜索和统计在启动时加载的内存快照上执行；创建、状态操作和重置才访问 API。
-- PostgreSQL 保存角色、角色权限、账户、任务和有序时间线。`GET /api/v1/admin/overview` 与 `/api/v1/admin/users`、`/api/v1/admin/roles` 提供 demo-only 管理能力；`POST /api/v1/demo/reset` 仍只在一个事务中恢复十二项演示任务。
+- “我的任务”归属于时间线中最后一位仍有效的任务生命周期操作人；发表评论或删除评论不会改变任务归属。
+- 拥有任务查看权限的用户可在未关闭任务上发表最多 1000 字的纯文本评论；评论作者和系统管理员可以删除，删除后保留带唯一 `@username` 的时间线占位。
+- 列表筛选、搜索和统计在启动时加载的内存快照上执行；创建、状态操作、评论操作和重置才访问 API。
+- PostgreSQL 保存角色、角色权限、带唯一 username 的账户、任务和有序时间线。`GET /api/v1/admin/overview` 与 `/api/v1/admin/users`、`/api/v1/admin/roles` 提供 demo-only 管理能力；`POST /api/v1/demo/reset` 仍只在一个事务中恢复十二项演示任务。
 - `localStorage` 只保存 `{currentUserId}`（键 `noticeboard-user`）和视觉偏好（键 `noticeboard-style`）；不要在本地存储中保存秘密。
 
 `X-Demo-User-Id`、`/api/v1/demo/*`、seed 与 reset 均为 demo-only。HTTP 请求与响应字段只以 OpenAPI 文档为准。

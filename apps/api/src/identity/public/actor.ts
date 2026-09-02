@@ -2,6 +2,7 @@
 
 export interface Actor {
   id: string;
+  username: string;
   name: string;
   role: string;
   roleLabel?: string;

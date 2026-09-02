@@ -8,6 +8,7 @@ export type TaskType =
 
 export interface ActorResource {
   id: string;
+  username: string;
   name: string;
   role: string;
   roleLabel: string;
@@ -68,7 +69,8 @@ export interface UpdateAdminRoleRequest {
   permissions: PermissionCode[];
 }
 
-export interface TaskEventResource {
+export interface TaskActivityResource {
+  kind: 'activity';
   sequence: number;
   action:
     'created' | 'accepted' | 'completed' | 'approved' | 'reopened' | 'closed';
@@ -77,6 +79,20 @@ export interface TaskEventResource {
   at: string;
   detail: string;
 }
+
+export interface TaskCommentResource {
+  kind: 'comment';
+  sequence: number;
+  commentId: string;
+  actor: ActorResource;
+  at: string;
+  content: string | null;
+  deleted: boolean;
+  deletedAt: string | null;
+  deletedByUsername: string | null;
+}
+
+export type TaskTimelineResource = TaskActivityResource | TaskCommentResource;
 
 export interface TaskResource {
   id: string;
@@ -93,7 +109,16 @@ export interface TaskResource {
   createdAt: string;
   updatedAt: string;
   version: number;
-  timeline: TaskEventResource[];
+  timeline: TaskTimelineResource[];
+}
+
+export interface CreateTaskCommentRequest {
+  content: string;
+  expectedVersion: number;
+}
+
+export interface DeleteTaskCommentRequest {
+  expectedVersion: number;
 }
 
 export interface CreateTaskRequest {

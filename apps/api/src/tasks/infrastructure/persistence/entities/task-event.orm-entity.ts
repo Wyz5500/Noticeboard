@@ -29,6 +29,9 @@ export class TaskEventOrmEntity {
   @JoinColumn({ name: 'actor_id' })
   actor!: IdentityAccountPersistenceRecord;
 
+  @Column({ name: 'actor_username', type: 'varchar', length: 64 })
+  actorUsername!: string;
+
   @Column({ name: 'actor_name', type: 'varchar', length: 80 })
   actorName!: string;
 
@@ -43,4 +46,18 @@ export class TaskEventOrmEntity {
 
   @Column({ type: 'varchar', length: 200, default: '' })
   detail!: string;
+
+  @Column({ name: 'comment_id', type: 'varchar', length: 100, nullable: true })
+  commentId!: string | null;
+
+  @Column({ type: 'varchar', length: 1000, nullable: true })
+  content!: string | null;
+
+  @Column({
+    name: 'target_comment_id',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
+  targetCommentId!: string | null;
 }

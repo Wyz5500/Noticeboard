@@ -7,7 +7,9 @@ import type {
   AdminUserResource,
   CreateAdminRoleRequest,
   CreateAdminUserRequest,
+  CreateTaskCommentRequest,
   CreateTaskRequest,
+  DeleteTaskCommentRequest,
   UpdateAdminRoleRequest,
   UpdateAdminUserRequest,
   TaskResource,
@@ -160,6 +162,34 @@ export class ApiClient {
     return this.command(
       `/tasks/${encodeURIComponent(taskId)}/actions`,
       actorId,
+      body,
+    );
+  }
+
+  /** Adds one optimistic comment to a task timeline. */
+  createTaskComment(
+    actorId: string,
+    taskId: string,
+    body: CreateTaskCommentRequest,
+  ): Promise<TaskResource> {
+    return this.command(
+      `/tasks/${encodeURIComponent(taskId)}/comments`,
+      actorId,
+      body,
+    );
+  }
+
+  /** Soft-deletes one optimistic task comment. */
+  deleteTaskComment(
+    actorId: string,
+    taskId: string,
+    commentId: string,
+    body: DeleteTaskCommentRequest,
+  ): Promise<TaskResource> {
+    return this.modify(
+      `/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`,
+      actorId,
+      'DELETE',
       body,
     );
   }

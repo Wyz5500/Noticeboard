@@ -176,27 +176,118 @@ function actionControls(
   return container;
 }
 
-/** Creates the reverse-chronological activity timeline. */
-function timeline(document: Document, task: TaskResource): HTMLElement {
+/** Creates one activity entry in the reverse-chronological task timeline. */
+function activityEntry(
+  document: Document,
+  event: Extract<TaskResource['timeline'][number], { kind: 'activity' }>,
+): HTMLLIElement {
+  const item = createNode(document, 'li', 'timeline-activity');
+  item.append(
+    createNode(document, 'span', 'timeline-action', event.actionLabel),
+    createNode(
+      document,
+      'span',
+      'timeline-meta',
+      `${event.actor.name} · ${formatDate(event.at, true)}`,
+    ),
+    createNode(document, 'span', 'timeline-detail', event.detail),
+  );
+  return item;
+}
+
+/** Creates one safe comment entry and its permission-aware delete control. */
+function commentEntry(
+  document: Document,
+  event: Extract<TaskResource['timeline'][number], { kind: 'comment' }>,
+  actorId: string,
+  permissions?: readonly PermissionCode[],
+): HTMLLIElement {
+  const item = createNode(document, 'li', 'timeline-comment');
+  const heading = createNode(document, 'div', 'comment-heading');
+  heading.append(
+    createNode(document, 'span', 'timeline-action', `@${event.actor.username}`),
+    createNode(document, 'span', 'timeline-meta', formatDate(event.at, true)),
+  );
+  item.append(heading);
+  if (event.deleted) {
+    item.append(
+      createNode(
+        document,
+        'span',
+        'comment-deleted',
+        `该评论已被@${event.deletedByUsername}删除`,
+      ),
+    );
+    return item;
+  }
+  item.append(
+    createNode(document, 'p', 'comment-content', event.content ?? ''),
+  );
+  if (event.actor.id === actorId || permissions?.includes('system.manage')) {
+    const button = createNode(
+      document,
+      'button',
+      'comment-delete-button',
+      '删除评论',
+    );
+    button.type = 'button';
+    button.dataset.deleteCommentId = event.commentId;
+    item.append(button);
+  }
+  return item;
+}
+
+/** Creates the multiline comment form for one open task visible to the actor. */
+function commentForm(
+  document: Document,
+  task: TaskResource,
+  draft: string,
+): HTMLFormElement {
+  const form = createNode(document, 'form', 'comment-form');
+  form.dataset.commentForm = task.id;
+  const label = createNode(document, 'label', 'comment-field');
+  label.append(createNode(document, 'span', undefined, '添加评论'));
+  const textarea = createNode(document, 'textarea', 'comment-textarea');
+  textarea.name = 'content';
+  textarea.dataset.commentInput = task.id;
+  textarea.required = true;
+  textarea.maxLength = 1000;
+  textarea.rows = 4;
+  textarea.value = draft;
+  label.append(textarea);
+  const button = createNode(
+    document,
+    'button',
+    'primary-button comment-submit-button',
+    '发表评论',
+  );
+  button.type = 'submit';
+  form.append(label, button);
+  return form;
+}
+
+/** Creates the reverse-chronological activity and comment timeline. */
+function timeline(
+  document: Document,
+  task: TaskResource,
+  actorId: string,
+  permissions: readonly PermissionCode[] | undefined,
+  draft: string,
+): HTMLElement {
   const section = createNode(document, 'section', 'timeline-section');
   const title = createNode(document, 'div', 'timeline-title', '操作时间线 ');
   title.append(createNode(document, 'span', undefined, '/ 操作记录'));
   const list = createNode(document, 'ol', 'timeline');
   for (const event of task.timeline.slice().reverse()) {
-    const item = createNode(document, 'li');
-    item.append(
-      createNode(document, 'span', 'timeline-action', event.actionLabel),
-      createNode(
-        document,
-        'span',
-        'timeline-meta',
-        `${event.actor.name} · ${formatDate(event.at, true)}`,
-      ),
-      createNode(document, 'span', 'timeline-detail', event.detail),
+    list.append(
+      event.kind === 'activity'
+        ? activityEntry(document, event)
+        : commentEntry(document, event, actorId, permissions),
     );
-    list.append(item);
   }
   section.append(title, list);
+  if (task.status !== 'closed' && permissions?.includes('tasks.view'))
+    section.append(commentForm(document, task, draft));
   return section;
 }
 
@@ -207,6 +298,7 @@ export function renderTaskDrawer(
   task: TaskResource,
   actorId: string,
   permissions?: readonly PermissionCode[],
+  commentDraft = '',
 ): void {
   const header = createNode(document, 'div', 'drawer-header');
   const heading = createNode(document, 'div');
@@ -237,6 +329,6 @@ export function renderTaskDrawer(
     createNode(document, 'p', 'drawer-description', task.description),
     facts,
     actionControls(document, task, actorId, permissions),
-    timeline(document, task),
+    timeline(document, task, actorId, permissions, commentDraft),
   );
 }

@@ -14,6 +14,7 @@ const REOPENED_TASK: TaskResource = {
   dueDate: '2026-09-10',
   publisher: {
     id: 'noticeboard-master',
+    username: 'user-a',
     name: '用户 A',
     role: 'user',
     roleLabel: '用户',

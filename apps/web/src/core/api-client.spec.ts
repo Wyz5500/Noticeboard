@@ -104,6 +104,65 @@ describe('ApiClient', () => {
     });
   });
 
+  /** Proves comment creation shares the task command contract and selected identity. */
+  it('creates a task comment with content and expected version', async () => {
+    const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> =
+      [];
+    const client = new ApiClient('/api/v1', (input, init) => {
+      requests.push({ input, ...(init ? { init } : {}) });
+      return Promise.resolve(jsonResponse({ id: 'task-1', timeline: [] }, 201));
+    });
+    const body = { content: '第一行\n第二行', expectedVersion: 4 };
+
+    await client.createTaskComment('adventurer-a', 'task/1', body);
+
+    expect(requests).toEqual([
+      {
+        input: '/api/v1/tasks/task%2F1/comments',
+        init: {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-demo-user-id': 'adventurer-a',
+          },
+          body: JSON.stringify(body),
+        },
+      },
+    ]);
+  });
+
+  /** Proves comment deletion sends its optimistic version in a JSON DELETE body. */
+  it('deletes a task comment with the expected version', async () => {
+    const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> =
+      [];
+    const client = new ApiClient('/api/v1', (input, init) => {
+      requests.push({ input, ...(init ? { init } : {}) });
+      return Promise.resolve(jsonResponse({ id: 'task-1', timeline: [] }));
+    });
+    const body = { expectedVersion: 5 };
+
+    await client.deleteTaskComment(
+      'noticeboard-admin',
+      'task/1',
+      'comment/1',
+      body,
+    );
+
+    expect(requests).toEqual([
+      {
+        input: '/api/v1/tasks/task%2F1/comments/comment%2F1',
+        init: {
+          method: 'DELETE',
+          headers: {
+            'content-type': 'application/json',
+            'x-demo-user-id': 'noticeboard-admin',
+          },
+          body: JSON.stringify(body),
+        },
+      },
+    ]);
+  });
+
   /** Proves bodyless demo reset requests do not advertise an empty JSON body. */
   it('resets demo data without an empty JSON request body', async () => {
     let request: RequestInit | undefined;

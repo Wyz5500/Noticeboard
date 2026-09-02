@@ -6,13 +6,29 @@ import type {
   TaskType,
 } from '../../domain/task.types.js';
 
-export interface TaskEventReadModel {
+export interface TaskActivityReadModel {
+  kind: 'activity';
   sequence: number;
   action: TaskEventAction;
   actor: Actor;
   at: string;
   detail: string;
 }
+
+export interface TaskCommentReadModel {
+  kind: 'comment';
+  sequence: number;
+  commentId: string;
+  actor: Actor;
+  at: string;
+  content: string | null;
+  deleted: boolean;
+  deletedAt: string | null;
+  deletedByUsername: string | null;
+}
+
+export type TaskTimelineReadModel =
+  TaskActivityReadModel | TaskCommentReadModel;
 
 export interface TaskReadModel {
   id: string;
@@ -27,5 +43,5 @@ export interface TaskReadModel {
   createdAt: string;
   updatedAt: string;
   version: number;
-  timeline: TaskEventReadModel[];
+  timeline: TaskTimelineReadModel[];
 }

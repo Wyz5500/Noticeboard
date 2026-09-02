@@ -2,6 +2,7 @@
 import { DomainError } from './domain-error.js';
 import type { Actor } from '../../identity/public/actor.js';
 import {
+  TASK_EVENT_ACTIONS,
   TASK_TYPES,
   type CreateTaskValues,
   type TaskAction,
@@ -23,6 +24,7 @@ const EVENT_DETAILS: Record<TaskEventAction, string> = {
 function copyActor(actor: Actor): Actor {
   return {
     id: actor.id,
+    username: actor.username,
     name: actor.name,
     role: actor.role,
     ...(actor.roleLabel === undefined ? {} : { roleLabel: actor.roleLabel }),
@@ -57,6 +59,7 @@ function validateCreation(
     !TASK_TYPES.includes(values.type) ||
     !isDateOnly(values.dueDate) ||
     !publisher.id ||
+    !publisher.username ||
     !publisher.name ||
     Number.isNaN(new Date(at).valueOf())
   ) {
@@ -105,6 +108,11 @@ export class Task {
       assignee: snapshot.assignee ? copyActor(snapshot.assignee) : null,
       timeline: snapshot.timeline.map(copyEvent),
     });
+  }
+
+  /** Compares an optimistic request version without detaching the aggregate graph. */
+  matchesVersion(expectedVersion: number): boolean {
+    return this.snapshot.version === expectedVersion;
   }
 
   /** Reports whether an actor may perform an action in the current aggregate state. */
@@ -173,7 +181,94 @@ export class Task {
     this.snapshot.version += 1;
   }
 
-  /** Finds the newest timeline actor still recognized by the current identity directory. */
+  /** Appends one normalized comment unless the task is already closed. */
+  addComment(
+    commentId: string,
+    content: string,
+    actor: Actor,
+    at: string,
+  ): void {
+    const normalized = content.trim();
+    if (
+      !commentId.trim() ||
+      !normalized ||
+      normalized.includes('\0') ||
+      Array.from(normalized).length > 1000
+    ) {
+      throw new DomainError(
+        'INVALID_COMMENT',
+        '评论内容必须为 1 至 1000 个字符',
+      );
+    }
+    if (this.snapshot.status === 'closed') {
+      throw new DomainError('COMMENT_CONFLICT', '已关闭任务不能新增评论');
+    }
+    if (
+      this.snapshot.timeline.some(
+        (event) =>
+          event.action === 'comment_created' &&
+          event.commentId === commentId.trim(),
+      )
+    ) {
+      throw new DomainError('COMMENT_CONFLICT', '评论标识冲突');
+    }
+    if (!actor.id || !actor.username || Number.isNaN(new Date(at).valueOf())) {
+      throw new DomainError('INVALID_COMMENT', '评论信息无效');
+    }
+    const lastSequence = this.snapshot.timeline.at(-1)?.sequence ?? 0;
+    this.snapshot.timeline.push({
+      sequence: lastSequence + 1,
+      action: 'comment_created',
+      commentId: commentId.trim(),
+      content: normalized,
+      actor: copyActor(actor),
+      at,
+    });
+    this.snapshot.updatedAt = at;
+    this.snapshot.version += 1;
+  }
+
+  /** Appends a deletion marker when the current actor is the author or a live manager. */
+  deleteComment(
+    commentId: string,
+    actor: Actor,
+    canManage: boolean,
+    at: string,
+  ): void {
+    const created = this.snapshot.timeline.find(
+      (event) =>
+        event.action === 'comment_created' && event.commentId === commentId,
+    );
+    if (!created) {
+      throw new DomainError('COMMENT_NOT_FOUND', '评论不存在');
+    }
+    const deleted = this.snapshot.timeline.some(
+      (event) =>
+        event.action === 'comment_deleted' &&
+        event.targetCommentId === commentId,
+    );
+    if (deleted) {
+      throw new DomainError('COMMENT_CONFLICT', '评论已被删除');
+    }
+    if (created.actor.id !== actor.id && !canManage) {
+      throw new DomainError('COMMENT_FORBIDDEN', '只能删除自己的评论');
+    }
+    if (!actor.id || !actor.username || Number.isNaN(new Date(at).valueOf())) {
+      throw new DomainError('INVALID_COMMENT', '评论信息无效');
+    }
+    const lastSequence = this.snapshot.timeline.at(-1)?.sequence ?? 0;
+    this.snapshot.timeline.push({
+      sequence: lastSequence + 1,
+      action: 'comment_deleted',
+      targetCommentId: commentId,
+      actor: copyActor(actor),
+      at,
+    });
+    this.snapshot.updatedAt = at;
+    this.snapshot.version += 1;
+  }
+
+  /** Finds the newest lifecycle actor still recognized by the current identity directory. */
   latestActorId(knownActorIds: ReadonlySet<string>): string | null {
     for (
       let index = this.snapshot.timeline.length - 1;
@@ -181,7 +276,13 @@ export class Task {
       index -= 1
     ) {
       const event = this.snapshot.timeline[index];
-      if (event && knownActorIds.has(event.actor.id)) return event.actor.id;
+      if (
+        event &&
+        TASK_EVENT_ACTIONS.includes(event.action as TaskEventAction) &&
+        knownActorIds.has(event.actor.id)
+      ) {
+        return event.actor.id;
+      }
     }
     return null;
   }

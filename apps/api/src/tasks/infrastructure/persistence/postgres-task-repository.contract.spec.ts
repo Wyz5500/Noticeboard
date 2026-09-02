@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { DataSource, QueryRunner } from 'typeorm';
 
 import { PostgresAuthorization } from '../../../authorization/infrastructure/postgres-authorization.js';
+import { AddTimelineComments1788062404000 } from '../../../common/infrastructure/database/migrations/1788062404000-add-timeline-comments.js';
 import { createPostgresDataSource } from '../../../database.js';
 import { PostgresAccountPersistence } from '../../../identity/infrastructure/persistence/postgres-account-persistence.js';
 import { seedDemoAccounts } from '../../../identity/infrastructure/persistence/seed-demo-accounts.js';
@@ -125,6 +126,291 @@ describeDatabase('PostgreSQL task repository contract', () => {
     expect(
       (await query.getById('task-actor-snapshot'))?.timeline[0]?.actor.name,
     ).toBe('用户 A');
+  });
+
+  /** Proves raw comments round-trip while public reads replace deleted content in place. */
+  it('persists comment events and projects deletion tombstones without exposing delete events', async () => {
+    const task = Task.create(
+      {
+        id: 'task-comment-contract',
+        title: '评论仓储契约',
+        type: 'exploration',
+        description: '验证评论事件与公开投影',
+        reward: '12 金币',
+        dueDate: '2026-09-10',
+      },
+      DEMO_ACTORS[0]!,
+      '2026-08-30T09:00:00.000Z',
+    );
+    task.addComment(
+      'comment-contract',
+      '数据库必须保留正文',
+      DEMO_ACTORS[1]!,
+      '2026-08-30T10:00:00.000Z',
+    );
+    task.deleteComment(
+      'comment-contract',
+      DEMO_ACTORS[1]!,
+      false,
+      '2026-08-30T11:00:00.000Z',
+    );
+
+    await transaction.run(async (repository) => repository.insert(task));
+
+    expect(
+      (
+        await transaction.run(async (repository) =>
+          repository.findById('task-comment-contract'),
+        )
+      )?.toSnapshot(),
+    ).toEqual(task.toSnapshot());
+    expect((await query.getById('task-comment-contract'))?.timeline).toEqual([
+      expect.objectContaining({ kind: 'activity', action: 'created' }),
+      expect.objectContaining({
+        kind: 'comment',
+        commentId: 'comment-contract',
+        content: null,
+        deleted: true,
+        deletedAt: '2026-08-30T11:00:00.000Z',
+        deletedByUsername: 'adventurer-a',
+      }),
+    ]);
+    const raw = await dataSource.query(
+      "SELECT action, content FROM task_events WHERE task_id = 'task-comment-contract' ORDER BY sequence",
+    );
+    expect(raw).toEqual([
+      { action: 'created', content: null },
+      { action: 'comment_created', content: '数据库必须保留正文' },
+      { action: 'comment_deleted', content: null },
+    ]);
+  });
+
+  /** Proves seeded and administrator-created accounts receive server-derived usernames. */
+  it('derives unique account usernames directly from stable account IDs', async () => {
+    const seeded = await dataSource.query(
+      'SELECT id, username FROM accounts ORDER BY id',
+    );
+    expect(
+      seeded.every(
+        (account: { id: string; username: string }) =>
+          account.username === account.id,
+      ),
+    ).toBe(true);
+
+    const authorization = new PostgresAuthorization(
+      dataSource,
+      ACCOUNT_PERSISTENCE,
+    );
+    const created = await authorization.createUser({
+      name: '用户名契约用户',
+      roleId: 'role-user',
+    });
+    expect(created.username).toBe(created.id);
+    await expect(
+      dataSource.query(
+        "INSERT INTO accounts (id, username, name, role_id) VALUES ('duplicate-username', $1, '重复用户名', 'role-user')",
+        [created.username],
+      ),
+    ).rejects.toMatchObject({ code: '23505' });
+  });
+
+  /** Proves event username snapshots survive later account identity changes. */
+  it('preserves event actor usernames when an account username changes', async () => {
+    const task = Task.create(
+      {
+        id: 'task-username-snapshot',
+        title: '用户名快照',
+        type: 'exploration',
+        description: '账户用户名变化不能重写历史',
+        reward: '12 金币',
+        dueDate: '2026-09-10',
+      },
+      DEMO_ACTORS[0]!,
+      '2026-08-30T09:00:00.000Z',
+    );
+    await transaction.run(async (repository) => repository.insert(task));
+    await dataSource.query(
+      "UPDATE accounts SET username = 'renamed-master' WHERE id = 'noticeboard-master'",
+    );
+
+    try {
+      expect(
+        (await query.getById('task-username-snapshot'))?.timeline[0]?.actor
+          .username,
+      ).toBe('noticeboard-master');
+    } finally {
+      await dataSource.query(
+        "UPDATE accounts SET username = 'noticeboard-master' WHERE id = 'noticeboard-master'",
+      );
+    }
+  });
+
+  /** Proves upgraded databases accept writes from an old API process during a rolling release. */
+  it('derives new mandatory snapshots for legacy inserts after the comment migration', async () => {
+    const runner = dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+
+    try {
+      const migration = new AddTimelineComments1788062404000();
+      await migration.down(runner);
+      await migration.up(runner);
+      await runner.query(
+        "INSERT INTO accounts (id, name, role_id) VALUES ('legacy-writer', '旧版写入者', 'role-user')",
+      );
+      await runner.query(`
+        INSERT INTO tasks (
+          id, title, type, description, reward, due_date, publisher_id,
+          status, created_at, updated_at, version
+        ) VALUES (
+          'task-legacy-writer', '滚动升级', 'exploration', '旧进程仍可写入',
+          '12 金币', '2026-09-10', 'legacy-writer', 'not_started',
+          '2026-08-30T09:00:00.000Z', '2026-08-30T09:00:00.000Z', 1
+        )
+      `);
+      await runner.query(`
+        INSERT INTO task_events (
+          task_id, sequence, action, actor_id, at, detail,
+          actor_name, actor_role, actor_role_name
+        ) VALUES (
+          'task-legacy-writer', 1, 'created', 'legacy-writer',
+          '2026-08-30T09:00:00.000Z', '', '旧版写入者', 'user', '用户'
+        )
+      `);
+
+      await expect(
+        runner.query(
+          "SELECT id, username FROM accounts WHERE id = 'legacy-writer'",
+        ),
+      ).resolves.toEqual([{ id: 'legacy-writer', username: 'legacy-writer' }]);
+      await expect(
+        runner.query(
+          "SELECT actor_id, actor_username FROM task_events WHERE task_id = 'task-legacy-writer'",
+        ),
+      ).resolves.toEqual([
+        { actor_id: 'legacy-writer', actor_username: 'legacy-writer' },
+      ]);
+    } finally {
+      await runner.rollbackTransaction();
+      await runner.release();
+    }
+  });
+
+  /** Proves the database constraint independently rejects blank or over-limit comment payloads. */
+  it('installs the complete comment event payload shape check', async () => {
+    const runner = dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+
+    try {
+      const migration = new AddTimelineComments1788062404000();
+      await migration.down(runner);
+      await migration.up(runner);
+      const [{ definition }] = await runner.query(`
+        SELECT pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint
+        WHERE conname = 'task_events_comment_payload_check'
+      `);
+      const normalized = String(definition).toLowerCase();
+
+      expect(normalized).toContain("btrim((comment_id)::text) <> ''::text");
+      expect(normalized).toContain(
+        "btrim((target_comment_id)::text) <> ''::text",
+      );
+      expect(normalized).toContain("btrim((content)::text) <> ''::text");
+      expect(normalized).toContain('char_length((content)::text) <= 1000');
+    } finally {
+      await runner.rollbackTransaction();
+      await runner.release();
+    }
+  });
+
+  /** Proves the database prevents more than one deletion marker for the same comment. */
+  it('installs a unique deleted-comment marker index', async () => {
+    const runner = dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+
+    try {
+      const migration = new AddTimelineComments1788062404000();
+      await migration.down(runner);
+      await migration.up(runner);
+      const indexes = await runner.query(`
+        SELECT indexname
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND tablename = 'task_events'
+          AND indexname = 'task_events_deleted_comment_idx'
+      `);
+
+      expect(indexes).toEqual([
+        { indexname: 'task_events_deleted_comment_idx' },
+      ]);
+    } finally {
+      await runner.rollbackTransaction();
+      await runner.release();
+    }
+  });
+
+  /** Proves the migration bounds table-lock and backfill statements within its transaction. */
+  it('sets a transaction-local statement timeout while applying the comment migration', async () => {
+    const runner = dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+
+    try {
+      const migration = new AddTimelineComments1788062404000();
+      await migration.down(runner);
+      await migration.up(runner);
+      const [{ statement_timeout: timeout }] = await runner.query(
+        'SHOW statement_timeout',
+      );
+      expect(timeout).toBe('30s');
+    } finally {
+      await runner.rollbackTransaction();
+      await runner.release();
+    }
+  });
+
+  /** Proves rollback removes comment rows before restoring lifecycle-only constraints. */
+  it('reverts the comment migration transactionally when comment events exist', async () => {
+    const task = Task.create(
+      {
+        id: 'task-comment-revert',
+        title: '评论迁移回滚',
+        type: 'exploration',
+        description: '验证已有评论不会阻止迁移回滚',
+        reward: '12 金币',
+        dueDate: '2026-09-10',
+      },
+      DEMO_ACTORS[0]!,
+      '2026-08-30T09:00:00.000Z',
+    );
+    task.addComment(
+      'comment-revert',
+      '回滚前评论',
+      DEMO_ACTORS[1]!,
+      '2026-08-30T10:00:00.000Z',
+    );
+    await transaction.run(async (repository) => repository.insert(task));
+    const runner = dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+
+    try {
+      await new AddTimelineComments1788062404000().down(runner);
+      const events = await runner.query(
+        "SELECT action FROM task_events WHERE task_id = 'task-comment-revert' ORDER BY sequence",
+      );
+      expect(events).toEqual([{ action: 'created' }]);
+      const [{ count }] = await runner.query(
+        "SELECT COUNT(*)::int AS count FROM information_schema.columns WHERE table_name = 'accounts' AND column_name = 'username'",
+      );
+      expect(count).toBe(0);
+    } finally {
+      await runner.rollbackTransaction();
+      await runner.release();
+    }
   });
 
   /** Proves list projections use createdAt descending and ID ascending as a tie breaker. */

@@ -16,12 +16,14 @@ function task(overrides: Partial<TaskResource> = {}): TaskResource {
     dueDate: '2026-09-10',
     publisher: {
       id: 'noticeboard-master',
+      username: 'user-a',
       name: '用户 A',
       role: 'user',
       roleLabel: '演示用户',
     },
     assignee: {
       id: 'adventurer-a',
+      username: 'user-b',
       name: '用户 B',
       role: 'user',
       roleLabel: '演示用户',
@@ -33,11 +35,13 @@ function task(overrides: Partial<TaskResource> = {}): TaskResource {
     version: 2,
     timeline: [
       {
+        kind: 'activity',
         sequence: 1,
         action: 'created',
         actionLabel: '创建任务',
         actor: {
           id: 'noticeboard-master',
+          username: 'user-a',
           name: '用户 A',
           role: 'user',
           roleLabel: '演示用户',
@@ -46,11 +50,13 @@ function task(overrides: Partial<TaskResource> = {}): TaskResource {
         detail: '任务发布至冒险家工会',
       },
       {
+        kind: 'activity',
         sequence: 2,
         action: 'accepted',
         actionLabel: '接取任务',
         actor: {
           id: 'adventurer-a',
+          username: 'user-b',
           name: '用户 B',
           role: 'user',
           roleLabel: '演示用户',
@@ -70,11 +76,13 @@ describe('task filtering', () => {
       timeline: [
         ...task().timeline,
         {
+          kind: 'activity',
           sequence: 3,
           action: 'reopened',
           actionLabel: '重新打开',
           actor: {
             id: 'removed-user',
+            username: 'removed-user',
             name: '旧成员',
             role: 'user',
             roleLabel: '演示用户',
@@ -100,6 +108,39 @@ describe('task filtering', () => {
         knownUserIds: new Set(['noticeboard-master', 'adventurer-a']),
       }),
     ).toHaveLength(1);
+  });
+
+  /** Proves comments never transfer mine-scope ownership away from the latest activity actor. */
+  it('ignores comment actors when resolving mine scope', () => {
+    const withNewerComment = task({
+      timeline: [
+        ...task().timeline,
+        {
+          kind: 'comment',
+          sequence: 3,
+          commentId: 'comment-3',
+          actor: {
+            id: 'noticeboard-master',
+            username: 'user-a',
+            name: '用户 A',
+            role: 'user',
+            roleLabel: '演示用户',
+          },
+          at: '2026-08-30T11:00:00.000Z',
+          content: '请补充进度',
+          deleted: false,
+          deletedAt: null,
+          deletedByUsername: null,
+        },
+      ],
+    });
+
+    expect(
+      latestKnownActorId(
+        withNewerComment,
+        new Set(['noticeboard-master', 'adventurer-a']),
+      ),
+    ).toBe('adventurer-a');
   });
 
   /** Proves the preserved Chinese filter labels map to stable API status codes. */
@@ -130,6 +171,42 @@ describe('task filtering', () => {
       ).toHaveLength(1);
     },
   );
+
+  /** Proves timeline comment bodies never expand the task-board search corpus. */
+  it('does not search comment content', () => {
+    const commented = task({
+      timeline: [
+        ...task().timeline,
+        {
+          kind: 'comment',
+          sequence: 3,
+          commentId: 'comment-search',
+          actor: {
+            id: 'noticeboard-master',
+            username: 'user-a',
+            name: '用户 A',
+            role: 'user',
+            roleLabel: '演示用户',
+          },
+          at: '2026-08-30T11:00:00.000Z',
+          content: '只存在于评论的霜狼暗号',
+          deleted: false,
+          deletedAt: null,
+          deletedByUsername: null,
+        },
+      ],
+    });
+
+    expect(
+      filterTasks([commented], {
+        scope: 'all',
+        filter: '全部',
+        query: '霜狼暗号',
+        currentUserId: 'noticeboard-master',
+        knownUserIds: new Set(['noticeboard-master', 'adventurer-a']),
+      }),
+    ).toEqual([]);
+  });
 
   /** Proves overview statistics expose the complete task-board status set. */
   it('counts every task-board status', () => {

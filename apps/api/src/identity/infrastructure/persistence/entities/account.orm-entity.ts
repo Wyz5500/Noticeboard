@@ -19,6 +19,9 @@ export class AccountOrmEntity implements IdentityAccountPersistenceRecord {
   @PrimaryColumn({ type: 'varchar', length: 64 })
   id!: string;
 
+  @Column({ type: 'varchar', length: 64, unique: true })
+  username!: string;
+
   @Column({ type: 'varchar', length: 80 })
   name!: string;
 

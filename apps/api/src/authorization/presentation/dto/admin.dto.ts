@@ -65,6 +65,7 @@ export class UpdateAdminRoleDto {
 
 export class AdminUserResponseDto {
   @ApiProperty() id!: string;
+  @ApiProperty() username!: string;
   @ApiProperty() name!: string;
   @ApiProperty() roleId!: string;
   @ApiProperty() roleCode!: string;

@@ -33,17 +33,32 @@ function eventRows(
   taskId: string,
   events: TaskEvent[],
 ): Partial<TaskEventOrmEntity>[] {
-  return events.map((event) => ({
-    taskId,
-    sequence: event.sequence,
-    action: event.action,
-    actorId: event.actor.id,
-    actorName: event.actor.name,
-    actorRole: event.actor.role,
-    actorRoleName: event.actor.roleLabel ?? '用户',
-    at: new Date(event.at),
-    detail: event.detail,
-  }));
+  return events.map((event) => {
+    const row: Partial<TaskEventOrmEntity> = {
+      taskId,
+      sequence: event.sequence,
+      action: event.action,
+      actorId: event.actor.id,
+      actorUsername: event.actor.username,
+      actorName: event.actor.name,
+      actorRole: event.actor.role,
+      actorRoleName: event.actor.roleLabel ?? '用户',
+      at: new Date(event.at),
+      detail: '',
+      commentId: null,
+      content: null,
+      targetCommentId: null,
+    };
+    if (event.action === 'comment_created') {
+      row.commentId = event.commentId;
+      row.content = event.content;
+    } else if (event.action === 'comment_deleted') {
+      row.targetCommentId = event.targetCommentId;
+    } else {
+      row.detail = event.detail;
+    }
+    return row;
+  });
 }
 
 export class PostgresTaskRepository implements TaskRepositoryPort {

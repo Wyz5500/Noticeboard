@@ -13,9 +13,11 @@ vi.mock('../admin/admin-renderer.js', () => ({
 }));
 import { AppController } from './app-controller.js';
 import * as adminRenderer from '../admin/admin-renderer.js';
+import * as taskRenderer from '../tasks/task-renderer.js';
 
 const CURRENT_USER: ActorResource = {
   id: 'noticeboard-admin',
+  username: 'guild-admin',
   name: '公会管理员',
   role: 'system_admin',
   roleLabel: '系统管理员',
@@ -28,6 +30,7 @@ const STALE_TASK = {
 
 const RESET_ONLY_USER: ActorResource = {
   id: 'reset-only',
+  username: 'reset-user',
   name: '重置用户',
   role: 'resetter',
   roleLabel: '重置角色',
@@ -36,6 +39,7 @@ const RESET_ONLY_USER: ActorResource = {
 
 const TASK_VIEWER: ActorResource = {
   id: 'task-viewer',
+  username: 'task-viewer',
   name: '查看用户',
   role: 'viewer',
   roleLabel: '查看角色',
@@ -313,6 +317,7 @@ describe('AppController administration refresh', () => {
       users: ActorResource[];
       tasks: TaskResource[];
       currentUserId: string;
+      commentDrafts: Map<string, string>;
       storage: Storage;
       window: {
         confirm: () => boolean;
@@ -342,6 +347,7 @@ describe('AppController administration refresh', () => {
     controller.users = [RESET_ONLY_USER, TASK_VIEWER];
     controller.tasks = [STALE_TASK];
     controller.currentUserId = RESET_ONLY_USER.id;
+    controller.commentDrafts = new Map();
     controller.storage = {
       setItem: () => undefined,
       removeItem: () => undefined,
@@ -374,6 +380,7 @@ describe('AppController administration refresh', () => {
       users: ActorResource[];
       tasks: TaskResource[];
       currentUserId: string;
+      commentDrafts: Map<string, string>;
       adminOverview: unknown;
       identityChangeSequence: number;
       routeChangeSequence: number;
@@ -406,6 +413,9 @@ describe('AppController administration refresh', () => {
     controller.users = [RESET_ONLY_USER, TASK_VIEWER];
     controller.tasks = [STALE_TASK];
     controller.currentUserId = RESET_ONLY_USER.id;
+    controller.commentDrafts = new Map([
+      ['reset-only\u0000task-stale', '待清除'],
+    ]);
     controller.adminOverview = { users: [], roles: [], permissions: [] };
     controller.identityChangeSequence = 0;
     controller.storage = {
@@ -437,6 +447,7 @@ describe('AppController administration refresh', () => {
 
     expect(controller.currentUserId).toBe(TASK_VIEWER.id);
     expect(controller.tasks).toEqual([]);
+    expect(controller.commentDrafts).toEqual(new Map());
     expect(controller.adminOverview).toBeNull();
     expect(controller.closeDrawer).toHaveBeenCalledOnce();
     expect(controller.render).toHaveBeenCalledOnce();
@@ -1653,6 +1664,394 @@ describe('AppController administration management UI', () => {
     expect(controller.adminEditor).toBe(editor);
     expect(controller.refreshAdminOverview).not.toHaveBeenCalled();
     expect(controller.showToast).toHaveBeenCalledOnce();
+  });
+});
+
+describe('AppController task comments', () => {
+  class CommentElement {
+    public value = '';
+
+    /** Creates a delegated comment control with optional form content. */
+    constructor(
+      public readonly dataset: Record<string, string>,
+      value = '',
+    ) {
+      this.value = value;
+    }
+
+    /** Matches the delegated comment selectors used by the controller. */
+    closest(selector: string): CommentElement | null {
+      if (selector === '[data-comment-input]' && this.dataset.commentInput)
+        return this;
+      if (
+        selector === '[data-delete-comment-id]' &&
+        this.dataset.deleteCommentId
+      )
+        return this;
+      if (selector === '[data-comment-form]' && this.dataset.commentForm)
+        return this;
+      return null;
+    }
+  }
+
+  class CommentForm extends CommentElement {
+    /** Creates a delegated comment form carrying one multiline body. */
+    constructor(
+      taskId: string,
+      public readonly content: string,
+    ) {
+      super({ commentForm: taskId });
+    }
+  }
+
+  /** Installs the minimal DOM and FormData shims required by comment delegation tests. */
+  function installCommentDomShims(): void {
+    (globalThis as { Element?: unknown }).Element = CommentElement;
+    (globalThis as { HTMLFormElement?: unknown }).HTMLFormElement = CommentForm;
+    (globalThis as { FormData?: unknown }).FormData = class {
+      /** Captures one fake comment form. */
+      constructor(private readonly form: CommentForm) {}
+
+      /** Returns the fake multiline comment body. */
+      get(name: string): string {
+        return name === 'content' ? this.form.content : '';
+      }
+    };
+  }
+
+  const COMMENT_TASK: TaskResource = {
+    id: 'task-comment',
+    title: '评论控制器测试',
+    type: 'exploration',
+    typeLabel: '探索',
+    description: '验证草稿与命令行为',
+    reward: '10 金币',
+    dueDate: '2026-09-10',
+    publisher: CURRENT_USER,
+    assignee: null,
+    status: 'not_started',
+    statusLabel: '未开始',
+    createdAt: '2026-09-01T08:00:00.000Z',
+    updatedAt: '2026-09-01T08:00:00.000Z',
+    version: 4,
+    timeline: [
+      {
+        kind: 'activity',
+        sequence: 1,
+        action: 'created',
+        actionLabel: '创建任务',
+        actor: CURRENT_USER,
+        at: '2026-09-01T08:00:00.000Z',
+        detail: '任务已创建',
+      },
+    ],
+  };
+
+  /** Ensures drafts are keyed by actor and task when the drawer is re-rendered. */
+  it('isolates in-memory comment drafts by actor and task', () => {
+    const renderTaskDrawer = vi
+      .spyOn(taskRenderer, 'renderTaskDrawer')
+      .mockImplementation(() => undefined);
+    const controller = Object.create(AppController.prototype) as {
+      tasks: TaskResource[];
+      selectedTaskId: string;
+      currentUserId: string;
+      commentDrafts: Map<string, string>;
+      currentUser: () => ActorResource;
+      elements: {
+        drawerInner: HTMLElement;
+        drawer: { classList: { add: () => void }; setAttribute: () => void };
+        drawerBackdrop: { classList: { add: () => void } };
+      };
+      document: Document;
+      renderDrawer: () => void;
+    };
+    controller.tasks = [COMMENT_TASK];
+    controller.selectedTaskId = COMMENT_TASK.id;
+    controller.currentUserId = 'actor-a';
+    controller.commentDrafts = new Map([
+      ['actor-a\u0000task-comment', '甲的草稿'],
+      ['actor-b\u0000task-comment', '乙的草稿'],
+    ]);
+    controller.currentUser = () => ({
+      ...CURRENT_USER,
+      id: controller.currentUserId,
+      permissions: ['tasks.view'],
+    });
+    controller.elements = {
+      drawerInner: {} as HTMLElement,
+      drawer: {
+        classList: { add: () => undefined },
+        setAttribute: () => undefined,
+      },
+      drawerBackdrop: { classList: { add: () => undefined } },
+    };
+    controller.document = {} as Document;
+
+    controller.renderDrawer();
+    controller.currentUserId = 'actor-b';
+    controller.renderDrawer();
+
+    expect(renderTaskDrawer.mock.calls.map((call) => call[5])).toEqual([
+      '甲的草稿',
+      '乙的草稿',
+    ]);
+    renderTaskDrawer.mockRestore();
+  });
+
+  /** Ensures delegated input updates only the active actor-task draft. */
+  it('captures multiline comment drafts through drawer input delegation', () => {
+    installCommentDomShims();
+    const controller = Object.create(AppController.prototype) as {
+      currentUserId: string;
+      commentDrafts: Map<string, string>;
+      handleDrawerInput: (event: Event) => void;
+    };
+    controller.currentUserId = 'actor-a';
+    controller.commentDrafts = new Map();
+    const input = new CommentElement(
+      { commentInput: 'task-comment' },
+      '第一行\n第二行',
+    );
+
+    controller.handleDrawerInput({ target: input } as unknown as Event);
+
+    expect(controller.commentDrafts).toEqual(
+      new Map([['actor-a\u0000task-comment', '第一行\n第二行']]),
+    );
+  });
+
+  /** Ensures successful comment creation shares the task gate, replaces the task, and clears its draft. */
+  it('creates a comment and clears only its successful draft', async () => {
+    installCommentDomShims();
+    const updated = { ...COMMENT_TASK, version: 5 };
+    const createTaskComment = vi.fn(() => Promise.resolve(updated));
+    const gateKeys: string[] = [];
+    const controller = Object.create(AppController.prototype) as {
+      tasks: TaskResource[];
+      selectedTaskId: string;
+      currentUserId: string;
+      commentDrafts: Map<string, string>;
+      api: { createTaskComment: typeof createTaskComment };
+      gate: {
+        run: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
+      };
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      replaceTask: ReturnType<typeof vi.fn>;
+      render: ReturnType<typeof vi.fn>;
+      showToast: ReturnType<typeof vi.fn>;
+      handleDrawerSubmit: (event: SubmitEvent) => Promise<void>;
+    };
+    controller.tasks = [COMMENT_TASK];
+    controller.selectedTaskId = COMMENT_TASK.id;
+    controller.currentUserId = 'actor-a';
+    controller.commentDrafts = new Map([
+      ['actor-a\u0000task-comment', '待提交'],
+      ['actor-b\u0000task-comment', '其他身份草稿'],
+    ]);
+    controller.api = { createTaskComment };
+    controller.gate = {
+      run: (key, operation) => {
+        gateKeys.push(key);
+        return operation();
+      },
+    };
+    controller.requestSnapshot = () => ({
+      actorId: 'actor-a',
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.replaceTask = vi.fn();
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+    const form = new CommentForm(COMMENT_TASK.id, '第一行\n第二行');
+
+    await controller.handleDrawerSubmit({
+      preventDefault: () => undefined,
+      target: form,
+    } as unknown as SubmitEvent);
+
+    expect(gateKeys).toEqual(['task:task-comment']);
+    expect(createTaskComment).toHaveBeenCalledWith('actor-a', 'task-comment', {
+      content: '第一行\n第二行',
+      expectedVersion: 4,
+    });
+    expect(controller.commentDrafts).toEqual(
+      new Map([['actor-b\u0000task-comment', '其他身份草稿']]),
+    );
+    expect(controller.replaceTask).toHaveBeenCalledWith(updated);
+    expect(controller.render).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures a successful request clears only its initiating identity's draft after an identity switch. */
+  it('clears the submitted actor draft when success arrives after identity change', async () => {
+    installCommentDomShims();
+    const controller = Object.create(AppController.prototype) as {
+      tasks: TaskResource[];
+      selectedTaskId: string;
+      currentUserId: string;
+      commentDrafts: Map<string, string>;
+      api: { createTaskComment: () => Promise<TaskResource> };
+      gate: {
+        run: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
+      };
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      replaceTask: ReturnType<typeof vi.fn>;
+      render: ReturnType<typeof vi.fn>;
+      showToast: ReturnType<typeof vi.fn>;
+      handleDrawerSubmit: (event: SubmitEvent) => Promise<void>;
+    };
+    controller.tasks = [COMMENT_TASK];
+    controller.selectedTaskId = COMMENT_TASK.id;
+    controller.currentUserId = 'actor-a';
+    controller.commentDrafts = new Map([
+      ['actor-a\u0000task-comment', '待提交'],
+      ['actor-b\u0000task-comment', '当前身份草稿'],
+    ]);
+    controller.api = {
+      createTaskComment: () => Promise.resolve({ ...COMMENT_TASK, version: 5 }),
+    };
+    controller.gate = { run: (_key, operation) => operation() };
+    controller.requestSnapshot = () => ({
+      actorId: 'actor-a',
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => false;
+    controller.replaceTask = vi.fn();
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+
+    await controller.handleDrawerSubmit({
+      preventDefault: () => undefined,
+      target: new CommentForm(COMMENT_TASK.id, '已提交'),
+    } as unknown as SubmitEvent);
+
+    expect(controller.commentDrafts).toEqual(
+      new Map([['actor-b\u0000task-comment', '当前身份草稿']]),
+    );
+    expect(controller.replaceTask).not.toHaveBeenCalled();
+    expect(controller.render).not.toHaveBeenCalled();
+  });
+
+  /** Ensures failed comment creation resynchronizes while preserving the submitted draft. */
+  it('preserves a comment draft after creation failure and resync', async () => {
+    installCommentDomShims();
+    const controller = Object.create(AppController.prototype) as {
+      tasks: TaskResource[];
+      selectedTaskId: string;
+      currentUserId: string;
+      commentDrafts: Map<string, string>;
+      api: { createTaskComment: () => Promise<never> };
+      gate: {
+        run: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
+      };
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      resynchronizeTasks: ReturnType<typeof vi.fn>;
+      showToast: ReturnType<typeof vi.fn>;
+      handleDrawerSubmit: (event: SubmitEvent) => Promise<void>;
+    };
+    controller.tasks = [COMMENT_TASK];
+    controller.selectedTaskId = COMMENT_TASK.id;
+    controller.currentUserId = 'actor-a';
+    controller.commentDrafts = new Map();
+    controller.api = {
+      createTaskComment: () => Promise.reject(new Error('failed')),
+    };
+    controller.gate = { run: (_key, operation) => operation() };
+    controller.requestSnapshot = () => ({
+      actorId: 'actor-a',
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.resynchronizeTasks = vi.fn(() => Promise.resolve());
+    controller.showToast = vi.fn();
+    const form = new CommentForm(COMMENT_TASK.id, '失败后保留');
+
+    await controller.handleDrawerSubmit({
+      preventDefault: () => undefined,
+      target: form,
+    } as unknown as SubmitEvent);
+
+    expect(controller.commentDrafts.get('actor-a\u0000task-comment')).toBe(
+      '失败后保留',
+    );
+    expect(controller.resynchronizeTasks).toHaveBeenCalledOnce();
+    expect(controller.showToast).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures comment deletion uses the same task gate and optimistic task version as status actions. */
+  it('deletes a comment through the shared task request gate', async () => {
+    installCommentDomShims();
+    const updated = { ...COMMENT_TASK, version: 5 };
+    const deleteTaskComment = vi.fn(() => Promise.resolve(updated));
+    const gateKeys: string[] = [];
+    const controller = Object.create(AppController.prototype) as {
+      tasks: TaskResource[];
+      selectedTaskId: string;
+      api: { deleteTaskComment: typeof deleteTaskComment };
+      gate: {
+        run: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
+      };
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      replaceTask: ReturnType<typeof vi.fn>;
+      render: ReturnType<typeof vi.fn>;
+      showToast: ReturnType<typeof vi.fn>;
+      handleDrawerClick: (event: Event) => Promise<void>;
+    };
+    controller.tasks = [COMMENT_TASK];
+    controller.selectedTaskId = COMMENT_TASK.id;
+    controller.api = { deleteTaskComment };
+    controller.gate = {
+      run: (key, operation) => {
+        gateKeys.push(key);
+        return operation();
+      },
+    };
+    controller.requestSnapshot = () => ({
+      actorId: 'manager',
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.replaceTask = vi.fn();
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+    const button = new CommentElement({ deleteCommentId: 'comment/1' });
+
+    await controller.handleDrawerClick({ target: button } as unknown as Event);
+
+    expect(gateKeys).toEqual(['task:task-comment']);
+    expect(deleteTaskComment).toHaveBeenCalledWith(
+      'manager',
+      'task-comment',
+      'comment/1',
+      { expectedVersion: 4 },
+    );
+    expect(controller.replaceTask).toHaveBeenCalledWith(updated);
+    expect(controller.render).toHaveBeenCalledOnce();
   });
 });
 

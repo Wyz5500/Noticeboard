@@ -7,6 +7,7 @@ export const IDENTITY_ACCOUNT_ENTITY = 'AccountOrmEntity';
 
 export interface IdentityAccountPersistenceRecord {
   id: string;
+  username: string;
   name: string;
   roleId: string;
   roleEntity: AuthorizationRolePersistenceRecord;

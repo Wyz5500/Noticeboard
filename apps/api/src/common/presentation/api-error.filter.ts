@@ -41,11 +41,19 @@ function describeError(exception: unknown): ErrorDescription {
     };
   }
   if (exception instanceof CodedDomainError) {
-    const status =
-      exception.code === 'ACTION_FORBIDDEN'
-        ? HttpStatus.FORBIDDEN
-        : HttpStatus.BAD_REQUEST;
-    return { status, code: exception.code, message: exception.message };
+    const statusByCode: Record<string, number> = {
+      ACTION_FORBIDDEN: HttpStatus.FORBIDDEN,
+      COMMENT_FORBIDDEN: HttpStatus.FORBIDDEN,
+      COMMENT_NOT_FOUND: HttpStatus.NOT_FOUND,
+      COMMENT_CONFLICT: HttpStatus.CONFLICT,
+      INVALID_TASK: HttpStatus.BAD_REQUEST,
+      INVALID_COMMENT: HttpStatus.BAD_REQUEST,
+    };
+    return {
+      status: statusByCode[exception.code] ?? HttpStatus.BAD_REQUEST,
+      code: exception.code,
+      message: exception.message,
+    };
   }
   if (exception instanceof HttpException) {
     const response = exception.getResponse();

@@ -82,7 +82,7 @@ describeDatabase('application composition', () => {
     });
     expect(created.statusCode).toBe(201);
     expect(created.json()).toMatchObject({
-      publisher: { id: 'adventurer-a' },
+      publisher: { id: 'adventurer-a', username: 'adventurer-a' },
       version: 1,
     });
 
@@ -95,9 +95,55 @@ describeDatabase('application composition', () => {
     expect(accepted.statusCode).toBe(200);
     expect(accepted.json()).toMatchObject({
       status: 'in_progress',
-      assignee: { id: 'adventurer-b' },
+      assignee: { id: 'adventurer-b', username: 'adventurer-b' },
       version: 2,
     });
+
+    const commented = await app.inject({
+      method: 'POST',
+      url: `/api/v1/tasks/${created.json().id as string}/comments`,
+      headers: { 'x-demo-user-id': 'adventurer-b' },
+      payload: {
+        content: '  已抵达第一处检查点\n补给充足  ',
+        expectedVersion: 2,
+      },
+    });
+    expect(commented.statusCode).toBe(200);
+    expect(commented.json()).toMatchObject({ version: 3 });
+    expect(commented.json().timeline.at(-1)).toMatchObject({
+      kind: 'comment',
+      content: '已抵达第一处检查点\n补给充足',
+      deleted: false,
+      actor: { id: 'adventurer-b', username: 'adventurer-b' },
+    });
+    const commentId: unknown = commented.json().timeline.at(-1)?.commentId;
+    if (typeof commentId !== 'string') {
+      throw new Error('Expected comment identifier to be a string');
+    }
+
+    const forbiddenDelete = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/tasks/${created.json().id as string}/comments/${commentId}`,
+      headers: { 'x-demo-user-id': 'adventurer-a' },
+      payload: { expectedVersion: 3 },
+    });
+    expect(forbiddenDelete.statusCode).toBe(403);
+
+    const deleted = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/tasks/${created.json().id as string}/comments/${commentId}`,
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
+      payload: { expectedVersion: 3 },
+    });
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json()).toMatchObject({ version: 4 });
+    expect(deleted.json().timeline.at(-1)).toMatchObject({
+      kind: 'comment',
+      content: null,
+      deleted: true,
+      deletedByUsername: 'noticeboard-admin',
+    });
+    expect(deleted.body).not.toContain('comment_deleted');
   });
 
   /** Proves the production readiness adapter performs a real database query. */
@@ -133,6 +179,7 @@ describeDatabase('application composition', () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: 'noticeboard-admin',
+          username: 'noticeboard-admin',
           updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
         }),
       ]),
@@ -204,6 +251,7 @@ describeDatabase('application composition', () => {
     });
     expect(user.statusCode).toBe(201);
     expect(user.json()).toMatchObject({
+      username: user.json().id,
       updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
     });
 

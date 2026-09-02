@@ -7,13 +7,18 @@ async function switchUserAndOpenTask(
   actorId: string,
   title: string,
 ): Promise<void> {
-  if (
-    await page
-      .locator('#detailDrawer')
-      .evaluate((drawer) => drawer.classList.contains('is-open'))
-  ) {
-    await page.locator('[data-close-drawer]').click();
-  }
+  await expect(page.locator('#detailDrawer')).toHaveClass(/is-open/);
+  await page.locator('[data-close-drawer]').click();
+  await expect(page.locator('#detailDrawer')).not.toHaveClass(/is-open/);
+  await page
+    .locator('#detailDrawer, #drawerBackdrop')
+    .evaluateAll(async (elements) => {
+      await Promise.all(
+        elements.flatMap((element) =>
+          element.getAnimations().map((animation) => animation.finished),
+        ),
+      );
+    });
   await page.locator('#profileButton').click();
   await page.locator('#identitySelect').selectOption(actorId);
   await page.keyboard.press('Escape');
@@ -1814,6 +1819,96 @@ test('completes a reopened task with a replacement assignee', async ({
     page.locator('.detail-fact').filter({ hasText: '当前状态' }),
   ).toContainText('关闭');
   await expect(page.locator('.timeline-action').first()).toHaveText('关闭任务');
+});
+
+/** Proves comments remain safe, do not change task ownership, and preserve deletion attribution. */
+test('comments on an open task and keeps deleted tombstones', async ({
+  page,
+  request,
+  isMobile,
+}) => {
+  await page.locator('#profileButton').click();
+  await page.locator('#identitySelect').selectOption('adventurer-a');
+  await page.keyboard.press('Escape');
+  await page.getByRole('link', { name: '任务页' }).click();
+  await page.locator('#newTaskButton').click();
+  await page.locator('[name="title"]').fill('评论协作任务');
+  await page.locator('[name="type"]').selectOption('exploration');
+  await page.locator('[name="dueDate"]').fill('2026-09-12');
+  await page
+    .locator('textarea[name="description"]')
+    .fill('验证评论、删除占位和任务归属');
+  await page.locator('[name="reward"]').fill('30 金币');
+  await page.getByRole('button', { name: /^发布任务/ }).click();
+
+  await switchUserAndOpenTask(page, 'adventurer-b', '评论协作任务');
+  const commentInput = page.locator('[data-comment-input]');
+  await expect(commentInput).toHaveAttribute('maxlength', '1000');
+  await commentInput.fill('<img src=x onerror=alert(1)>\n第二行');
+  await page.getByRole('button', { name: '发表评论' }).click();
+
+  const newestComment = page.locator('.timeline-comment').first();
+  await expect(newestComment.locator('.timeline-action')).toHaveText(
+    '@adventurer-b',
+  );
+  await expect(newestComment.locator('.comment-content')).toHaveText(
+    '<img src=x onerror=alert(1)>\n第二行',
+  );
+  await expect(newestComment.locator('img')).toHaveCount(0);
+  await expect(
+    page.evaluate(() => (window as Window & { hacked?: boolean }).hacked),
+  ).resolves.toBeUndefined();
+  await expect(
+    page.evaluate(() => Object.keys(localStorage).sort()),
+  ).resolves.toEqual(['noticeboard-user']);
+
+  await page.locator('[data-close-drawer]').click();
+  await openMobileTaskFilters(page, isMobile);
+  await page.locator('[data-scope="mine"]').click();
+  await expect(
+    page.locator('.task-card').filter({ hasText: '评论协作任务' }),
+  ).toHaveCount(0);
+  await page.locator('[data-scope="all"]').click();
+  await page.locator('.task-card').filter({ hasText: '评论协作任务' }).click();
+
+  await page.getByRole('button', { name: '删除评论' }).click();
+  await expect(page.locator('.comment-deleted').first()).toHaveText(
+    '该评论已被@adventurer-b删除',
+  );
+  await expect(page.locator('#detailDrawer')).not.toContainText(
+    '<img src=x onerror=alert(1)>',
+  );
+
+  await commentInput.fill('请管理员删除这条评论');
+  await page.getByRole('button', { name: '发表评论' }).click();
+  await switchUserAndOpenTask(page, 'noticeboard-admin', '评论协作任务');
+  await page.getByRole('button', { name: '删除评论' }).click();
+  await expect(page.locator('.comment-deleted').first()).toHaveText(
+    '该评论已被@noticeboard-admin删除',
+  );
+
+  const tasksResponse = await request.get('/api/v1/tasks', {
+    headers: { 'X-Demo-User-Id': 'noticeboard-master' },
+  });
+  const closedTask = (
+    (await tasksResponse.json()) as Array<{
+      id: string;
+      title: string;
+      status: string;
+      version: number;
+    }>
+  ).find((task) => task.status === 'closed');
+  expect(closedTask).toBeDefined();
+  const closedComment = await request.post(
+    `/api/v1/tasks/${closedTask!.id}/comments`,
+    {
+      headers: { 'X-Demo-User-Id': 'noticeboard-master' },
+      data: { content: '关闭后不可评论', expectedVersion: closedTask!.version },
+    },
+  );
+  expect(closedComment.status()).toBe(409);
+  await switchUserAndOpenTask(page, 'noticeboard-master', closedTask!.title);
+  await expect(page.locator('[data-comment-form]')).toHaveCount(0);
 });
 
 /** Proves identity and style preferences survive refresh without task data in browser storage. */

@@ -261,6 +261,83 @@ for (const themeId of THEME_IDS) {
   });
 }
 
+/** Captures active and deleted comments together in the Swiss task drawer. */
+test('comment timeline states @visual', async ({ page, request }) => {
+  const tasksResponse = await request.get('/api/v1/tasks', {
+    headers: { 'X-Demo-User-Id': 'noticeboard-master' },
+  });
+  const task = (
+    (await tasksResponse.json()) as Array<{
+      id: string;
+      title: string;
+      status: string;
+      version: number;
+    }>
+  ).find((candidate) => candidate.status !== 'closed');
+  expect(task).toBeDefined();
+
+  const firstCommentResponse = await request.post(
+    `/api/v1/tasks/${task!.id}/comments`,
+    {
+      headers: { 'X-Demo-User-Id': 'adventurer-a' },
+      data: {
+        content: '已确认任务目标，稍后补充现场进展。',
+        expectedVersion: task!.version,
+      },
+    },
+  );
+  expect(firstCommentResponse.ok()).toBe(true);
+  const firstCommentTask = (await firstCommentResponse.json()) as {
+    version: number;
+    timeline: Array<{ kind: string; commentId?: string }>;
+  };
+  const firstComment = firstCommentTask.timeline.find(
+    (entry) => entry.kind === 'comment',
+  );
+  expect(firstComment?.commentId).toBeDefined();
+
+  const secondCommentResponse = await request.post(
+    `/api/v1/tasks/${task!.id}/comments`,
+    {
+      headers: { 'X-Demo-User-Id': 'adventurer-b' },
+      data: {
+        content: '材料清单已经整理完成。\n等待下一步安排。',
+        expectedVersion: firstCommentTask.version,
+      },
+    },
+  );
+  expect(secondCommentResponse.ok()).toBe(true);
+  const secondCommentTask = (await secondCommentResponse.json()) as {
+    version: number;
+  };
+
+  const deletedResponse = await request.delete(
+    `/api/v1/tasks/${task!.id}/comments/${firstComment!.commentId}`,
+    {
+      headers: { 'X-Demo-User-Id': 'adventurer-a' },
+      data: { expectedVersion: secondCommentTask.version },
+    },
+  );
+  expect(deletedResponse.ok()).toBe(true);
+
+  await page.reload();
+  await expect(page.locator('#taskGrid')).toBeAttached();
+  await page.getByRole('link', { name: '任务页' }).click();
+  await page.locator('.task-card').filter({ hasText: task!.title }).click();
+  await expect(page.locator('.timeline-comment')).toHaveCount(2);
+  await page
+    .locator('.timeline-comment .timeline-meta')
+    .evaluateAll((nodes) => {
+      nodes.forEach((node, index) => {
+        node.textContent = index === 0 ? '9月3日 10:30' : '9月3日 10:00';
+      });
+    });
+  await page.mouse.move(0, 0);
+  await expect(page).toHaveScreenshot('swiss-international-comments.png', {
+    fullPage: false,
+  });
+});
+
 /** Captures empty, long-title, hover, and keyboard-focus edge states under reduced motion. */
 test('task board edge states @visual', async ({ page, isMobile }) => {
   await page.getByRole('link', { name: '任务页' }).click();

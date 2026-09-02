@@ -62,7 +62,7 @@ function assertPrimaryWorktree() {
 
 /** Executes the single non-destructive deployment operation. */
 function deploy({ dryRun }) {
-  const commonDirectory = assertPrimaryWorktree();
+  const commonDirectory = dryRun ? null : assertPrimaryWorktree();
   const argumentsToRun = [
     'compose',
     '-f',

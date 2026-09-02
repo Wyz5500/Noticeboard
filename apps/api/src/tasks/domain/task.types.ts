@@ -47,13 +47,30 @@ export interface CreateTaskValues {
   dueDate: string;
 }
 
-export interface TaskEvent {
+interface TaskEventBase {
   sequence: number;
-  action: TaskEventAction;
   actor: Actor;
   at: string;
+}
+
+export interface TaskLifecycleEvent extends TaskEventBase {
+  action: TaskEventAction;
   detail: string;
 }
+
+export interface TaskCommentCreatedEvent extends TaskEventBase {
+  action: 'comment_created';
+  commentId: string;
+  content: string;
+}
+
+export interface TaskCommentDeletedEvent extends TaskEventBase {
+  action: 'comment_deleted';
+  targetCommentId: string;
+}
+
+export type TaskEvent =
+  TaskLifecycleEvent | TaskCommentCreatedEvent | TaskCommentDeletedEvent;
 
 export interface TaskSnapshot {
   id: string;

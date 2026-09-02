@@ -22,7 +22,9 @@ import {
   type TaskTransactionPort,
 } from '../application/ports/task-transaction.port.js';
 import { ActOnTask } from '../application/use-cases/act-on-task.js';
+import { AddTaskComment } from '../application/use-cases/add-task-comment.js';
 import { CreateTask } from '../application/use-cases/create-task.js';
+import { DeleteTaskComment } from '../application/use-cases/delete-task-comment.js';
 import { GetTask } from '../application/use-cases/get-task.js';
 import { ListTasks } from '../application/use-cases/list-tasks.js';
 import { ResetDemoTasks } from '../application/use-cases/reset-demo-tasks.js';
@@ -86,6 +88,34 @@ import { TasksController } from '../presentation/tasks.controller.js';
           identities,
           () => new Date().toISOString(),
           authorization,
+        ),
+      inject: [TASK_TRANSACTION, IDENTITY_DIRECTORY, AUTHORIZATION],
+    },
+    {
+      provide: AddTaskComment,
+      useFactory: (
+        transaction: TaskTransactionPort,
+        identities: IdentityDirectoryPort,
+        authorization: AuthorizationPort,
+      ) =>
+        new AddTaskComment(
+          transaction,
+          identities,
+          authorization,
+          () => `comment-${randomUUID()}`,
+          () => new Date().toISOString(),
+        ),
+      inject: [TASK_TRANSACTION, IDENTITY_DIRECTORY, AUTHORIZATION],
+    },
+    {
+      provide: DeleteTaskComment,
+      useFactory: (
+        transaction: TaskTransactionPort,
+        identities: IdentityDirectoryPort,
+        authorization: AuthorizationPort,
+      ) =>
+        new DeleteTaskComment(transaction, identities, authorization, () =>
+          new Date().toISOString(),
         ),
       inject: [TASK_TRANSACTION, IDENTITY_DIRECTORY, AUTHORIZATION],
     },
