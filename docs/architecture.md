@@ -2,7 +2,7 @@
 
 ## 运行形态
 
-系统是一个模块化单体：唯一的 NestJS + Fastify 进程同时提供 `/api/v1`、健康检查、OpenAPI 和 `dist/web` 静态页面。应用实例无状态，PostgreSQL 18.6 是任务与时间线的权威数据源。第一版不包含 SQLite、Redis、CQRS、Outbox、Event Sourcing、Helm 或正式认证。
+系统是一个模块化单体：唯一的 NestJS + Fastify 进程同时提供版本化 API、健康检查、OpenAPI 和编译后的静态页面。应用实例无状态，PostgreSQL 是服务器任务与时间线的权威数据源。现有架构不包含 SQLite、Redis、CQRS、Outbox、Event Sourcing、Helm 或正式认证。
 
 ```text
 原生 TypeScript 页面 ── REST / OpenAPI ── NestJS 表现层
@@ -21,11 +21,13 @@
 业务模块内部遵循：
 
 - Domain：纯 TypeScript 的聚合、值和规则；不依赖框架或基础设施。
-- Application：协调用例与事务；只依赖领域和窄端口。允许有限 Nest DI，但当前用例保持普通类。
+- Application：协调用例与事务；只依赖领域和窄端口。可使用有限的依赖注入装配能力，但业务语义不依赖框架运行时。
 - Presentation：控制器、DTO 校验、demo guard、OpenAPI 和统一 HTTP 错误映射。
 - Infrastructure：TypeORM 实体、映射器、查询、仓储、迁移、seed、日志和运行配置。
 
-DTO、领域 `Task`、读取投影与 ORM 实体分别建模。ORM 实体不会从控制器返回。Feature-specific ORM 映射仍由所属 Feature 管理；需要共享事务的跨 Feature 基础设施协作使用明确的 public persistence contract，不把实体搬入 `common`。
+分层边界按依赖性质定义，而不是按当前依赖包名单定义。Domain 不得出现框架、传输、持久化、数据库或装饰器依赖；Application 不得依赖 ORM Entity、ORM 运行时对象、HTTP 运行时类型或直接 SQL。核心层通过显式参数和窄端口声明依赖，禁止以服务定位器、全局事务上下文或类似隐式机制取得基础设施能力。通用 Repository/Service 基类会抹平聚合语义和用例边界，因此业务持久化与服务合同必须表达具体能力，不能退化为通用 CRUD 抽象。
+
+DTO、领域模型、读取投影与 ORM 实体分别建模。ORM 实体不会从控制器返回。Feature-specific ORM 映射仍由所属 Feature 管理；需要共享事务的跨 Feature 基础设施协作使用明确的 public persistence contract，不把实体搬入 `common`。
 
 `apps/api/src` 的直接顶层文件是 Composition Root，负责 Nest Module、全局 DataSource、migration 和 seed 组装。只有这些文件可以导入 Feature 的 `public/composition/` 注册入口；普通 Feature、`common` 和嵌套顶层代码不能使用该入口，Composition Root 也不能直接导入 Feature 私有实现。`common` 只能被 Feature 依赖，不能反向依赖任何 Feature。
 
@@ -33,22 +35,32 @@ DTO、领域 `Task`、读取投影与 ORM 实体分别建模。ORM 实体不会�
 
 ## 用例、查询与事务
 
-写用例为 `CreateTask`、`ActOnTask`、`ResetDemoTasks`；读用例为 `ListTasks`、`GetTask`、`ListDemoActors`、`GetAdminOverview`。列表与统计是真实只读需求，因此通过 `TaskQueryPort` 返回投影；领域恢复和写入通过聚合语义的 `TaskRepositoryPort`。授权通过 `AuthorizationPort` 窄端口提供有效权限判断，角色和用户管理通过专用管理端口执行显式事务。
+写用例由应用层决定显式事务边界，并通过表达聚合语义的 Repository Port 完成状态变更。事务回调只获得当前用例所需的事务内持久化能力，不向应用层暴露 ORM 运行时对象、通用 Unit of Work 或隐式全局事务。读用例通过面向读取需求的 Query Port 返回投影；列表、统计和详情等读取需求不必为了复用写模型而恢复领域聚合。
 
-应用层用 `TaskTransactionPort.run(callback)` 明确决定写事务边界。该回调只获得当前任务用例所需的仓储能力，不暴露 `EntityManager`、`QueryRunner`、通用 `UnitOfWork` 或隐式全局事务。动作保存执行带预期版本的条件更新；零影响行映射为 409。任务版本更新与新增时间线事件使用同一底层 PostgreSQL 事务。
+跨 Feature 授权通过窄公共端口提供有效权限判断；管理类写操作通过专用能力端口和显式事务完成，不能绕过所属 Feature 的规则。并发写入必须带预期版本条件，条件失败视为乐观冲突。一次聚合更新与其新增事件必须使用同一底层 PostgreSQL 事务，保持状态、版本和有序事件一致。
 
 ## 数据与契约
 
-迁移创建 `accounts`、`roles`、`role_permissions`、`tasks`、`task_events`，用外键、活跃角色名称唯一索引、每任务事件顺序主键、创建时间排序索引和乐观版本列保护数据。账户与角色只做逻辑删除；任务事件保存操作人的角色名称快照。生产配置永久使用 `synchronize: false`。部署 seed 幂等写入独立管理员和三个演示身份，只在任务表为空时于单一事务中初始化十二项任务；显式 reset 才替换任务数据。
+PostgreSQL 持久化账户、角色与权限关系、任务及有序任务事件。数据完整性由外键、唯一约束、必要索引和乐观版本列共同维护；账户与角色采用逻辑删除，任务事件保留解释历史所需的操作人角色快照。数据库模式只通过 migration 演进，所有运行环境永久使用 `synchronize: false`。
 
-HTTP 使用 URI 版本 `/api/v1`。稳定枚举、字段、状态码与 demo-only 身份头以 `/api/openapi.json` 为唯一字段契约；本文不复制 DTO 字段以避免双重真相。未来正式认证只替换身份适配器。
+部署 seed 幂等初始化演示身份，并且只在任务数据为空时于单一事务中初始化演示任务；只有显式 reset 才替换任务数据。seed 与 reset 不读取浏览器状态，也不能绕过 Feature 所属的持久化边界。
+
+HTTP 使用 URI 版本 `/api/v1`。稳定枚举、字段、状态码与 demo-only 身份头以 `/api/openapi.json` 为唯一字段契约；本文不复制 DTO 字段以避免双重真相。演示身份头、demo 路由、seed 和 reset 只服务演示环境，不构成正式认证或生产安全边界；未来正式认证只替换身份适配器。
 
 ## 前端边界
 
-页面启动时读取活跃身份和当前用户可见的全部任务，随后在内存执行 hash 路由、范围、状态、搜索和统计。拥有 `system.manage` 的身份还可进入 `#admin` 管理视图，管理操作成功后重新读取总览。命令成功后重新读取任务；网络失败和乐观冲突沿用 toast/表单错误语言并重新同步。`RequestGate` 阻止同一命令重复提交。用户内容只经 `textContent` 或安全节点工厂进入 DOM。
+前端按职责分离装配与路由/API、任务行为与渲染、管理行为与渲染、身份偏好和主题系统；入口只负责组合这些能力，不承载业务规则。客户端路由和页面状态共同驱动视图切换；页面启动时读取活跃身份和服务器状态，筛选、搜索和统计等本地读取交互基于内存快照完成。
 
-十套主题是完整的类型化令牌配置。批量注册先验证后提交，失败不会留下半注册状态。主题值和注册顺序来自旧原型；视觉测试直接使用迁移前冻结的 PNG，要求 `maxDiffPixels: 0`。
+管理能力由服务器授权结果控制，不能仅依靠客户端界面隐藏。命令执行期间必须阻止同一操作重复提交；成功后重新读取受影响的服务器状态，失败或乐观冲突时保留既有错误反馈，并在服务器状态可能变化时重新同步，避免客户端快照继续作为权威状态。
+
+浏览器只持久化当前演示身份和视觉偏好；任务、权限状态和其他服务器数据不进入浏览器持久化存储，秘密不得写入其中。用户内容只经 `textContent` 或安全节点工厂进入 DOM，不能通过 HTML 字符串拼接进入页面。
+
+主题使用完整的类型化令牌配置。批量注册先验证后提交，失败不会留下半注册状态。主题值和注册顺序来自旧原型；“瑞士国际”主题的桌面与移动视觉测试直接使用迁移前冻结的 PNG，要求 `maxDiffPixels: 0`。
 
 ## 运行与部署
 
-配置仅来自环境变量，并在启动时验证。PostgreSQL 连接、查询和 readiness 探测都有明确超时，意外异常在返回安全错误信封前写入结构化日志。镜像用固定 Node 24.20.0 多阶段构建，生产层只安装运行依赖并以 `node` 用户启动；Compose 的应用文件系统只读。migration 和非破坏性 seed 是先于无状态应用的一次性服务。存活检查不依赖数据库，就绪检查实际执行 PostgreSQL 查询。
+配置仅来自环境变量，并在启动时验证。PostgreSQL 连接、查询和 readiness 探测都有明确超时，意外异常在返回安全错误信封前写入结构化日志。镜像使用多阶段构建，生产层只安装运行依赖并以非 root 用户启动；Compose 的应用文件系统只读。migration 和非破坏性 seed 是先于无状态应用的一次性服务。存活检查不依赖数据库，就绪检查实际执行 PostgreSQL 查询。
+
+## 架构变更判定
+
+在既有边界内新增普通用例、读取投影、业务表或演示 fixture，不构成架构变化，无需更新本文。改变一级 Feature 拓扑、分层职责或依赖方向、Feature 公共合同、Composition Root 与 `common` 规则、事务及一致性策略、数据持久化原则、认证与安全边界、前端状态与持久化架构、部署拓扑或重大基础设施选型，属于架构变化，必须同步更新本文和相应的可执行验证。

@@ -1,21 +1,17 @@
 # 仓库贡献规则
 
-## 模块边界
+## 架构约束
 
-- `apps/api` 按 `tasks`、`identity`、`authorization`、`health` 功能模块组织；业务模块遵守 Domain / Application / Presentation / Infrastructure 依赖方向。
-- Domain 必须是纯 TypeScript，禁止 NestJS、TypeORM、Fastify、HTTP、PostgreSQL、SQL 和装饰器。
-- Application 只依赖领域与窄端口；禁止 TypeORM、ORM 实体、`EntityManager`、`QueryRunner`、HTTP 类型和直接 SQL。
-- Presentation 负责控制器、DTO、校验、守卫、OpenAPI 与 HTTP 错误映射；Infrastructure 隔离 ORM、数据库、迁移、查询、仓储和事务适配器。
-- 禁止 `GenericRepository<T>`、`BaseRepository<T>`、`BaseService<T>`、全局事务上下文和服务定位器。DTO、领域模型、读取投影、ORM 实体保持分离。
-- `apps/web` 将装配/路由/API、任务行为与渲染、身份偏好、主题分别放在 `core`、`tasks`、`profile`、`styles`。入口仅装配依赖；用户内容只通过 `textContent` 或安全节点工厂写入。
+- 仓库采用按 Feature 划分的模块化单体；完整架构定义、分层职责、依赖方向、公共契约、数据与事务边界以 `docs/architecture.md` 为唯一事实源。涉及架构的任务必须先阅读该文档。
+- 必须保持既有分层依赖方向和 Feature 公共边界；不得通过内部跨 Feature import、re-export 或其他方式绕过公共契约。
+- 需求若改变既有架构决策，必须同步更新 `docs/architecture.md` 和相应验证，不得静默改变架构。
+- `npm run architecture` 是架构边界的可执行门禁；不得削弱、绕过或针对性规避检查器来容纳违规实现。
 
-## 数据与运行约束
+## 数据与安全硬约束
 
-- PostgreSQL 是服务器任务权威数据源；TypeORM `synchronize` 永远关闭，模式只经 migration 修改。
-- 应用层决定显式事务边界；同一事务的聚合更新和事件追加共享底层事务并使用乐观版本条件。
-- 服务器实例无状态；配置使用环境变量。不要添加 SQLite、Redis、CQRS、Outbox、Event Sourcing、Helm 或正式认证，除非范围明确改变。
-- `X-Demo-User-Id`、demo 路由、seed/reset 均为 demo-only。浏览器只保存当前演示身份和视觉偏好，不保存任务或秘密。
-- OpenAPI 是唯一 HTTP 字段契约。改变字段、枚举或状态码时先更新失败测试和 OpenAPI 描述。
+- 除非任务明确改变架构范围，不得擅自引入 SQLite、Redis、CQRS、Outbox、Event Sourcing、Helm 或正式认证等重大技术。
+- `X-Demo-User-Id`、demo 路由、seed/reset 均为 demo-only，不得视为正式认证或生产安全机制。浏览器只保存当前演示身份和视觉偏好，不保存任务或秘密。
+- OpenAPI 是唯一 HTTP 字段契约；改变字段、枚举或状态码时，必须先更新失败测试和 OpenAPI 描述。
 
 ## 环境与验证前置条件
 
@@ -29,6 +25,7 @@
 
 - 使用固定 Node 24.20.0、npm 11.19.1、strict TypeScript、两空格缩进、单引号和精确依赖版本。
 - 所有手写代码文件以职责/层级注释开头。顶层具名函数、类方法、构造器、迁移方法、导出可调用对象和测试用例使用说明约束、副作用或意图的 TSDoc/JSDoc；简单内联 callback、映射、生成物、JSON、lockfile 和编译产物豁免。
+- 前端用户内容只通过 `textContent` 或安全节点工厂写入 DOM。
 - 保持现有中文文案、hash、HTML 节点顺序、class、DOM/ARIA 与十主题顺序/令牌，除非需求明确改变并更新行为/视觉基线。
 - Product Design 生成的图片必须在生成后复制到当前仓库内的 `design-concepts/` 目录，并按功能或方案使用稳定文件名；交付时报告项目内相对路径。不要只引用 Codex 外部缓存目录中的生成图片路径。
 - 保留工作区无关修改；不要用破坏性 Git 或文件命令。
