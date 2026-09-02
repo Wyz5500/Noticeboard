@@ -2,7 +2,7 @@
 
 ## 模块边界
 
-- `apps/api` 按 `tasks`、`identity`、`health` 功能模块组织；业务模块遵守 Domain / Application / Presentation / Infrastructure 依赖方向。
+- `apps/api` 按 `tasks`、`identity`、`authorization`、`health` 功能模块组织；业务模块遵守 Domain / Application / Presentation / Infrastructure 依赖方向。
 - Domain 必须是纯 TypeScript，禁止 NestJS、TypeORM、Fastify、HTTP、PostgreSQL、SQL 和装饰器。
 - Application 只依赖领域与窄端口；禁止 TypeORM、ORM 实体、`EntityManager`、`QueryRunner`、HTTP 类型和直接 SQL。
 - Presentation 负责控制器、DTO、校验、守卫、OpenAPI 与 HTTP 错误映射；Infrastructure 隔离 ORM、数据库、迁移、查询、仓储和事务适配器。
@@ -21,8 +21,9 @@
 
 - 项目固定使用 Node `24.20.0` 与 npm `11.19.1`。运行测试前先检查 `node --version` 和 `npm --version`；如果出现 `node:util` 缺少 `styleText` 的 Vitest/Rolldown 启动错误，通常是误用了 Node 18，切换到 Node 24 后再试，不要重装依赖。
 - 若终端未加载版本管理器，请先将当前运行时切换到 Node `24.20.0`，再执行 `npm run verify`。
-- 行为、视觉和完整验证依赖本机 PostgreSQL `127.0.0.1:54329`。先确认 Docker/OrbStack 正常运行，然后执行 `docker compose up -d --wait postgres`；需要单独准备数据时使用项目已有的 `npm run db:migrate` 和 `npm run db:seed`，不要改用 SQLite。
-- 若出现 Docker socket `permission denied`（例如 OrbStack 的 `docker.sock`）或应用连接 PostgreSQL 时出现 `connect EPERM 127.0.0.1:54329`，这是执行环境没有 Docker socket/本机端口权限，不是应用故障。切换到允许访问 Docker 与本机测试端口的终端/执行环境后，重跑原命令；在受限代理环境中按其权限流程申请放行。
+- 仓库标准运行与完整验证统一通过 `npm run instance -- ...` 管理，支持 `up`、`status`、`down`、`destroy` 和 `verify`；`npm run verify` 委托给当前 worktree 的 `instance -- verify`。每个 worktree 使用独立的 Compose project、PostgreSQL 容器、网络和卷，应用与数据库宿主机端口由 Docker 动态分配；不要预先手工启动共享的普通 `docker compose` 栈，也不要假设固定端口。
+- instance verify 会自动向测试注入当前实例的 `DATABASE_URL_TEST` 和 `E2E_BASE_URL`。单独运行 Playwright 时仍支持 standalone 模式：没有 `E2E_BASE_URL` 时会在 `127.0.0.1:3100` 启动应用；未显式提供 `DATABASE_URL_TEST` 时才回退到 `127.0.0.1:54329` 测试数据库。该回退不是仓库标准运行模型。
+- 若出现 Docker socket `permission denied`（例如 OrbStack 的 `docker.sock`）或连接 localhost 动态端口时出现 `EPERM`，这是执行环境没有 Docker socket 或本机端口权限，不是应用故障。切换到允许访问 Docker 与本机测试端口的终端/执行环境后，重跑原命令；在受限代理环境中按其权限流程申请放行。
 
 ## 编码与注释
 
@@ -38,4 +39,4 @@
 - 领域/前端规则进单元测试；PostgreSQL 语义进仓储契约；HTTP/DTO/guard/OpenAPI/健康进 API 测试；跨页面交互进 Playwright 行为测试；外观进零像素视觉测试。
 - 视觉验证只检查“瑞士国际”主题；其桌面端与移动端截图作为唯一视觉基准。其他主题按类似于 Mod 的定位处理，不纳入视觉回归截图检查，但仍须通过主题注册、令牌、类型与行为质量检查。
 - 主题契约见 `style-configs/README.md`，架构决策见 `docs/architecture.md`，运行方式见 `README.md`。
-- 项目完整验证命令为 `npm run verify`，依次检查格式、lint、类型、注释、架构、单元/API/PostgreSQL/行为/视觉测试，并执行 `git diff --check`。
+- 项目完整验证命令为 `npm run verify`，依次检查格式、lint、类型、注释、架构、实例生命周期、单元、API、PostgreSQL 契约、Playwright 行为和视觉测试，并执行 `git diff --check`。
