@@ -60,13 +60,12 @@ function assertPrimaryWorktree() {
   return commonDirectory;
 }
 
-/** Executes the single non-destructive deployment operation. */
-function deploy({ dryRun }) {
-  const commonDirectory = assertPrimaryWorktree();
-  const argumentsToRun = [
+/** Builds the single non-destructive permanent deployment command. */
+export function createDeploymentArguments(composeFile = COMPOSE_FILE) {
+  return [
     'compose',
     '-f',
-    COMPOSE_FILE,
+    composeFile,
     '-p',
     DEPLOY_PROJECT_NAME,
     'up',
@@ -74,6 +73,12 @@ function deploy({ dryRun }) {
     '--build',
     '--wait',
   ];
+}
+
+/** Executes the single non-destructive deployment operation. */
+function deploy({ dryRun }) {
+  const commonDirectory = assertPrimaryWorktree();
+  const argumentsToRun = createDeploymentArguments();
   if (dryRun) {
     process.stdout.write(
       `DRY RUN: ${formatCommand('docker', argumentsToRun)}\n`,

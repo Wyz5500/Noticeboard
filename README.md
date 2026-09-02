@@ -77,7 +77,7 @@ npm run instance -- status  # 显示当前实例和动态端口
 npm run verify             # 完整交付门禁
 ```
 
-数据库命令读取 `DATABASE_URL`；API/契约集成测试读取 `DATABASE_URL_TEST`。由实例 CLI 执行的验证会自动注入当前实例的 `DATABASE_URL_TEST` 和 `E2E_BASE_URL`。单独执行 `npm run test:e2e` 或 `npm run test:visual` 时，会创建带 `-playwright` 后缀的 worktree 专用 Compose project，使用动态端口且避开 `3000`；成功后删除容器、网络和数据库卷，失败时保留现场。Playwright 配置不再使用固定的 `3100` 或 `54329` 回退端口。
+数据库命令读取 `DATABASE_URL`；API/契约集成测试读取 `DATABASE_URL_TEST`。由实例 CLI 执行的验证会自动注入当前实例的 `DATABASE_URL_TEST`、`E2E_BASE_URL`、`TASK_BUSINESS_TIME_ZONE=Asia/Shanghai` 和 `TASK_CURRENT_DATE_OVERRIDE=2026-09-01`，使任务状态测试不随真实日历漂移。单独执行 `npm run test:e2e` 或 `npm run test:visual` 时，会创建带 `-playwright` 后缀的 worktree 专用 Compose project，使用同一固定业务日期、动态端口且避开 `3000`；成功后删除容器、网络和数据库卷，失败时保留现场。永久部署只固定上海业务时区，不设置日期覆盖。Playwright 配置不再使用固定的 `3100` 或 `54329` 回退端口。
 
 ## 项目结构
 

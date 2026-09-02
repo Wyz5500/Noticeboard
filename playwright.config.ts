@@ -3,6 +3,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const externalBaseUrl = process.env.E2E_BASE_URL?.trim() || undefined;
+const taskBusinessTimeZone =
+  process.env.TASK_BUSINESS_TIME_ZONE?.trim() || 'Asia/Shanghai';
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -16,7 +18,7 @@ export default defineConfig({
   use: {
     baseURL: externalBaseUrl,
     locale: 'zh-CN',
-    timezoneId: 'Asia/Shanghai',
+    timezoneId: taskBusinessTimeZone,
     contextOptions: { reducedMotion: 'reduce' },
     trace: 'retain-on-failure',
   },

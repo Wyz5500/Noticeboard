@@ -14,6 +14,8 @@ const DATABASE_PASSWORD = 'noticeboard';
 const DATABASE_NAME = 'noticeboard';
 const RESERVED_APP_PORT = 3000;
 const MAX_PORT_ALLOCATION_ATTEMPTS = 3;
+const TASK_BUSINESS_TIME_ZONE = 'Asia/Shanghai';
+const TASK_CURRENT_DATE_OVERRIDE = '2026-09-01';
 const NPM_COMMAND = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 /** Converts worktree path text into a lowercase Docker-compatible identifier part. */
@@ -78,14 +80,18 @@ export function createInstanceEnvironment(appPort, databasePort) {
   return {
     DATABASE_URL_TEST: `postgresql://${DATABASE_USER}:${DATABASE_PASSWORD}@127.0.0.1:${databasePort}/${DATABASE_NAME}`,
     E2E_BASE_URL: `http://127.0.0.1:${appPort}`,
+    TASK_BUSINESS_TIME_ZONE,
+    TASK_CURRENT_DATE_OVERRIDE,
   };
 }
 
-/** Creates empty host-port overrides so worktree Compose commands request dynamic ports. */
+/** Creates dynamic-port overrides and stable task-clock settings for worktree Compose. */
 export function createInstanceComposeEnvironment() {
   return {
     APP_HOST_PORT: '',
     POSTGRES_HOST_PORT: '',
+    TASK_BUSINESS_TIME_ZONE,
+    TASK_CURRENT_DATE_OVERRIDE,
   };
 }
 

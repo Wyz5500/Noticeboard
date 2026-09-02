@@ -7,6 +7,7 @@ const STATUS_BY_LABEL: Record<Exclude<FilterLabel, '全部'>, TaskStatus> = {
   进行中: 'in_progress',
   已完成: 'completed',
   重新打开: 'reopened',
+  已失效: 'expired',
   关闭: 'closed',
 };
 
@@ -65,6 +66,7 @@ export function taskCounts(tasks: TaskResource[]): {
   inProgress: number;
   completed: number;
   reopened: number;
+  expired: number;
   closed: number;
 } {
   return {
@@ -73,6 +75,7 @@ export function taskCounts(tasks: TaskResource[]): {
     inProgress: tasks.filter((task) => task.status === 'in_progress').length,
     completed: tasks.filter((task) => task.status === 'completed').length,
     reopened: tasks.filter((task) => task.status === 'reopened').length,
+    expired: tasks.filter((task) => task.status === 'expired').length,
     closed: tasks.filter((task) => task.status === 'closed').length,
   };
 }

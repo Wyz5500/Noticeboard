@@ -44,7 +44,10 @@ function describeError(exception: unknown): ErrorDescription {
     const status =
       exception.code === 'ACTION_FORBIDDEN'
         ? HttpStatus.FORBIDDEN
-        : HttpStatus.BAD_REQUEST;
+        : exception.code === 'TASK_EXPIRED' ||
+            exception.code === 'TASK_NOT_EXPIRED'
+          ? HttpStatus.CONFLICT
+          : HttpStatus.BAD_REQUEST;
     return { status, code: exception.code, message: exception.message };
   }
   if (exception instanceof HttpException) {

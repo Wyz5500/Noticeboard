@@ -88,7 +88,12 @@ describeDatabase('PostgreSQL task repository contract', () => {
       DEMO_ACTORS[0]!,
       '2026-08-30T09:00:00.000Z',
     );
-    created.act('accept', DEMO_ACTORS[1]!, '2026-08-30T10:00:00.000Z');
+    created.act(
+      'accept',
+      DEMO_ACTORS[1]!,
+      '2026-08-30T10:00:00.000Z',
+      '2026-08-30',
+    );
 
     await transaction.run(async (repository) => repository.insert(created));
     const restored = await transaction.run(async (repository) =>
@@ -101,6 +106,50 @@ describeDatabase('PostgreSQL task repository contract', () => {
         (event) => event.sequence,
       ),
     ).toEqual([1, 2]);
+  });
+
+  /** Proves expired-task renewal persists its new deadline, workflow, and event atomically. */
+  it('round-trips one renewed expired task', async () => {
+    const created = Task.create(
+      {
+        id: 'task-renewed-contract',
+        title: '续期仓储契约',
+        type: 'exploration',
+        description: '验证续期聚合往返',
+        reward: '12 金币',
+        dueDate: '2026-09-01',
+      },
+      DEMO_ACTORS[0]!,
+      '2026-08-30T09:00:00.000Z',
+    );
+    created.act(
+      'accept',
+      DEMO_ACTORS[1]!,
+      '2026-08-30T10:00:00.000Z',
+      '2026-08-30',
+    );
+    await transaction.run(async (repository) => repository.insert(created));
+    const loaded = await transaction.run(async (repository) =>
+      repository.findById('task-renewed-contract'),
+    );
+
+    loaded!.renewExpired(DEMO_ACTORS[0]!, {
+      dueDate: '2026-09-03',
+      recoveryStrategy: 'reopened',
+      currentDate: '2026-09-02',
+      at: '2026-09-02T04:00:00.000Z',
+    });
+    await transaction.run(async (repository) => repository.save(loaded!, 2));
+
+    await expect(query.getById('task-renewed-contract')).resolves.toMatchObject(
+      {
+        dueDate: '2026-09-03',
+        status: 'reopened',
+        assignee: null,
+        version: 3,
+        timeline: [{}, {}, { action: 'renewed', actor: DEMO_ACTORS[0] }],
+      },
+    );
   });
 
   /** Proves timeline actor names remain historical snapshots after account profile changes. */
@@ -200,8 +249,18 @@ describeDatabase('PostgreSQL task repository contract', () => {
     const current = await transaction.run(async (repository) =>
       repository.findById('task-race'),
     );
-    stale!.act('accept', DEMO_ACTORS[1]!, '2026-08-30T10:00:00.000Z');
-    current!.act('accept', DEMO_ACTORS[2]!, '2026-08-30T10:01:00.000Z');
+    stale!.act(
+      'accept',
+      DEMO_ACTORS[1]!,
+      '2026-08-30T10:00:00.000Z',
+      '2026-08-30',
+    );
+    current!.act(
+      'accept',
+      DEMO_ACTORS[2]!,
+      '2026-08-30T10:01:00.000Z',
+      '2026-08-30',
+    );
     await transaction.run(async (repository) => repository.save(current!, 1));
 
     await expect(

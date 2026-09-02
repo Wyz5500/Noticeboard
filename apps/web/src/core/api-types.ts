@@ -1,8 +1,10 @@
 /** Defines the browser-facing OpenAPI resource shapes without sharing server DTO classes. */
 
-export type TaskStatus =
+export type TaskWorkflowStatus =
   'not_started' | 'in_progress' | 'completed' | 'reopened' | 'closed';
+export type TaskStatus = TaskWorkflowStatus | 'expired';
 export type TaskAction = 'accept' | 'complete' | 'approve' | 'reopen' | 'close';
+export type TaskRecoveryStrategy = 'preserve_status' | 'reopened';
 export type TaskType =
   'exploration' | 'collection' | 'escort' | 'bounty' | 'building';
 
@@ -71,7 +73,13 @@ export interface UpdateAdminRoleRequest {
 export interface TaskEventResource {
   sequence: number;
   action:
-    'created' | 'accepted' | 'completed' | 'approved' | 'reopened' | 'closed';
+    | 'created'
+    | 'accepted'
+    | 'completed'
+    | 'approved'
+    | 'reopened'
+    | 'renewed'
+    | 'closed';
   actionLabel: string;
   actor: ActorResource;
   at: string;
@@ -88,6 +96,8 @@ export interface TaskResource {
   dueDate: string;
   publisher: ActorResource;
   assignee: ActorResource | null;
+  workflowStatus: TaskWorkflowStatus;
+  workflowStatusLabel: string;
   status: TaskStatus;
   statusLabel: string;
   createdAt: string;
@@ -108,6 +118,13 @@ export interface ActTaskRequest {
   action: TaskAction;
   expectedVersion: number;
 }
+
+export interface RenewExpiredTaskRequest {
+  dueDate: string;
+  recoveryStrategy: TaskRecoveryStrategy;
+  expectedVersion: number;
+}
+
 export type PermissionCode =
   | 'system.manage'
   | 'tasks.view'

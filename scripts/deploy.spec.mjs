@@ -5,11 +5,13 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { isPrimaryWorktreeGitDirectory } from './deploy.mjs';
+import {
+  createDeploymentArguments,
+  isPrimaryWorktreeGitDirectory,
+} from './deploy.mjs';
 
 const SCRIPT_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(SCRIPT_DIRECTORY, '..');
-const DEPLOY_SCRIPT_PATH = resolve(SCRIPT_DIRECTORY, 'deploy.mjs');
 const DEPLOY_WRAPPER_PATH = resolve(SCRIPT_DIRECTORY, 'deploy.sh');
 const DEPLOY_COMPOSE_PATH = resolve(PROJECT_ROOT, 'compose.deploy.yaml');
 const PLAYWRIGHT_PATH = resolve(PROJECT_ROOT, 'playwright.config.ts');
@@ -18,7 +20,13 @@ const PLAYWRIGHT_RUNNER_PATH = resolve(SCRIPT_DIRECTORY, 'run-playwright.mjs');
 /** Loads Playwright configuration in a clean child process for environment-sensitive assertions. */
 function readPlaywrightConfig(environment) {
   const childEnvironment = { ...process.env };
-  for (const key of ['DATABASE_URL', 'DATABASE_URL_TEST', 'E2E_BASE_URL']) {
+  for (const key of [
+    'DATABASE_URL',
+    'DATABASE_URL_TEST',
+    'E2E_BASE_URL',
+    'TASK_BUSINESS_TIME_ZONE',
+    'TASK_CURRENT_DATE_OVERRIDE',
+  ]) {
     delete childEnvironment[key];
   }
   Object.assign(childEnvironment, environment);
@@ -26,6 +34,7 @@ function readPlaywrightConfig(environment) {
   const source = `import config from ${JSON.stringify(moduleUrl)};
 process.stdout.write(JSON.stringify({
   baseURL: config.use?.baseURL,
+  timezoneId: config.use?.timezoneId,
   hasWebServer: config.webServer !== undefined,
 }));`;
   return JSON.parse(
@@ -54,31 +63,35 @@ test('recognizes only the common Git directory as the primary worktree', () => {
 });
 
 /** Prevents repeated deployment from gaining a destructive lifecycle branch. */
-test('dry-run deployment only upgrades the fixed noticeboard project', () => {
-  const output = execFileSync(
-    process.execPath,
-    [DEPLOY_SCRIPT_PATH, '--dry-run'],
-    { cwd: PROJECT_ROOT, encoding: 'utf8' },
-  );
+test('deployment only upgrades the fixed noticeboard project', () => {
+  const argumentsToRun = createDeploymentArguments(DEPLOY_COMPOSE_PATH);
 
-  assert.match(
-    output,
-    /docker compose -f .*compose\.deploy\.yaml -p noticeboard up -d --build --wait/,
+  assert.deepEqual(argumentsToRun, [
+    'compose',
+    '-f',
+    DEPLOY_COMPOSE_PATH,
+    '-p',
+    'noticeboard',
+    'up',
+    '-d',
+    '--build',
+    '--wait',
+  ]);
+  assert.doesNotMatch(
+    argumentsToRun.join(' '),
+    /\bdown\b|\bdestroy\b|volume rm|system prune/,
   );
-  assert.doesNotMatch(output, /\bdown\b|\bdestroy\b|volume rm|system prune/);
 });
 
-/** Prevents the shell compatibility wrapper from bypassing the deployment CLI. */
-test('deployment shell wrapper delegates the same dry-run contract', () => {
-  const output = execFileSync(DEPLOY_WRAPPER_PATH, ['--dry-run'], {
+/** Prevents the shell compatibility wrapper from bypassing the deployment CLI parser. */
+test('deployment shell wrapper delegates the help contract', () => {
+  const output = execFileSync(DEPLOY_WRAPPER_PATH, ['--help'], {
     cwd: PROJECT_ROOT,
     encoding: 'utf8',
   });
 
-  assert.match(
-    output,
-    /docker compose -f .*compose\.deploy\.yaml -p noticeboard up -d --build --wait/,
-  );
+  assert.match(output, /用法：npm run deploy/);
+  assert.match(output, /--dry-run/);
 });
 
 /** Prevents the compatibility wrapper from silently ignoring unsupported arguments. */
@@ -110,18 +123,23 @@ test('deployment Compose fixes only the app host port and retains the legacy dat
   assert.doesNotMatch(compose, /POSTGRES_HOST_PORT|54329:5432/);
   assert.match(postgresSection, /restart: unless-stopped/);
   assert.match(compose, /^\s{4}name: noticeboard-postgres$/m);
+  assert.match(compose, /TASK_BUSINESS_TIME_ZONE: Asia\/Shanghai/);
+  assert.doesNotMatch(compose, /TASK_CURRENT_DATE_OVERRIDE/);
 });
 
 /** Prevents raw Playwright configuration from reviving fixed standalone ports. */
 test('Playwright configuration requires an injected dynamic instance', () => {
   const standaloneConfig = readPlaywrightConfig({ E2E_BASE_URL: '   ' });
   assert.equal(standaloneConfig.baseURL, undefined);
+  assert.equal(standaloneConfig.timezoneId, 'Asia/Shanghai');
   assert.equal(standaloneConfig.hasWebServer, false);
 
   const externalConfig = readPlaywrightConfig({
     E2E_BASE_URL: ' http://127.0.0.1:4556 ',
+    TASK_BUSINESS_TIME_ZONE: ' Pacific/Auckland ',
   });
   assert.equal(externalConfig.baseURL, 'http://127.0.0.1:4556');
+  assert.equal(externalConfig.timezoneId, 'Pacific/Auckland');
   assert.equal(externalConfig.hasWebServer, false);
 });
 

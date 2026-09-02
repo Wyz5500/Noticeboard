@@ -9,6 +9,14 @@ export const TASK_STATUSES = [
   'closed',
 ] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
+export const TASK_EFFECTIVE_STATUSES = [...TASK_STATUSES, 'expired'] as const;
+export type TaskEffectiveStatus = (typeof TASK_EFFECTIVE_STATUSES)[number];
+
+export const TASK_RECOVERY_STRATEGIES = [
+  'preserve_status',
+  'reopened',
+] as const;
+export type TaskRecoveryStrategy = (typeof TASK_RECOVERY_STRATEGIES)[number];
 
 export const TASK_ACTIONS = [
   'accept',
@@ -34,6 +42,7 @@ export const TASK_EVENT_ACTIONS = [
   'completed',
   'approved',
   'reopened',
+  'renewed',
   'closed',
 ] as const;
 export type TaskEventAction = (typeof TASK_EVENT_ACTIONS)[number];
@@ -45,6 +54,13 @@ export interface CreateTaskValues {
   description: string;
   reward: string;
   dueDate: string;
+}
+
+export interface RenewExpiredTaskValues {
+  dueDate: string;
+  recoveryStrategy: TaskRecoveryStrategy;
+  currentDate: string;
+  at: string;
 }
 
 export interface TaskEvent {

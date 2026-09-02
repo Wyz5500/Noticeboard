@@ -16,6 +16,19 @@ async function waitForModalTransition(page: Page): Promise<void> {
     });
 }
 
+/** Waits for the renewal dialog transition to finish before taking a stable screenshot. */
+async function waitForRenewalTransition(page: Page): Promise<void> {
+  await page
+    .locator('#renewalModal, #renewalBackdrop')
+    .evaluateAll(async (elements) => {
+      await Promise.all(
+        elements.flatMap((element) =>
+          element.getAnimations().map((animation) => animation.finished),
+        ),
+      );
+    });
+}
+
 /** Stabilizes seeded management records while preserving visible list layout for visual baselines. */
 async function stabilizeDynamicAdminRecords(
   page: Page,
@@ -188,7 +201,7 @@ test.beforeEach(async ({ page, request }) => {
 });
 
 for (const themeId of THEME_IDS) {
-  /** Captures home, profile, tasks, drawer, modal, admin landing, users, and roles states for one visual theme. */
+  /** Captures home, profile, tasks, drawer, creation, renewal, and admin states for one visual theme. */
   test(`${themeId} major states @visual`, async ({ page, isMobile }) => {
     await page.locator('#profileButton').click();
     await page.locator('#styleSelect').selectOption(themeId);
@@ -223,6 +236,17 @@ for (const themeId of THEME_IDS) {
     });
 
     await page.locator('#closeModalButton').click();
+    await page
+      .locator('.task-card')
+      .filter({ hasText: '北境哨站补给护送' })
+      .click();
+    await page.getByRole('button', { name: '续期并重新打开' }).click();
+    await waitForRenewalTransition(page);
+    await expect(page).toHaveScreenshot(`${themeId}-renewal.png`, {
+      fullPage: false,
+    });
+    await page.locator('#closeRenewalButton').click();
+    await page.locator('[data-close-drawer]').click();
     await page.locator('#profileButton').click();
     await page.locator('#identitySelect').selectOption('noticeboard-admin');
     await page.keyboard.press('Escape');

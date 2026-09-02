@@ -15,6 +15,7 @@ import { ActOnTask } from './use-cases/act-on-task.js';
 import { CreateTask } from './use-cases/create-task.js';
 import { GetTask } from './use-cases/get-task.js';
 import { ListTasks } from './use-cases/list-tasks.js';
+import { RenewExpiredTask } from './use-cases/renew-expired-task.js';
 import { ResetDemoTasks } from './use-cases/reset-demo-tasks.js';
 
 const ACTORS: Actor[] = [
@@ -22,6 +23,18 @@ const ACTORS: Actor[] = [
   { id: 'adventurer-a', name: '用户 B', role: 'user' },
   { id: 'adventurer-b', name: '用户 C', role: 'user' },
 ];
+const FIXED_CLOCK = {
+  read: () => ({
+    instant: '2026-08-30T09:00:00.000Z',
+    currentDate: '2026-08-30',
+  }),
+};
+const ACTION_CLOCK = {
+  read: () => ({
+    instant: '2026-08-30T10:00:00.000Z',
+    currentDate: '2026-08-30',
+  }),
+};
 
 /** Supplies the fixed demo identity directory used by application tests. */
 class MemoryIdentityDirectory implements IdentityDirectoryPort {
@@ -120,7 +133,7 @@ async function publish(
     new MemoryTransaction(repository),
     new MemoryIdentityDirectory(),
     () => 'task-created',
-    () => '2026-08-30T09:00:00.000Z',
+    FIXED_CLOCK,
   );
   await useCase.execute(actorId, {
     title: '  新委托  ',
@@ -152,13 +165,42 @@ describe('task application use cases', () => {
     });
   });
 
+  it('returns a newly created task through the effective-status projection', async () => {
+    const repository = new MemoryTaskRepository();
+    const clock = Object.assign(() => '2026-09-02T04:00:00.000Z', {
+      read: () => ({
+        instant: '2026-09-02T04:00:00.000Z',
+        currentDate: '2026-09-02',
+      }),
+    });
+    const useCase = new CreateTask(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      () => 'task-expired-on-create',
+      clock,
+    );
+
+    await expect(
+      useCase.execute(ACTORS[0]!.id, {
+        title: '历史委托',
+        type: 'collection',
+        description: '创建后应立即投影为失效',
+        reward: '18 金币',
+        dueDate: '2026-09-01',
+      }),
+    ).resolves.toMatchObject({
+      workflowStatus: 'not_started',
+      status: 'expired',
+    });
+  });
+
   it('rejects an unknown demo actor before creating a task', async () => {
     const repository = new MemoryTaskRepository();
     const useCase = new CreateTask(
       new MemoryTransaction(repository),
       new MemoryIdentityDirectory(),
       () => 'task-created',
-      () => '2026-08-30T09:00:00.000Z',
+      FIXED_CLOCK,
     );
 
     await expect(
@@ -179,7 +221,7 @@ describe('task application use cases', () => {
     const useCase = new ActOnTask(
       new MemoryTransaction(repository),
       new MemoryIdentityDirectory(),
-      () => '2026-08-30T10:00:00.000Z',
+      ACTION_CLOCK,
     );
 
     await expect(
@@ -199,6 +241,129 @@ describe('task application use cases', () => {
     });
   });
 
+  it('rejects ordinary actions when the injected business date has expired the task', async () => {
+    const repository = new MemoryTaskRepository();
+    await repository.insert(
+      Task.create(
+        {
+          id: 'task-expired',
+          title: '失效任务',
+          type: 'exploration',
+          description: '验证动作门禁',
+          reward: '10 金币',
+          dueDate: '2026-09-01',
+        },
+        ACTORS[0]!,
+        '2026-08-30T09:00:00.000Z',
+      ),
+    );
+    const clock = Object.assign(() => '2026-09-02T04:00:00.000Z', {
+      read: () => ({
+        instant: '2026-09-02T04:00:00.000Z',
+        currentDate: '2026-09-02',
+      }),
+    });
+    const useCase = new ActOnTask(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      clock,
+    );
+
+    await expect(
+      useCase.execute(ACTORS[1]!.id, 'task-expired', 'accept', 1),
+    ).rejects.toMatchObject({ code: 'TASK_EXPIRED' });
+    expect(
+      (await repository.findById('task-expired'))!.toSnapshot(),
+    ).toMatchObject({ status: 'not_started', version: 1, assignee: null });
+  });
+
+  it('renews an expired task atomically at the expected version', async () => {
+    const repository = new MemoryTaskRepository();
+    const task = Task.create(
+      {
+        id: 'task-expired-renewal',
+        title: '失效任务',
+        type: 'exploration',
+        description: '验证续期用例',
+        reward: '10 金币',
+        dueDate: '2026-09-01',
+      },
+      ACTORS[0]!,
+      '2026-08-30T09:00:00.000Z',
+    );
+    task.act('accept', ACTORS[1]!, '2026-08-30T10:00:00.000Z', '2026-08-30');
+    await repository.insert(task);
+    const useCase = new RenewExpiredTask(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      {
+        read: () => ({
+          instant: '2026-09-02T04:00:00.000Z',
+          currentDate: '2026-09-02',
+        }),
+      },
+    );
+    await useCase.execute(ACTORS[0]!.id, 'task-expired-renewal', {
+      dueDate: '2026-09-03',
+      recoveryStrategy: 'reopened',
+      expectedVersion: 2,
+    });
+
+    expect(
+      (await repository.findById('task-expired-renewal'))!.toSnapshot(),
+    ).toMatchObject({
+      dueDate: '2026-09-03',
+      status: 'reopened',
+      assignee: null,
+      version: 3,
+      timeline: [{}, {}, { action: 'renewed', actor: ACTORS[0] }],
+    });
+  });
+
+  it('requires review and view permissions before renewing an expired task', async () => {
+    const repository = new MemoryTaskRepository();
+    await repository.insert(
+      Task.create(
+        {
+          id: 'task-expired-permission',
+          title: '失效任务',
+          type: 'exploration',
+          description: '验证续期权限',
+          reward: '10 金币',
+          dueDate: '2026-09-01',
+        },
+        ACTORS[0]!,
+        '2026-08-30T09:00:00.000Z',
+      ),
+    );
+    const authorization: AuthorizationPort = {
+      hasPermission: (_userId, permission) =>
+        Promise.resolve(permission !== 'tasks.review'),
+    };
+    const useCase = new RenewExpiredTask(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      {
+        read: () => ({
+          instant: '2026-09-02T04:00:00.000Z',
+          currentDate: '2026-09-02',
+        }),
+      },
+      authorization,
+    );
+
+    await expect(
+      useCase.execute(ACTORS[0]!.id, 'task-expired-permission', {
+        dueDate: '2026-09-03',
+        recoveryStrategy: 'preserve_status',
+        expectedVersion: 1,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(
+      (await repository.findById('task-expired-permission'))!.toSnapshot(),
+    ).toMatchObject({ dueDate: '2026-09-01', version: 1 });
+  });
+
   /** Ensures action permission without task-read permission cannot commit a mutation. */
   it('requires task-read permission before committing an action', async () => {
     const repository = new MemoryTaskRepository();
@@ -210,7 +375,7 @@ describe('task application use cases', () => {
     const useCase = new ActOnTask(
       new MemoryTransaction(repository),
       new MemoryIdentityDirectory(),
-      () => '2026-08-30T10:00:00.000Z',
+      ACTION_CLOCK,
       authorization,
     );
 
@@ -230,9 +395,9 @@ describe('task application use cases', () => {
     const action = new ActOnTask(
       new MemoryTransaction(repository),
       new MemoryIdentityDirectory(),
-      () => '2026-08-30T10:00:00.000Z',
+      ACTION_CLOCK,
     );
-    const detail = new GetTask(new MemoryTaskQuery([]));
+    const detail = new GetTask(new MemoryTaskQuery([]), FIXED_CLOCK);
 
     await expect(
       action.execute(ACTORS[0]!.id, 'missing', 'close', 1),
@@ -244,12 +409,40 @@ describe('task application use cases', () => {
     });
   });
 
-  it('delegates list and detail reads to dedicated query projections', async () => {
-    const model = { id: 'read-1' } as TaskReadModel;
+  it('derives effective list and detail statuses from the injected business date', async () => {
+    const model: TaskReadModel = {
+      id: 'read-1',
+      title: '失效任务',
+      type: 'exploration',
+      description: '验证读取投影',
+      reward: '10 金币',
+      dueDate: '2026-09-01',
+      publisher: ACTORS[0]!,
+      assignee: ACTORS[1]!,
+      status: 'in_progress',
+      createdAt: '2026-08-29T09:00:00.000Z',
+      updatedAt: '2026-08-29T10:00:00.000Z',
+      version: 2,
+      timeline: [],
+    };
     const query = new MemoryTaskQuery([model]);
+    const clock = {
+      read: () => ({
+        instant: '2026-09-02T04:00:00.000Z',
+        currentDate: '2026-09-02',
+      }),
+    };
+    const listTasks = new ListTasks(query, clock);
+    const getTask = new GetTask(query, clock);
 
-    await expect(new ListTasks(query).execute()).resolves.toEqual([model]);
-    await expect(new GetTask(query).execute('read-1')).resolves.toBe(model);
+    await expect(listTasks.execute()).resolves.toMatchObject([
+      { id: 'read-1', workflowStatus: 'in_progress', status: 'expired' },
+    ]);
+    await expect(getTask.execute('read-1')).resolves.toMatchObject({
+      id: 'read-1',
+      workflowStatus: 'in_progress',
+      status: 'expired',
+    });
   });
 
   it('resets exactly twelve demo tasks after validating the actor', async () => {

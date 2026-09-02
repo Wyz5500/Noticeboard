@@ -36,13 +36,14 @@ import { ActOnTask } from '../tasks/application/use-cases/act-on-task.js';
 import { CreateTask } from '../tasks/application/use-cases/create-task.js';
 import { GetTask } from '../tasks/application/use-cases/get-task.js';
 import { ListTasks } from '../tasks/application/use-cases/list-tasks.js';
+import { RenewExpiredTask } from '../tasks/application/use-cases/renew-expired-task.js';
 import { ResetDemoTasks } from '../tasks/application/use-cases/reset-demo-tasks.js';
-import type { TaskReadModel } from '../tasks/application/read-models/task-read-model.js';
+import type { TaskViewModel } from '../tasks/application/read-models/task-read-model.js';
 import { DomainError } from '../tasks/domain/domain-error.js';
 import { DemoTasksController } from '../tasks/presentation/demo-tasks.controller.js';
 import { TasksController } from '../tasks/presentation/tasks.controller.js';
 
-const TASK: TaskReadModel = {
+const TASK: TaskViewModel = {
   id: 'task-http',
   title: 'HTTP 契约任务',
   type: 'exploration',
@@ -51,6 +52,7 @@ const TASK: TaskReadModel = {
   dueDate: '2026-09-08',
   publisher: { id: 'noticeboard-master', name: '用户 A', role: 'user' },
   assignee: null,
+  workflowStatus: 'not_started',
   status: 'not_started',
   createdAt: '2026-08-30T09:00:00.000Z',
   updatedAt: '2026-08-30T09:00:00.000Z',
@@ -150,8 +152,26 @@ describe('HTTP API contract', () => {
                   ),
                 );
               }
+              if (id === 'task-expired-action') {
+                return Promise.reject(
+                  new DomainError('TASK_EXPIRED', '任务已失效'),
+                );
+              }
               if (id === 'task-internal') {
                 return Promise.reject(new Error('database password leaked'));
+              }
+              return Promise.resolve();
+            },
+          },
+        },
+        {
+          provide: RenewExpiredTask,
+          useValue: {
+            execute: (_actorId: string, id: string) => {
+              if (id === 'task-renewal-conflict') {
+                return Promise.reject(
+                  new AppError('CONFLICT', '任务已被其他操作更新'),
+                );
               }
               return Promise.resolve();
             },
@@ -328,6 +348,27 @@ describe('HTTP API contract', () => {
     });
   });
 
+  /** Proves expired-task renewal uses its dedicated optimistic command contract. */
+  it('renews an expired task through the dedicated endpoint', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/v1/tasks/${TASK.id}/expiration-renewal`,
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
+      payload: {
+        dueDate: '2026-09-10',
+        recoveryStrategy: 'preserve_status',
+        expectedVersion: 1,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      id: TASK.id,
+      workflowStatus: 'not_started',
+      status: 'not_started',
+    });
+  });
+
   /** Proves optimistic state conflicts map to status 409 with a stable code. */
   it('maps action version conflicts to 409', async () => {
     const response = await app.inject({
@@ -353,6 +394,21 @@ describe('HTTP API contract', () => {
     expect(response.statusCode).toBe(403);
     expect(response.json()).toMatchObject({
       error: { code: 'ACTION_FORBIDDEN' },
+    });
+  });
+
+  /** Proves a task crossing its due date maps ordinary actions to a conflict. */
+  it('maps expired task actions to 409', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tasks/task-expired-action/actions',
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
+      payload: { action: 'accept', expectedVersion: 1 },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      error: { code: 'TASK_EXPIRED' },
     });
   });
 
@@ -481,6 +537,10 @@ describe('HTTP API contract', () => {
     expect(
       document.paths['/api/v1/tasks/{taskId}/actions']?.post?.responses,
     ).toHaveProperty('409');
+    expect(
+      document.paths['/api/v1/tasks/{taskId}/expiration-renewal']?.post
+        ?.responses,
+    ).toHaveProperty('409');
     expect(document.paths['/health/ready']?.get?.responses).toHaveProperty(
       '503',
     );
@@ -495,7 +555,29 @@ describe('HTTP API contract', () => {
       'completed',
       'reopened',
       'closed',
+      'expired',
     ]);
+    expect(
+      document.components.schemas.TaskResponseDto?.properties?.workflowStatus
+        ?.enum,
+    ).toEqual([
+      'not_started',
+      'in_progress',
+      'completed',
+      'reopened',
+      'closed',
+    ]);
+    expect(
+      document.components.schemas.RenewExpiredTaskDto?.properties
+        ?.recoveryStrategy?.enum,
+    ).toEqual(['preserve_status', 'reopened']);
+    expect(
+      document.components.schemas.RenewExpiredTaskDto?.properties?.dueDate,
+    ).toMatchObject({ format: 'date' });
+    expect(
+      document.components.schemas.TaskEventResponseDto?.properties?.action
+        ?.enum,
+    ).toContain('renewed');
     expect(
       document.components.schemas.ActorResponseDto?.properties?.permissions
         ?.items?.enum,

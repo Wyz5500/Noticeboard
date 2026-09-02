@@ -42,6 +42,311 @@ const TASK_VIEWER: ActorResource = {
   permissions: ['tasks.view'],
 };
 
+describe('AppController expired task renewal', () => {
+  /** Ensures renewal submits the selected version and replaces the synchronized projection. */
+  it('renews the selected expired task exactly once', async () => {
+    const updated = { id: 'task-expired', version: 4 } as TaskResource;
+    const requests: unknown[] = [];
+    const controller = Object.create(AppController.prototype) as {
+      selectedTaskId: string | null;
+      tasks: TaskResource[];
+      currentUserId: string;
+      gate: { run: (_key: string, work: () => Promise<void>) => Promise<void> };
+      api: Pick<ApiClient, 'renewExpiredTask'>;
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      replaceTask: (task: TaskResource) => void;
+      closeRenewalDialog: () => void;
+      render: () => void;
+      showToast: (message: string) => void;
+      renewSelectedTask?: (command: {
+        dueDate: string;
+        recoveryStrategy: 'preserve_status' | 'reopened';
+      }) => Promise<void>;
+    };
+    controller.selectedTaskId = 'task-expired';
+    controller.tasks = [{ id: 'task-expired', version: 3 } as TaskResource];
+    controller.currentUserId = 'noticeboard-master';
+    controller.gate = { run: (_key, work) => work() };
+    controller.api = {
+      renewExpiredTask: (actorId, taskId, body) => {
+        requests.push({ actorId, taskId, body });
+        return Promise.resolve(updated);
+      },
+    };
+    controller.requestSnapshot = () => ({
+      actorId: 'noticeboard-master',
+      sequence: 1,
+      routeSequence: 1,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.replaceTask = vi.fn();
+    controller.closeRenewalDialog = vi.fn();
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+
+    if (controller.renewSelectedTask) {
+      await controller.renewSelectedTask({
+        dueDate: '2026-09-10',
+        recoveryStrategy: 'reopened',
+      });
+    }
+
+    expect(requests).toEqual([
+      {
+        actorId: 'noticeboard-master',
+        taskId: 'task-expired',
+        body: {
+          dueDate: '2026-09-10',
+          recoveryStrategy: 'reopened',
+          expectedVersion: 3,
+        },
+      },
+    ]);
+    expect(controller.replaceTask).toHaveBeenCalledWith(updated);
+    expect(controller.closeRenewalDialog).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures the home status rail exposes dynamically expired tasks. */
+  it('renders the expired task count', () => {
+    const controller = Object.create(AppController.prototype) as {
+      users: ActorResource[];
+      tasks: TaskResource[];
+      currentUserId: string;
+      route: { scope: 'all' };
+      elements: {
+        statTotal: { textContent: string };
+        statTotalDescription: { textContent: string };
+        statNotStarted: { textContent: string };
+        statActive: { textContent: string };
+        statReview: { textContent: string };
+        statReopened: { textContent: string };
+        statExpired: { textContent: string };
+        statClosed: { textContent: string };
+        filterList: { querySelectorAll: () => HTMLElement[] };
+      };
+      renderStats?: () => void;
+    };
+    controller.users = [TASK_VIEWER];
+    controller.currentUserId = TASK_VIEWER.id;
+    controller.route = { scope: 'all' };
+    controller.tasks = [
+      {
+        id: 'task-expired-count',
+        title: '已失效委托',
+        typeLabel: '探索',
+        description: '统计已失效任务',
+        publisher: TASK_VIEWER,
+        assignee: null,
+        status: 'expired',
+        timeline: [
+          {
+            actor: TASK_VIEWER,
+          },
+        ],
+      } as TaskResource,
+    ];
+    controller.elements = {
+      statTotal: { textContent: '' },
+      statTotalDescription: { textContent: '' },
+      statNotStarted: { textContent: '' },
+      statActive: { textContent: '' },
+      statReview: { textContent: '' },
+      statReopened: { textContent: '' },
+      statExpired: { textContent: '' },
+      statClosed: { textContent: '' },
+      filterList: { querySelectorAll: () => [] },
+    };
+
+    controller.renderStats?.();
+
+    expect(controller.elements.statExpired.textContent).toBe('1');
+  });
+
+  /** Ensures opening a drawer uses the server's current effective-status projection. */
+  it('loads a fresh task projection before opening the drawer', async () => {
+    const fresh = {
+      id: 'task-expired-drawer',
+      status: 'expired',
+      version: 3,
+    } as TaskResource;
+    const requests: unknown[] = [];
+    const controller = Object.create(AppController.prototype) as {
+      selectedTaskId: string | null;
+      currentUserId: string;
+      gate: { run: (_key: string, work: () => Promise<void>) => Promise<void> };
+      api: Pick<ApiClient, 'getTask'>;
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      replaceTask: (task: TaskResource) => void;
+      renderDrawer: () => void;
+      showToast: (message: string) => void;
+      openDrawer?: (taskId: string) => Promise<void>;
+    };
+    controller.selectedTaskId = null;
+    controller.currentUserId = TASK_VIEWER.id;
+    controller.gate = { run: (_key, work) => work() };
+    controller.api = {
+      getTask: (taskId, actorId) => {
+        requests.push({ taskId, actorId });
+        return Promise.resolve(fresh);
+      },
+    };
+    controller.requestSnapshot = () => ({
+      actorId: TASK_VIEWER.id,
+      sequence: 1,
+      routeSequence: 1,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.replaceTask = vi.fn();
+    controller.renderDrawer = vi.fn();
+    controller.showToast = vi.fn();
+
+    await controller.openDrawer?.('task-expired-drawer');
+
+    expect(requests).toEqual([
+      { taskId: 'task-expired-drawer', actorId: TASK_VIEWER.id },
+    ]);
+    expect(controller.replaceTask).toHaveBeenCalledWith(fresh);
+    expect(controller.renderDrawer).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures focus and visibility recovery share one fresh task-list projection. */
+  it('coalesces resumed-page refresh requests', async () => {
+    const frames: FrameRequestCallback[] = [];
+    const fresh = {
+      id: 'task-refreshed-after-resume',
+      status: 'expired',
+    } as TaskResource;
+    const listTasks = vi.fn(() => Promise.resolve([fresh]));
+    const controller = Object.create(AppController.prototype) as {
+      window: {
+        requestAnimationFrame: (callback: FrameRequestCallback) => number;
+      };
+      document: { visibilityState: DocumentVisibilityState };
+      api: Pick<ApiClient, 'listTasks'>;
+      gate: { run: (_key: string, work: () => Promise<void>) => Promise<void> };
+      users: ActorResource[];
+      tasks: TaskResource[];
+      tasksLoaded: boolean;
+      currentUserId: string;
+      identityChangeSequence: number;
+      routeChangeSequence: number;
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      render: () => void;
+      showToast: (message: string) => void;
+      scheduleTaskRefresh?: () => void;
+    };
+    controller.window = {
+      requestAnimationFrame: (callback) => {
+        frames.push(callback);
+        return frames.length;
+      },
+    };
+    controller.document = { visibilityState: 'visible' };
+    controller.api = { listTasks };
+    controller.gate = { run: (_key, work) => work() };
+    controller.users = [TASK_VIEWER];
+    controller.tasks = [STALE_TASK];
+    controller.tasksLoaded = true;
+    controller.currentUserId = TASK_VIEWER.id;
+    controller.identityChangeSequence = 0;
+    controller.routeChangeSequence = 0;
+    controller.requestSnapshot = () => ({
+      actorId: TASK_VIEWER.id,
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+
+    controller.scheduleTaskRefresh?.();
+    controller.scheduleTaskRefresh?.();
+
+    expect(frames).toHaveLength(1);
+    frames[0]?.(0);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(listTasks).toHaveBeenCalledOnce();
+    expect(controller.tasks).toEqual([fresh]);
+    expect(controller.render).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures the renewal dialog explains the original workflow and assignee reset. */
+  it('opens the renewal dialog with the selected task context', () => {
+    const add = vi.fn();
+    const controller = Object.create(AppController.prototype) as {
+      selectedTaskId: string | null;
+      tasks: TaskResource[];
+      elements: {
+        renewalModal: {
+          classList: { add: (name: string) => void };
+          setAttribute: (name: string, value: string) => void;
+        };
+        renewalBackdrop: { classList: { add: (name: string) => void } };
+        renewalForm: { reset: () => void };
+        renewalError: { textContent: string };
+        renewalCurrentDueDate: { textContent: string };
+        renewalWorkflowStatus: { textContent: string };
+        renewalDueDate: { value: string; focus: () => void };
+        renewalPreserveLabel: { textContent: string };
+      };
+      openRenewalDialog?: () => void;
+    };
+    controller.selectedTaskId = 'task-expired';
+    controller.tasks = [
+      {
+        id: 'task-expired',
+        dueDate: '2026-09-01',
+        workflowStatusLabel: '进行中',
+        status: 'expired',
+      } as TaskResource,
+    ];
+    controller.elements = {
+      renewalModal: {
+        classList: { add },
+        setAttribute: vi.fn(),
+      },
+      renewalBackdrop: { classList: { add: vi.fn() } },
+      renewalForm: { reset: vi.fn() },
+      renewalError: { textContent: '旧错误' },
+      renewalCurrentDueDate: { textContent: '' },
+      renewalWorkflowStatus: { textContent: '' },
+      renewalDueDate: { value: '', focus: vi.fn() },
+      renewalPreserveLabel: { textContent: '' },
+    };
+
+    controller.openRenewalDialog?.();
+
+    expect(add).toHaveBeenCalledWith('is-open');
+    expect(controller.elements.renewalCurrentDueDate.textContent).toBe(
+      '2026-09-01',
+    );
+    expect(controller.elements.renewalWorkflowStatus.textContent).toBe(
+      '进行中',
+    );
+    expect(controller.elements.renewalPreserveLabel.textContent).toBe(
+      '保留原状态：进行中',
+    );
+  });
+});
+
 describe('AppController administration refresh', () => {
   /** Ensures a deleted selection cannot inherit the first actor's identity or permissions. */
   it('does not fall back to the first user when the selected identity is missing', () => {

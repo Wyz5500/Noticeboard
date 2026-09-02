@@ -93,6 +93,7 @@ interface Elements {
   statActive: HTMLElement;
   statReview: HTMLElement;
   statReopened: HTMLElement;
+  statExpired: HTMLElement;
   statClosed: HTMLElement;
   scopeSwitcher: HTMLElement;
   filterList: HTMLElement;
@@ -106,6 +107,16 @@ interface Elements {
   drawer: HTMLElement;
   drawerBackdrop: HTMLElement;
   drawerInner: HTMLElement;
+  renewalModal: HTMLElement;
+  renewalBackdrop: HTMLElement;
+  closeRenewalButton: HTMLButtonElement;
+  cancelRenewalButton: HTMLButtonElement;
+  renewalForm: HTMLFormElement;
+  renewalCurrentDueDate: HTMLElement;
+  renewalWorkflowStatus: HTMLElement;
+  renewalDueDate: HTMLInputElement;
+  renewalPreserveLabel: HTMLElement;
+  renewalError: HTMLElement;
   modal: HTMLElement;
   modalBackdrop: HTMLElement;
   closeModalButton: HTMLButtonElement;
@@ -151,6 +162,7 @@ function collectElements(document: Document): Elements {
     statActive: requiredElement(document, '#statActive'),
     statReview: requiredElement(document, '#statReview'),
     statReopened: requiredElement(document, '#statReopened'),
+    statExpired: requiredElement(document, '#statExpired'),
     statClosed: requiredElement(document, '#statClosed'),
     scopeSwitcher: requiredElement(document, '#scopeSwitcher'),
     filterList: requiredElement(document, '#filterList'),
@@ -167,6 +179,16 @@ function collectElements(document: Document): Elements {
     drawer: requiredElement(document, '#detailDrawer'),
     drawerBackdrop: requiredElement(document, '#drawerBackdrop'),
     drawerInner: requiredElement(document, '#drawerInner'),
+    renewalModal: requiredElement(document, '#renewalModal'),
+    renewalBackdrop: requiredElement(document, '#renewalBackdrop'),
+    closeRenewalButton: requiredElement(document, '#closeRenewalButton'),
+    cancelRenewalButton: requiredElement(document, '#cancelRenewalButton'),
+    renewalForm: requiredElement(document, '#renewalForm'),
+    renewalCurrentDueDate: requiredElement(document, '#renewalCurrentDueDate'),
+    renewalWorkflowStatus: requiredElement(document, '#renewalWorkflowStatus'),
+    renewalDueDate: requiredElement(document, '#renewalDueDate'),
+    renewalPreserveLabel: requiredElement(document, '#renewalPreserveLabel'),
+    renewalError: requiredElement(document, '#renewalError'),
     modal: requiredElement(document, '#taskModal'),
     modalBackdrop: requiredElement(document, '#modalBackdrop'),
     closeModalButton: requiredElement(document, '#closeModalButton'),
@@ -205,6 +227,7 @@ export class AppController {
   >();
   private pendingScrollRestoreView: RouteState['view'] | null = null;
   private scrollRestoreSequence = 0;
+  private taskRefreshScheduled = false;
 
   /** Receives browser boundaries and the versioned API client from the entrypoint. */
   constructor(
@@ -296,6 +319,11 @@ export class AppController {
     this.window.addEventListener('hashchange', () => {
       void this.handleRouteChange();
     });
+    this.window.addEventListener('focus', () => this.scheduleTaskRefresh());
+    this.document.addEventListener('visibilitychange', () => {
+      if (this.document.visibilityState === 'visible')
+        this.scheduleTaskRefresh();
+    });
     this.document.addEventListener('click', (event) =>
       this.handleHashNavigation(event),
     );
@@ -338,6 +366,19 @@ export class AppController {
     );
     this.elements.drawerBackdrop.addEventListener('click', () =>
       this.closeDrawer(),
+    );
+    this.elements.closeRenewalButton.addEventListener('click', () =>
+      this.closeRenewalDialog(),
+    );
+    this.elements.cancelRenewalButton.addEventListener('click', () =>
+      this.closeRenewalDialog(),
+    );
+    this.elements.renewalBackdrop.addEventListener('click', () =>
+      this.closeRenewalDialog(),
+    );
+    this.elements.renewalForm.addEventListener(
+      'submit',
+      (event) => void this.handleRenewalSubmit(event),
     );
     this.elements.newTaskButton.addEventListener('click', () =>
       this.openModal(),
@@ -468,6 +509,36 @@ export class AppController {
       : [];
   }
 
+  /** Coalesces focus and visibility recovery into one animation-frame refresh. */
+  private scheduleTaskRefresh(): void {
+    if (this.document.visibilityState === 'hidden' || this.taskRefreshScheduled)
+      return;
+    this.taskRefreshScheduled = true;
+    this.window.requestAnimationFrame(() => {
+      this.taskRefreshScheduled = false;
+      if (this.document.visibilityState === 'visible')
+        void this.refreshTasksAfterResume();
+    });
+  }
+
+  /** Reloads effective task projections after the page resumes across a business-date boundary. */
+  private async refreshTasksAfterResume(): Promise<void> {
+    if (!this.currentUserId) return;
+    await this.gate.run('tasks:resume', async () => {
+      const request = this.requestSnapshot();
+      try {
+        const tasks = await this.loadTasksForCurrentUser(request.actorId);
+        if (!this.isCurrentRequest(request)) return;
+        this.tasks = tasks;
+        this.tasksLoaded = true;
+        this.render();
+      } catch (error) {
+        if (!this.isCurrentRequest(request)) return;
+        this.showToast(this.errorMessage(error));
+      }
+    });
+  }
+
   /** Renders profile, statistics, route controls, view visibility, list, and selected drawer. */
   private render(): void {
     this.renderIdentity();
@@ -527,6 +598,7 @@ export class AppController {
     this.elements.statActive.textContent = String(counts.inProgress);
     this.elements.statReview.textContent = String(counts.completed);
     this.elements.statReopened.textContent = String(counts.reopened);
+    this.elements.statExpired.textContent = String(counts.expired);
     this.elements.statClosed.textContent = String(counts.closed);
     const scoped = filterTasks(this.tasks, {
       scope: this.route.scope,
@@ -738,18 +810,58 @@ export class AppController {
     this.elements.drawer.setAttribute('aria-hidden', 'false');
   }
 
-  /** Opens one task drawer by ID. */
-  private openDrawer(taskId: string): void {
+  /** Loads the current server projection before opening one task drawer by ID. */
+  private async openDrawer(taskId: string): Promise<void> {
     this.selectedTaskId = taskId;
-    this.renderDrawer();
+    await this.gate.run(`task-read:${taskId}`, async () => {
+      const request = this.requestSnapshot();
+      try {
+        const task = await this.api.getTask(taskId, request.actorId);
+        if (!this.isCurrentRequest(request) || this.selectedTaskId !== taskId)
+          return;
+        this.replaceTask(task);
+        this.renderDrawer();
+      } catch (error) {
+        if (!this.isCurrentRequest(request) || this.selectedTaskId !== taskId)
+          return;
+        this.selectedTaskId = null;
+        this.showToast(this.errorMessage(error));
+      }
+    });
   }
 
   /** Closes the drawer and clears its selection. */
   private closeDrawer(): void {
+    this.closeRenewalDialog();
     this.selectedTaskId = null;
     this.elements.drawer.classList.remove('is-open');
     this.elements.drawerBackdrop.classList.remove('is-open');
     this.elements.drawer.setAttribute('aria-hidden', 'true');
+  }
+
+  /** Opens the expired-task renewal dialog with the persisted workflow context. */
+  private openRenewalDialog(): void {
+    const task = this.tasks.find(
+      (candidate) => candidate.id === this.selectedTaskId,
+    );
+    if (!task || task.status !== 'expired') return;
+    this.elements.renewalForm.reset();
+    this.elements.renewalError.textContent = '';
+    this.elements.renewalCurrentDueDate.textContent = task.dueDate;
+    this.elements.renewalWorkflowStatus.textContent = task.workflowStatusLabel;
+    this.elements.renewalPreserveLabel.textContent = `保留原状态：${task.workflowStatusLabel}`;
+    this.elements.renewalDueDate.value = '';
+    this.elements.renewalModal.classList.add('is-open');
+    this.elements.renewalBackdrop.classList.add('is-open');
+    this.elements.renewalModal.setAttribute('aria-hidden', 'false');
+    this.elements.renewalDueDate.focus();
+  }
+
+  /** Closes the expired-task renewal dialog without changing server state. */
+  private closeRenewalDialog(): void {
+    this.elements.renewalModal.classList.remove('is-open');
+    this.elements.renewalBackdrop.classList.remove('is-open');
+    this.elements.renewalModal.setAttribute('aria-hidden', 'true');
   }
 
   /** Opens and resets the task creation modal before focusing its first control. */
@@ -911,7 +1023,7 @@ export class AppController {
       event.target instanceof Element
         ? event.target.closest<HTMLElement>('[data-task-id]')
         : null;
-    if (card?.dataset.taskId) this.openDrawer(card.dataset.taskId);
+    if (card?.dataset.taskId) void this.openDrawer(card.dataset.taskId);
   }
 
   /** Opens a task card from Enter or Space keyboard activation. */
@@ -923,7 +1035,7 @@ export class AppController {
         : null;
     if (card?.dataset.taskId) {
       event.preventDefault();
-      this.openDrawer(card.dataset.taskId);
+      void this.openDrawer(card.dataset.taskId);
     }
   }
 
@@ -932,6 +1044,10 @@ export class AppController {
     if (!(event.target instanceof Element)) return;
     if (event.target.closest('[data-close-drawer]')) {
       this.closeDrawer();
+      return;
+    }
+    if (event.target.closest('[data-renew-expired]')) {
+      this.openRenewalDialog();
       return;
     }
     const button = event.target.closest<HTMLElement>('[data-action]');
@@ -956,6 +1072,48 @@ export class AppController {
         await this.resynchronizeTasks(request);
         if (!this.isCurrentRequest(request)) return;
         this.showToast(this.errorMessage(error));
+      }
+    });
+  }
+
+  /** Serializes the renewal dialog fields into one atomic server command. */
+  private async handleRenewalSubmit(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    const values = new FormData(this.elements.renewalForm);
+    await this.renewSelectedTask({
+      dueDate: formText(values, 'dueDate'),
+      recoveryStrategy: formText(values, 'recoveryStrategy') as
+        'preserve_status' | 'reopened',
+    });
+  }
+
+  /** Renews the selected expired task with one optimistic command. */
+  private async renewSelectedTask(command: {
+    dueDate: string;
+    recoveryStrategy: 'preserve_status' | 'reopened';
+  }): Promise<void> {
+    const task = this.tasks.find(
+      (candidate) => candidate.id === this.selectedTaskId,
+    );
+    if (!task) return;
+    await this.gate.run(`task:${task.id}`, async () => {
+      const request = this.requestSnapshot();
+      try {
+        const updated = await this.api.renewExpiredTask(
+          request.actorId,
+          task.id,
+          { ...command, expectedVersion: task.version },
+        );
+        if (!this.isCurrentRequest(request)) return;
+        this.replaceTask(updated);
+        this.closeRenewalDialog();
+        this.render();
+        this.showToast('任务已续期');
+      } catch (error) {
+        if (!this.isCurrentRequest(request)) return;
+        await this.resynchronizeTasks(request);
+        if (!this.isCurrentRequest(request)) return;
+        this.elements.renewalError.textContent = this.errorMessage(error);
       }
     });
   }
@@ -1155,7 +1313,7 @@ export class AppController {
         this.tasks = [created, ...this.tasks];
         this.closeModal();
         this.render();
-        this.openDrawer(created.id);
+        await this.openDrawer(created.id);
         this.showToast('新任务已发布');
       } catch (error) {
         if (!this.isCurrentRequest(request)) return;
@@ -1479,6 +1637,8 @@ export class AppController {
     if (event.key !== 'Escape') return;
     if (this.elements.profileMenu.classList.contains('is-open'))
       this.closeProfileMenu();
+    else if (this.elements.renewalModal.classList.contains('is-open'))
+      this.closeRenewalDialog();
     else if (this.adminEditor) {
       this.adminEditor = null;
       this.render();

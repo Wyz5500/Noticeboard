@@ -8,6 +8,7 @@ import type {
   CreateAdminRoleRequest,
   CreateAdminUserRequest,
   CreateTaskRequest,
+  RenewExpiredTaskRequest,
   UpdateAdminRoleRequest,
   UpdateAdminUserRequest,
   TaskResource,
@@ -159,6 +160,19 @@ export class ApiClient {
   ): Promise<TaskResource> {
     return this.command(
       `/tasks/${encodeURIComponent(taskId)}/actions`,
+      actorId,
+      body,
+    );
+  }
+
+  /** Renews one expired task with a new deadline and recovery strategy. */
+  renewExpiredTask(
+    actorId: string,
+    taskId: string,
+    body: RenewExpiredTaskRequest,
+  ): Promise<TaskResource> {
+    return this.command(
+      `/tasks/${encodeURIComponent(taskId)}/expiration-renewal`,
       actorId,
       body,
     );

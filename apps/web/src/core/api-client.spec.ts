@@ -104,6 +104,54 @@ describe('ApiClient', () => {
     });
   });
 
+  /** Proves expired-task renewal uses its dedicated endpoint and complete body. */
+  it('renews an expired task with the selected recovery strategy', async () => {
+    const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> =
+      [];
+    const client = new ApiClient('/api/v1', (input, init) => {
+      requests.push({ input, ...(init ? { init } : {}) });
+      return Promise.resolve(jsonResponse({ id: 'task-renewed' }));
+    });
+    const renewExpiredTask = Reflect.get(client, 'renewExpiredTask') as
+      | ((
+          actorId: string,
+          taskId: string,
+          body: {
+            dueDate: string;
+            recoveryStrategy: string;
+            expectedVersion: number;
+          },
+        ) => Promise<unknown>)
+      | undefined;
+    const body = {
+      dueDate: '2026-09-10',
+      recoveryStrategy: 'reopened',
+      expectedVersion: 3,
+    };
+
+    if (renewExpiredTask) {
+      await Reflect.apply(renewExpiredTask, client, [
+        'noticeboard-master',
+        'task-expired',
+        body,
+      ]);
+    }
+
+    expect(requests).toEqual([
+      {
+        input: '/api/v1/tasks/task-expired/expiration-renewal',
+        init: {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-demo-user-id': 'noticeboard-master',
+          },
+          body: JSON.stringify(body),
+        },
+      },
+    ]);
+  });
+
   /** Proves bodyless demo reset requests do not advertise an empty JSON body. */
   it('resets demo data without an empty JSON request body', async () => {
     let request: RequestInit | undefined;
