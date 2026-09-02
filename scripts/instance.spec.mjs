@@ -2,19 +2,72 @@
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withLifecycleLock } from './lifecycle-lock.mjs';
+import { assertSupportedNodeVersion } from './runtime-version.mjs';
 import {
   createComposeArguments,
   createInstanceComposeEnvironment,
   createInstanceEnvironment,
-  createLegacyMigrationMarkerPath,
   createInstanceProjectName,
   createInstanceVolumeName,
+  createPlaywrightProjectName,
+  isReservedAppPort,
   normalizeInstancePart,
   parsePublishedPort,
 } from './instance.mjs';
 
 const SCRIPT_PATH = fileURLToPath(new URL('./instance.mjs', import.meta.url));
+
+/** Prevents lifecycle commands from starting Docker under an unsupported Node runtime. */
+test('requires the repository Node version before lifecycle work starts', () => {
+  assert.doesNotThrow(() => assertSupportedNodeVersion('24.20.0'));
+  assert.throws(() => assertSupportedNodeVersion('18.20.8'), /Node 24\.20\.0/);
+  assert.throws(() => assertSupportedNodeVersion('24.19.0'), /Node 24\.20\.0/);
+});
+
+/** Prevents two lifecycle commands from mutating the same Compose project concurrently. */
+test('serializes commands that share one lifecycle lock', () => {
+  const lockRoot = mkdtempSync(join(tmpdir(), 'noticeboard-lock-'));
+  try {
+    withLifecycleLock(lockRoot, 'same-project', () => {
+      assert.throws(
+        () =>
+          withLifecycleLock(lockRoot, 'same-project', () => undefined, {
+            timeoutMs: 0,
+          }),
+        /正在执行/,
+      );
+    });
+    assert.doesNotThrow(() =>
+      withLifecycleLock(lockRoot, 'same-project', () => undefined),
+    );
+  } finally {
+    rmSync(lockRoot, { recursive: true, force: true });
+  }
+});
+
+/** Prevents a reused live PID from preserving an abandoned lock forever. */
+test('reclaims an expired lifecycle lock even when its PID exists', () => {
+  const lockRoot = mkdtempSync(join(tmpdir(), 'noticeboard-stale-lock-'));
+  const lockPath = join(lockRoot, 'stale-project.lock');
+  try {
+    writeFileSync(lockPath, String(process.pid));
+    const expiredAt = new Date(Date.now() - 7 * 60 * 60 * 1000);
+    utimesSync(lockPath, expiredAt, expiredAt);
+
+    assert.doesNotThrow(() =>
+      withLifecycleLock(lockRoot, 'stale-project', () => undefined, {
+        timeoutMs: 0,
+      }),
+    );
+  } finally {
+    rmSync(lockRoot, { recursive: true, force: true });
+  }
+});
 
 /** Verifies branch and path punctuation becomes a Docker-safe identifier part. */
 test('normalizes arbitrary branch and worktree text into safe instance parts', () => {
@@ -68,12 +121,21 @@ test('creates the project-scoped PostgreSQL volume name', () => {
   );
 });
 
-/** Verifies legacy data imports are remembered after an instance is destroyed. */
-test('creates a stable legacy migration marker path per instance', () => {
+/** Prevents standalone browser checks from sharing the main worktree instance. */
+test('creates a distinct bounded Playwright project name', () => {
   assert.equal(
-    createLegacyMigrationMarkerPath('noticeboard-project-manager-a1b2c3'),
-    '/.noticeboard-migrated-noticeboard-project-manager-a1b2c3',
+    createPlaywrightProjectName('noticeboard-project-manager-a1b2c3'),
+    'noticeboard-project-manager-a1b2c3-playwright',
   );
+  assert.ok(
+    createPlaywrightProjectName(`noticeboard-${'a'.repeat(54)}`).length <= 63,
+  );
+});
+
+/** Prevents every temporary worktree lifecycle from accepting the deployment port. */
+test('reserves app port 3000 from all worktree instances', () => {
+  assert.equal(isReservedAppPort(3000), true);
+  assert.equal(isReservedAppPort(30_000), false);
 });
 
 /** Verifies every Compose invocation carries both the file and isolated project arguments. */
@@ -139,16 +201,19 @@ test('requires --yes before destroy even in dry-run mode', () => {
   );
 });
 
-/** Verifies destroy records the legacy-import decision before removing instance data. */
-test('dry-run destroy preserves the legacy import decision', () => {
+/** Verifies destroy removes only the current worktree resources. */
+test('dry-run destroy removes the worktree volume without touching deployment data', () => {
   const output = execFileSync(
     process.execPath,
     [SCRIPT_PATH, 'destroy', '--yes', '--dry-run'],
     { encoding: 'utf8' },
   );
 
-  assert.match(output, /touch \/legacy\/\.noticeboard-migrated-/);
-  assert.match(output, /docker compose .* down -v --remove-orphans/);
+  assert.match(
+    output,
+    /docker compose .* -p noticeboard-.* down -v --remove-orphans/,
+  );
+  assert.doesNotMatch(output, /-p noticeboard down|noticeboard-postgres/);
 });
 
 /** Verifies dry-run emits isolated commands without requiring a Docker daemon. */
@@ -170,8 +235,8 @@ test('dry-run prints the isolated Compose command without connecting Docker', ()
   assert.doesNotMatch(output, /docker info/);
 });
 
-/** Verifies the isolated verify plan retains the repository whitespace gate. */
-test('dry-run includes the final git diff check', () => {
+/** Verifies successful validation always removes its database volume. */
+test('dry-run verify includes the final diff check and destructive temporary cleanup', () => {
   const output = execFileSync(
     process.execPath,
     [SCRIPT_PATH, 'verify', '--dry-run'],
@@ -179,34 +244,36 @@ test('dry-run includes the final git diff check', () => {
   );
 
   assert.match(output, /DRY RUN: git diff --check/);
+  assert.match(output, /docker compose .* down -v --remove-orphans/);
 });
 
-/** Verifies legacy volume migration is visible in dry-run without contacting Docker. */
-test('dry-run includes legacy volume migration commands', () => {
+/** Prevents callers from retaining a successful validation environment. */
+test('verify rejects the removed --keep escape hatch', () => {
+  assert.throws(
+    () =>
+      execFileSync(
+        process.execPath,
+        [SCRIPT_PATH, 'verify', '--keep', '--dry-run'],
+        { encoding: 'utf8', stdio: 'pipe' },
+      ),
+    (error) => {
+      assert.equal(error.status, 64);
+      assert.match(error.stderr, /--keep/);
+      return true;
+    },
+  );
+});
+
+/** Prevents any worktree lifecycle command from targeting the permanent deployment. */
+test('dry-run worktree startup never operates on the noticeboard project', () => {
   const output = execFileSync(
     process.execPath,
     [SCRIPT_PATH, 'up', '--dry-run'],
-    {
-      encoding: 'utf8',
-    },
+    { encoding: 'utf8' },
   );
 
-  assert.match(output, /docker volume inspect noticeboard-postgres/);
-  assert.match(output, /test ! -e \/legacy\/\.noticeboard-migrated-/);
-  assert.match(
-    output,
-    /docker compose .* -p noticeboard down --remove-orphans/,
-  );
-  assert.match(
-    output,
-    /docker compose .* -p noticeboard-.* down -v --remove-orphans/,
-  );
-  assert.match(output, /docker compose .* -p noticeboard-.* create postgres/);
-  assert.match(
-    output,
-    /docker run --rm .*noticeboard-postgres.*postgres:18\.6-alpine/,
-  );
-  assert.match(output, /touch \/legacy\/\.noticeboard-migrated-/);
+  assert.doesNotMatch(output, /-p noticeboard (?:down|up|create)/);
+  assert.doesNotMatch(output, /noticeboard-postgres/);
 });
 
 /** Verifies the documented help flag works before a command token. */

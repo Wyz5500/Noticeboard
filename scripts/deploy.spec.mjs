@@ -1,35 +1,39 @@
-/** Verifies the deployment wrapper exposes a safe dry-run and help contract. */
+/** Tests the permanent deployment and standalone browser lifecycle contracts. */
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { isPrimaryWorktreeGitDirectory } from './deploy.mjs';
 
 const SCRIPT_DIRECTORY = dirname(fileURLToPath(import.meta.url));
-const SCRIPT_PATH = resolve(SCRIPT_DIRECTORY, 'instance.mjs');
-const COMPOSE_PATH = resolve(SCRIPT_DIRECTORY, '../compose.yaml');
-const PLAYWRIGHT_PATH = resolve(SCRIPT_DIRECTORY, '../playwright.config.ts');
+const PROJECT_ROOT = resolve(SCRIPT_DIRECTORY, '..');
+const DEPLOY_SCRIPT_PATH = resolve(SCRIPT_DIRECTORY, 'deploy.mjs');
+const DEPLOY_WRAPPER_PATH = resolve(SCRIPT_DIRECTORY, 'deploy.sh');
+const DEPLOY_COMPOSE_PATH = resolve(PROJECT_ROOT, 'compose.deploy.yaml');
+const PLAYWRIGHT_PATH = resolve(PROJECT_ROOT, 'playwright.config.ts');
+const PLAYWRIGHT_RUNNER_PATH = resolve(SCRIPT_DIRECTORY, 'run-playwright.mjs');
 
 /** Loads Playwright configuration in a clean child process for environment-sensitive assertions. */
 function readPlaywrightConfig(environment) {
   const childEnvironment = { ...process.env };
-  for (const key of ['DATABASE_URL', 'DATABASE_URL_TEST', 'E2E_BASE_URL'])
+  for (const key of ['DATABASE_URL', 'DATABASE_URL_TEST', 'E2E_BASE_URL']) {
     delete childEnvironment[key];
+  }
   Object.assign(childEnvironment, environment);
   const moduleUrl = pathToFileURL(PLAYWRIGHT_PATH).href;
   const source = `import config from ${JSON.stringify(moduleUrl)};
 process.stdout.write(JSON.stringify({
   baseURL: config.use?.baseURL,
-  databaseUrl: config.webServer?.env?.DATABASE_URL,
-  port: config.webServer?.env?.PORT,
-  webServerUrl: config.webServer?.url,
+  hasWebServer: config.webServer !== undefined,
 }));`;
   return JSON.parse(
     execFileSync(
       process.execPath,
       ['--import', 'tsx', '--input-type=module', '-e', source],
       {
-        cwd: resolve(SCRIPT_DIRECTORY, '..'),
+        cwd: PROJECT_ROOT,
         env: childEnvironment,
         encoding: 'utf8',
       },
@@ -37,79 +41,128 @@ process.stdout.write(JSON.stringify({
   );
 }
 
-/** Runs the instance CLI with the requested argument and returns its output. */
-function runScript(argument) {
-  return execFileSync(process.execPath, [SCRIPT_PATH, 'up', argument], {
+/** Prevents a linked worktree from being mistaken for the primary checkout. */
+test('recognizes only the common Git directory as the primary worktree', () => {
+  assert.equal(isPrimaryWorktreeGitDirectory('/repo/.git', '/repo/.git'), true);
+  assert.equal(
+    isPrimaryWorktreeGitDirectory(
+      '/repo/.git',
+      '/repo/.git/worktrees/feature-a',
+    ),
+    false,
+  );
+});
+
+/** Prevents repeated deployment from gaining a destructive lifecycle branch. */
+test('dry-run deployment only upgrades the fixed noticeboard project', () => {
+  const output = execFileSync(
+    process.execPath,
+    [DEPLOY_SCRIPT_PATH, '--dry-run'],
+    { cwd: PROJECT_ROOT, encoding: 'utf8' },
+  );
+
+  assert.match(
+    output,
+    /docker compose -f .*compose\.deploy\.yaml -p noticeboard up -d --build --wait/,
+  );
+  assert.doesNotMatch(output, /\bdown\b|\bdestroy\b|volume rm|system prune/);
+});
+
+/** Prevents the shell compatibility wrapper from bypassing the deployment CLI. */
+test('deployment shell wrapper delegates the same dry-run contract', () => {
+  const output = execFileSync(DEPLOY_WRAPPER_PATH, ['--dry-run'], {
+    cwd: PROJECT_ROOT,
     encoding: 'utf8',
   });
-}
 
-const dryRun = runScript('--dry-run');
-assert.match(
-  dryRun,
-  /DRY RUN: .*docker compose .*compose\.yaml -p noticeboard-/,
-);
-assert.match(dryRun, / up -d --build --wait/);
-
-const help = execFileSync(process.execPath, [SCRIPT_PATH, '--help'], {
-  encoding: 'utf8',
+  assert.match(
+    output,
+    /docker compose -f .*compose\.deploy\.yaml -p noticeboard up -d --build --wait/,
+  );
 });
-assert.match(help, /用法：.*instance/);
-assert.match(help, /--dry-run/);
 
-/** Proves Compose leaves project naming and volume naming to the instance CLI. */
-const compose = readFileSync(COMPOSE_PATH, 'utf8');
-assert.equal(/^name:/m.test(compose), false);
-assert.match(
-  compose,
-  /DATABASE_URL: postgresql:\/\/noticeboard:noticeboard@postgres:5432\/noticeboard/,
-);
-assert.match(compose, /POSTGRES_DB: noticeboard/);
-assert.match(compose, /POSTGRES_PASSWORD: noticeboard/);
-assert.match(compose, /POSTGRES_USER: noticeboard/);
-assert.match(compose, /127\.0\.0\.1:\$\{POSTGRES_HOST_PORT-54329\}:5432/);
-assert.match(compose, /127\.0\.0\.1:\$\{APP_HOST_PORT-3000\}:3000/);
-assert.match(compose, /^\s{6}- postgres-data:\/var\/lib\/postgresql$/m);
-assert.equal(/^\s{4}name: noticeboard-postgres$/m.test(compose), false);
-
-/** Proves standalone browser commands retain the prescribed local database fallback. */
-const playwright = readFileSync(PLAYWRIGHT_PATH, 'utf8');
-assert.match(
-  playwright,
-  /postgresql:\/\/noticeboard:noticeboard@127\.0\.0\.1:54329\/noticeboard/,
-);
-assert.match(playwright, /process\.env\.DATABASE_URL_TEST\?\.trim\(\) \|\|/);
-assert.doesNotMatch(playwright, /process\.env\.DATABASE_URL \?\?/);
-assert.match(
-  playwright,
-  /process\.env\.E2E_BASE_URL\?\.trim\(\) \|\| undefined/,
-);
-assert.match(playwright, /PORT: '3100'/);
-assert.match(playwright, /standaloneAppUrl = 'http:\/\/127\.0\.0\.1:3100'/);
-assert.doesNotMatch(playwright, /PORT: '3000'/);
-
-/** Proves standalone runs ignore a runtime DATABASE_URL and normalize blank external URLs. */
-const standaloneConfig = readPlaywrightConfig({
-  DATABASE_URL:
-    'postgresql://noticeboard:noticeboard@127.0.0.1:59999/production',
-  E2E_BASE_URL: '   ',
+/** Prevents the compatibility wrapper from silently ignoring unsupported arguments. */
+test('deployment shell wrapper rejects extra arguments', () => {
+  assert.throws(
+    () =>
+      execFileSync(DEPLOY_WRAPPER_PATH, ['--dry-run', 'extra'], {
+        cwd: PROJECT_ROOT,
+        encoding: 'utf8',
+        stdio: 'pipe',
+      }),
+    (error) => {
+      assert.equal(error.status, 64);
+      assert.match(error.stderr, /未知选项|多余参数/);
+      return true;
+    },
+  );
 });
-assert.equal(standaloneConfig.baseURL, 'http://127.0.0.1:3100');
-assert.equal(
-  standaloneConfig.databaseUrl,
-  'postgresql://noticeboard:noticeboard@127.0.0.1:54329/noticeboard',
-);
-assert.equal(standaloneConfig.port, '3100');
-assert.equal(
-  standaloneConfig.webServerUrl,
-  'http://127.0.0.1:3100/health/ready',
-);
 
-/** Proves a nonblank external instance disables the standalone web server. */
-const externalConfig = readPlaywrightConfig({
-  DATABASE_URL_TEST:
-    'postgresql://noticeboard:noticeboard@127.0.0.1:4555/noticeboard',
-  E2E_BASE_URL: ' http://127.0.0.1:4556 ',
+/** Prevents the permanent database from being exposed on a host port. */
+test('deployment Compose fixes only the app host port and retains the legacy data volume', () => {
+  const compose = readFileSync(DEPLOY_COMPOSE_PATH, 'utf8');
+
+  const postgresSection = compose.slice(
+    compose.indexOf('  postgres:'),
+    compose.indexOf('\n  migrate:'),
+  );
+  assert.match(compose, /127\.0\.0\.1:3000:3000/);
+  assert.doesNotMatch(compose, /POSTGRES_HOST_PORT|54329:5432/);
+  assert.match(postgresSection, /restart: unless-stopped/);
+  assert.match(compose, /^\s{4}name: noticeboard-postgres$/m);
 });
-assert.equal(externalConfig.baseURL, 'http://127.0.0.1:4556');
-assert.equal(externalConfig.webServerUrl, undefined);
+
+/** Prevents raw Playwright configuration from reviving fixed standalone ports. */
+test('Playwright configuration requires an injected dynamic instance', () => {
+  const standaloneConfig = readPlaywrightConfig({ E2E_BASE_URL: '   ' });
+  assert.equal(standaloneConfig.baseURL, undefined);
+  assert.equal(standaloneConfig.hasWebServer, false);
+
+  const externalConfig = readPlaywrightConfig({
+    E2E_BASE_URL: ' http://127.0.0.1:4556 ',
+  });
+  assert.equal(externalConfig.baseURL, 'http://127.0.0.1:4556');
+  assert.equal(externalConfig.hasWebServer, false);
+});
+
+/** Prevents standalone browser checks from using shared fixed ports or retaining successful data. */
+test('standalone Playwright dry-run uses its own dynamic project and removes its volume', () => {
+  const childEnvironment = { ...process.env };
+  delete childEnvironment.DATABASE_URL_TEST;
+  delete childEnvironment.E2E_BASE_URL;
+  const output = execFileSync(
+    process.execPath,
+    [PLAYWRIGHT_RUNNER_PATH, 'e2e', '--dry-run'],
+    { cwd: PROJECT_ROOT, env: childEnvironment, encoding: 'utf8' },
+  );
+
+  assert.match(output, /-playwright .*up -d --build --wait/);
+  assert.match(output, /APP_HOST_PORT=/);
+  assert.match(output, /POSTGRES_HOST_PORT=/);
+  assert.match(output, /playwright test --grep-invert '?@visual'?/);
+  assert.match(output, /-playwright .*down -v --remove-orphans/);
+  assert.doesNotMatch(output, /127\.0\.0\.1:3100|127\.0\.0\.1:54329/);
+});
+
+/** Preserves targeted Playwright files and project options through the lifecycle wrapper. */
+test('standalone Playwright forwards standard test arguments', () => {
+  const childEnvironment = { ...process.env };
+  delete childEnvironment.DATABASE_URL_TEST;
+  delete childEnvironment.E2E_BASE_URL;
+  const output = execFileSync(
+    process.execPath,
+    [
+      PLAYWRIGHT_RUNNER_PATH,
+      'e2e',
+      'tests/e2e/behavior.spec.ts',
+      '--project=chromium-desktop',
+      '--dry-run',
+    ],
+    { cwd: PROJECT_ROOT, env: childEnvironment, encoding: 'utf8' },
+  );
+
+  assert.match(
+    output,
+    /playwright test --grep-invert '?@visual'? tests\/e2e\/behavior\.spec\.ts --project=chromium-desktop/,
+  );
+});

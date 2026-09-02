@@ -17,8 +17,9 @@
 
 - 项目固定使用 Node `24.20.0` 与 npm `11.19.1`。运行测试前先检查 `node --version` 和 `npm --version`；如果出现 `node:util` 缺少 `styleText` 的 Vitest/Rolldown 启动错误，通常是误用了 Node 18，切换到 Node 24 后再试，不要重装依赖。
 - 若终端未加载版本管理器，请先将当前运行时切换到 Node `24.20.0`，再执行 `npm run verify`。
-- 仓库标准运行与完整验证统一通过 `npm run instance -- ...` 管理，支持 `up`、`status`、`down`、`destroy` 和 `verify`；`npm run verify` 委托给当前 worktree 的 `instance -- verify`。每个 worktree 使用独立的 Compose project、PostgreSQL 容器、网络和卷，应用与数据库宿主机端口由 Docker 动态分配；不要预先手工启动共享的普通 `docker compose` 栈，也不要假设固定端口。
-- instance verify 会自动向测试注入当前实例的 `DATABASE_URL_TEST` 和 `E2E_BASE_URL`。单独运行 Playwright 时仍支持 standalone 模式：没有 `E2E_BASE_URL` 时会在 `127.0.0.1:3100` 启动应用；未显式提供 `DATABASE_URL_TEST` 时才回退到 `127.0.0.1:54329` 测试数据库。该回退不是仓库标准运行模型。
+- 永久部署与 worktree 生命周期严格分离。永久部署只能从主工作目录执行 `npm run deploy`，固定使用 Compose project `noticeboard` 和应用端口 `127.0.0.1:3000`，PostgreSQL 不发布宿主机端口；linked worktree 中不得部署。部署命令只允许 `up -d --build --wait` 式升级，不得添加任何删除路径。
+- worktree 开发与完整验证通过 `npm run instance -- ...` 和 `npm run verify` 管理。每个包含新版脚本的 worktree 使用独立 Compose project、PostgreSQL 容器、网络和卷，宿主机端口由 Docker 动态分配且应用端口必须避开 `3000`；不要直接运行普通 `docker compose` 命令。验证成功必须删除容器、网络和数据库卷，验证失败才保留现场，再次执行相同命令会升级并重试。
+- instance verify 会自动向测试注入当前实例的 `DATABASE_URL_TEST` 和 `E2E_BASE_URL`。单独运行 `npm run test:e2e` 或 `npm run test:visual` 时会创建 worktree 专用的动态端口 Playwright 实例，成功清理全部临时 Compose 资源、失败保留现场；不得恢复固定 `3100` 或 `54329` 的 standalone 回退。
 - 若出现 Docker socket `permission denied`（例如 OrbStack 的 `docker.sock`）或连接 localhost 动态端口时出现 `EPERM`，这是执行环境没有 Docker socket 或本机端口权限，不是应用故障。切换到允许访问 Docker 与本机测试端口的终端/执行环境后，重跑原命令；在受限代理环境中按其权限流程申请放行。
 
 ## 编码与注释

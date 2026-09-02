@@ -1,8 +1,10 @@
-/** Manages one isolated PostgreSQL, migration, seed, and application Compose instance per worktree. */
+/** Manages isolated PostgreSQL, migration, seed, and application Compose instances per worktree. */
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withLifecycleLock } from './lifecycle-lock.mjs';
+import { assertSupportedNodeVersion } from './runtime-version.mjs';
 
 const SCRIPT_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(SCRIPT_DIRECTORY, '..');
@@ -10,10 +12,9 @@ const COMPOSE_FILE = resolve(PROJECT_ROOT, 'compose.yaml');
 const DATABASE_USER = 'noticeboard';
 const DATABASE_PASSWORD = 'noticeboard';
 const DATABASE_NAME = 'noticeboard';
-const LEGACY_VOLUME_NAME = 'noticeboard-postgres';
-const POSTGRES_IMAGE = 'postgres:18.6-alpine';
+const RESERVED_APP_PORT = 3000;
+const MAX_PORT_ALLOCATION_ATTEMPTS = 3;
 const NPM_COMMAND = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const LEGACY_MIGRATION_MARKER_PREFIX = '/.noticeboard-migrated-';
 
 /** Converts worktree path text into a lowercase Docker-compatible identifier part. */
 export function normalizeInstancePart(value) {
@@ -38,14 +39,14 @@ export function createInstanceProjectName({ worktreePath }) {
   return `noticeboard-${worktreePart}-${fingerprint}`;
 }
 
+/** Creates the dedicated Compose project name used by standalone browser checks. */
+export function createPlaywrightProjectName(instanceProjectName) {
+  return `${instanceProjectName.slice(0, 52)}-playwright`;
+}
+
 /** Creates the predictable project-scoped PostgreSQL volume name for one instance. */
 export function createInstanceVolumeName(projectName) {
   return `${projectName}_postgres-data`;
-}
-
-/** Creates the marker path that records one worktree's legacy-volume import. */
-export function createLegacyMigrationMarkerPath(projectName) {
-  return `${LEGACY_MIGRATION_MARKER_PREFIX}${projectName}`;
 }
 
 /** Builds the common Docker Compose argument prefix that scopes every command to one instance. */
@@ -67,6 +68,11 @@ export function parsePublishedPort(output) {
   return port;
 }
 
+/** Reports whether a dynamically published app port conflicts with permanent deployment. */
+export function isReservedAppPort(port) {
+  return port === RESERVED_APP_PORT;
+}
+
 /** Creates the environment passed to database, API, and browser checks for one instance. */
 export function createInstanceEnvironment(appPort, databasePort) {
   return {
@@ -75,7 +81,7 @@ export function createInstanceEnvironment(appPort, databasePort) {
   };
 }
 
-/** Creates empty host-port overrides so only isolated Compose instances use dynamic ports. */
+/** Creates empty host-port overrides so worktree Compose commands request dynamic ports. */
 export function createInstanceComposeEnvironment() {
   return {
     APP_HOST_PORT: '',
@@ -83,27 +89,8 @@ export function createInstanceComposeEnvironment() {
   };
 }
 
-/** Returns the current worktree's branch and root identity from Git. */
-function readGitContext() {
-  const branch = runCaptured(
-    'git',
-    ['branch', '--show-current'],
-    PROJECT_ROOT,
-  ).trim();
-  const worktreePath = runCaptured(
-    'git',
-    ['rev-parse', '--show-toplevel'],
-    PROJECT_ROOT,
-  ).trim();
-  return {
-    branch,
-    worktreePath,
-    projectName: createInstanceProjectName({ worktreePath }),
-  };
-}
-
 /** Reads a successful command's stdout or throws a useful process error. */
-function runCaptured(command, args, cwd) {
+function runCaptured(command, args, cwd = PROJECT_ROOT) {
   const result = spawnSync(command, args, {
     cwd,
     encoding: 'utf8',
@@ -116,6 +103,27 @@ function runCaptured(command, args, cwd) {
     );
   }
   return result.stdout;
+}
+
+/** Returns the current worktree identity and the repository-shared lock directory. */
+function readGitContext({ playwright = false } = {}) {
+  const worktreePath = runCaptured('git', [
+    'rev-parse',
+    '--show-toplevel',
+  ]).trim();
+  const commonDirectory = runCaptured('git', [
+    'rev-parse',
+    '--path-format=absolute',
+    '--git-common-dir',
+  ]).trim();
+  const instanceProjectName = createInstanceProjectName({ worktreePath });
+  return {
+    worktreePath,
+    projectName: playwright
+      ? createPlaywrightProjectName(instanceProjectName)
+      : instanceProjectName,
+    lockRoot: resolve(commonDirectory, 'noticeboard-lifecycle-locks'),
+  };
 }
 
 /** Formats a command for an actionable dry-run message. */
@@ -134,7 +142,7 @@ function formatComposeEnvironment() {
     .join(' ');
 }
 
-/** Runs a Docker CLI command with optional output capture or dry-run rendering. */
+/** Runs a Docker CLI command with dynamic-port overrides. */
 function runDocker(commandArguments, { capture = false, dryRun = false } = {}) {
   if (dryRun) {
     process.stdout.write(
@@ -156,7 +164,7 @@ function runDocker(commandArguments, { capture = false, dryRun = false } = {}) {
   return capture ? result.stdout : '';
 }
 
-/** Runs Docker Compose with the selected instance project and optional output capture. */
+/** Runs Docker Compose against exactly one worktree-scoped project. */
 function runCompose(
   context,
   commandArguments,
@@ -173,162 +181,7 @@ function runCompose(
     );
     return '';
   }
-  const result = runDocker(args, { capture });
-  return result;
-}
-
-/** Runs a silent Docker probe and reports whether it completed successfully. */
-function dockerCommandSucceeds(commandArguments) {
-  const result = spawnSync('docker', commandArguments, {
-    cwd: PROJECT_ROOT,
-    encoding: 'utf8',
-    env: { ...process.env, ...createInstanceComposeEnvironment() },
-    stdio: ['ignore', 'ignore', 'ignore'],
-  });
-  if (result.error) throw result.error;
-  return result.status === 0;
-}
-
-/** Checks whether a Docker volume exists without treating a missing volume as an error. */
-function hasDockerVolume(volumeName) {
-  return dockerCommandSucceeds(['volume', 'inspect', volumeName]);
-}
-
-/** Checks whether one worktree has already imported the retained legacy volume. */
-function hasLegacyMigrationMarker(projectName) {
-  return dockerCommandSucceeds([
-    'run',
-    '--rm',
-    '--user',
-    'root',
-    '--entrypoint',
-    'sh',
-    '-v',
-    `${LEGACY_VOLUME_NAME}:/legacy:ro`,
-    POSTGRES_IMAGE,
-    '-c',
-    `test -e /legacy${createLegacyMigrationMarkerPath(projectName)}`,
-  ]);
-}
-
-/** Builds the Docker command that records a completed or intentionally skipped import. */
-function createLegacyMigrationMarkerCommand(projectName) {
-  return [
-    'run',
-    '--rm',
-    '--user',
-    'root',
-    '--entrypoint',
-    'sh',
-    '-v',
-    `${LEGACY_VOLUME_NAME}:/legacy`,
-    POSTGRES_IMAGE,
-    '-c',
-    `touch /legacy${createLegacyMigrationMarkerPath(projectName)}`,
-  ];
-}
-
-/** Records that one worktree has completed its legacy-volume import. */
-function markLegacyVolumeMigrated(projectName) {
-  runDocker(createLegacyMigrationMarkerCommand(projectName));
-}
-
-/** Prints or performs a one-time copy from the legacy shared volume into this instance. */
-function migrateLegacyVolume(context, { dryRun = false } = {}) {
-  const targetVolume = createInstanceVolumeName(context.projectName);
-  const markerPath = createLegacyMigrationMarkerPath(context.projectName);
-  if (dryRun) {
-    runDocker(['volume', 'inspect', LEGACY_VOLUME_NAME], { dryRun: true });
-    runDocker(
-      [
-        'run',
-        '--rm',
-        '--user',
-        'root',
-        '--entrypoint',
-        'sh',
-        '-v',
-        `${LEGACY_VOLUME_NAME}:/legacy:ro`,
-        POSTGRES_IMAGE,
-        '-c',
-        `test ! -e /legacy${markerPath}`,
-      ],
-      { dryRun: true },
-    );
-    runCompose({ projectName: 'noticeboard' }, ['down', '--remove-orphans'], {
-      dryRun: true,
-    });
-    runDocker(['volume', 'inspect', targetVolume], { dryRun: true });
-    runCompose(context, ['down', '-v', '--remove-orphans'], {
-      dryRun: true,
-    });
-    runDocker(['volume', 'rm', targetVolume], { dryRun: true });
-    runCompose(context, ['create', 'postgres'], { dryRun: true });
-    runDocker(
-      [
-        'run',
-        '--rm',
-        '--user',
-        'root',
-        '--entrypoint',
-        'sh',
-        '-v',
-        `${LEGACY_VOLUME_NAME}:/from:ro`,
-        '-v',
-        `${targetVolume}:/to`,
-        POSTGRES_IMAGE,
-        '-c',
-        'cp -a /from/. /to/',
-      ],
-      { dryRun: true },
-    );
-    runDocker(
-      [
-        'run',
-        '--rm',
-        '--user',
-        'root',
-        '--entrypoint',
-        'sh',
-        '-v',
-        `${LEGACY_VOLUME_NAME}:/legacy`,
-        POSTGRES_IMAGE,
-        '-c',
-        `touch /legacy${markerPath}`,
-      ],
-      { dryRun: true },
-    );
-    return;
-  }
-  if (!hasDockerVolume(LEGACY_VOLUME_NAME)) return;
-  if (hasLegacyMigrationMarker(context.projectName)) return;
-  if (hasDockerVolume(targetVolume)) {
-    runCompose(context, ['down', '-v', '--remove-orphans']);
-    if (hasDockerVolume(targetVolume)) {
-      runDocker(['volume', 'rm', targetVolume]);
-    }
-  }
-  process.stdout.write(
-    `检测到旧数据库卷 ${LEGACY_VOLUME_NAME}，迁移到 ${targetVolume}。\n`,
-  );
-  runCompose({ projectName: 'noticeboard' }, ['down', '--remove-orphans']);
-  runCompose(context, ['create', 'postgres']);
-  runDocker([
-    'run',
-    '--rm',
-    '--user',
-    'root',
-    '--entrypoint',
-    'sh',
-    '-v',
-    `${LEGACY_VOLUME_NAME}:/from:ro`,
-    '-v',
-    `${targetVolume}:/to`,
-    POSTGRES_IMAGE,
-    '-c',
-    'cp -a /from/. /to/',
-  ]);
-  markLegacyVolumeMigrated(context.projectName);
+  return runDocker(args, { capture });
 }
 
 /** Reads the host port published for one Compose service. */
@@ -340,31 +193,37 @@ function readPublishedPort(context, service, containerPort) {
   );
 }
 
-/** Prints the running instance status and all host addresses needed for local checks. */
-function printStatus(context, { dryRun = false } = {}) {
+/** Reads all test endpoints from a running worktree instance. */
+function readInstanceEnvironment(context) {
+  const appPort = readPublishedPort(context, 'app', 3000);
+  const databasePort = readPublishedPort(context, 'postgres', 5432);
+  return {
+    appPort,
+    databasePort,
+    environment: createInstanceEnvironment(appPort, databasePort),
+  };
+}
+
+/** Prints the running instance status and all host addresses needed for checks. */
+function printStatus(context, { dryRun = false, endpoints } = {}) {
   runCompose(context, ['ps'], { dryRun });
   if (dryRun) {
     runCompose(context, ['port', 'app', '3000'], { dryRun });
     runCompose(context, ['port', 'postgres', '5432'], { dryRun });
     return;
   }
-  const appPort = readPublishedPort(context, 'app', 3000);
-  const databasePort = readPublishedPort(context, 'postgres', 5432);
-  const environment = createInstanceEnvironment(appPort, databasePort);
+  const currentEndpoints = endpoints ?? readInstanceEnvironment(context);
   process.stdout.write(`\n实例：${context.projectName}\n`);
-  process.stdout.write(`页面：http://127.0.0.1:${appPort}\n`);
-  process.stdout.write(`Swagger：http://127.0.0.1:${appPort}/api/docs\n`);
-  process.stdout.write(`数据库：${environment.DATABASE_URL_TEST}\n`);
+  process.stdout.write(`页面：http://127.0.0.1:${currentEndpoints.appPort}\n`);
+  process.stdout.write(
+    `Swagger：http://127.0.0.1:${currentEndpoints.appPort}/api/docs\n`,
+  );
+  process.stdout.write(
+    `数据库：${currentEndpoints.environment.DATABASE_URL_TEST}\n`,
+  );
 }
 
-/** Starts the complete database migration, seed, and application stack. */
-function startInstance(context, { dryRun = false } = {}) {
-  migrateLegacyVolume(context, { dryRun });
-  runCompose(context, ['up', '-d', '--build', '--wait'], { dryRun });
-  if (!dryRun) printStatus(context);
-}
-
-/** Removes one instance's containers and network while preserving its volume. */
+/** Removes one worktree instance and optionally its temporary database volume. */
 function stopInstance(context, { dryRun = false, removeVolume = false } = {}) {
   const argumentsToRun = ['down'];
   if (removeVolume) argumentsToRun.push('-v');
@@ -372,20 +231,38 @@ function stopInstance(context, { dryRun = false, removeVolume = false } = {}) {
   runCompose(context, argumentsToRun, { dryRun });
 }
 
-/** Prevents a destructive reset from importing the retained legacy database again. */
-function destroyInstance(context, { dryRun = false } = {}) {
+/** Starts an isolated stack and rejects Docker allocations that use deployment port 3000. */
+function startInstance(context, { dryRun = false, print = true } = {}) {
   if (dryRun) {
-    runDocker(['volume', 'inspect', LEGACY_VOLUME_NAME], { dryRun: true });
-    runDocker(createLegacyMigrationMarkerCommand(context.projectName), {
-      dryRun: true,
-    });
-  } else if (
-    hasDockerVolume(LEGACY_VOLUME_NAME) &&
-    !hasLegacyMigrationMarker(context.projectName)
-  ) {
-    markLegacyVolumeMigrated(context.projectName);
+    runCompose(context, ['up', '-d', '--build', '--wait'], { dryRun: true });
+    if (print) printStatus(context, { dryRun: true });
+    return undefined;
   }
-  stopInstance(context, { dryRun, removeVolume: true });
+  const endpoints = withLifecycleLock(
+    context.lockRoot,
+    'dynamic-port-allocation',
+    () => {
+      for (
+        let attempt = 1;
+        attempt <= MAX_PORT_ALLOCATION_ATTEMPTS;
+        attempt += 1
+      ) {
+        runCompose(context, ['up', '-d', '--build', '--wait']);
+        const currentEndpoints = readInstanceEnvironment(context);
+        if (!isReservedAppPort(currentEndpoints.appPort))
+          return currentEndpoints;
+        process.stderr.write(
+          `Docker 为 ${context.projectName} 分配了保留端口 3000，正在重新分配。\n`,
+        );
+        stopInstance(context);
+      }
+      throw new Error(
+        `无法为 ${context.projectName} 分配避开 3000 的动态应用端口`,
+      );
+    },
+  );
+  if (print) printStatus(context, { endpoints });
+  return endpoints;
 }
 
 /** Runs one quality-gate command with the instance's database and browser endpoints. */
@@ -406,7 +283,7 @@ function runQualityCommand(script, environment, { dryRun = false } = {}) {
   }
 }
 
-/** Runs the repository whitespace check as the final non-Compose quality-gate command. */
+/** Runs the repository whitespace check as the final quality gate. */
 function runGitDiffCheck({ dryRun = false } = {}) {
   const args = ['diff', '--check'];
   if (dryRun) {
@@ -415,34 +292,12 @@ function runGitDiffCheck({ dryRun = false } = {}) {
   }
   const result = spawnSync('git', args, {
     cwd: PROJECT_ROOT,
-    encoding: 'utf8',
     stdio: 'inherit',
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`git diff --check 失败（退出码 ${result.status ?? 1}）`);
   }
-}
-
-/** Runs the full project quality gate against the current isolated instance. */
-function verifyInstance(context, { keep = false, dryRun = false } = {}) {
-  if (dryRun) {
-    startInstance(context, { dryRun: true });
-    for (const script of QUALITY_SCRIPTS)
-      runQualityCommand(script, {}, { dryRun: true });
-    runGitDiffCheck({ dryRun: true });
-    if (!keep) stopInstance(context, { dryRun: true });
-    return 0;
-  }
-
-  startInstance(context);
-  const appPort = readPublishedPort(context, 'app', 3000);
-  const databasePort = readPublishedPort(context, 'postgres', 5432);
-  const environment = createInstanceEnvironment(appPort, databasePort);
-  for (const script of QUALITY_SCRIPTS) runQualityCommand(script, environment);
-  runGitDiffCheck();
-  if (!keep) stopInstance(context);
-  return 0;
 }
 
 const QUALITY_SCRIPTS = [
@@ -459,24 +314,99 @@ const QUALITY_SCRIPTS = [
   'test:visual',
 ];
 
-/** Prints the supported instance lifecycle commands. */
-function printUsage() {
-  process.stdout.write(`用法：npm run instance -- <命令> [选项]
-
-命令：
-  up                 启动当前 worktree 的完整 Compose 栈
-  status             显示容器状态、访问地址和数据库连接信息
-  down               移除容器和网络，保留数据库卷
-  destroy --yes      移除当前实例的容器、网络和数据库卷
-  verify [--keep]    在当前实例执行完整验证；失败时保留环境
-
-通用选项：
-  --dry-run          只打印命令，不连接 Docker
-  --help             显示此帮助信息
-`);
+/** Runs the full quality gate and always removes successful validation data. */
+function verifyInstance(context, { dryRun = false } = {}) {
+  if (dryRun) {
+    startInstance(context, { dryRun: true });
+    for (const script of QUALITY_SCRIPTS) {
+      runQualityCommand(script, {}, { dryRun: true });
+    }
+    runGitDiffCheck({ dryRun: true });
+    stopInstance(context, { dryRun: true, removeVolume: true });
+    return 0;
+  }
+  const endpoints = startInstance(context);
+  for (const script of QUALITY_SCRIPTS) {
+    runQualityCommand(script, endpoints.environment);
+  }
+  runGitDiffCheck();
+  stopInstance(context, { removeVolume: true });
+  return 0;
 }
 
-/** Parses one instance command and its safety-sensitive flags. */
+/** Returns the raw Playwright arguments for one public browser test command. */
+export function createPlaywrightArguments(mode, additionalArguments = []) {
+  if (mode === 'e2e') {
+    return ['test', '--grep-invert', '@visual', ...additionalArguments];
+  }
+  if (mode === 'visual') {
+    return ['test', '--grep', '@visual', ...additionalArguments];
+  }
+  throw new Error(`未知 Playwright 模式：${mode}`);
+}
+
+/** Runs Playwright through the local package binary with an injected instance environment. */
+export function runRawPlaywright(
+  mode,
+  environment,
+  { dryRun = false, playwrightArguments: additionalArguments = [] } = {},
+) {
+  const playwrightArguments = createPlaywrightArguments(
+    mode,
+    additionalArguments,
+  );
+  if (dryRun) {
+    process.stdout.write(
+      `DRY RUN: ${formatCommand('playwright', playwrightArguments)}\n`,
+    );
+    return;
+  }
+  const result = spawnSync(
+    NPM_COMMAND,
+    ['exec', '--', 'playwright', ...playwrightArguments],
+    {
+      cwd: PROJECT_ROOT,
+      env: { ...process.env, ...environment },
+      stdio: 'inherit',
+    },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`Playwright ${mode} 失败（退出码 ${result.status ?? 1}）`);
+  }
+}
+
+/** Runs a standalone browser check in its own worktree-scoped dynamic instance. */
+export function runStandalonePlaywright(
+  mode,
+  { dryRun = false, playwrightArguments = [] } = {},
+) {
+  const context = readGitContext({ playwright: true });
+  if (dryRun) {
+    startInstance(context, { dryRun: true, print: false });
+    runRawPlaywright(mode, {}, { dryRun: true, playwrightArguments });
+    stopInstance(context, { dryRun: true, removeVolume: true });
+    return 0;
+  }
+  return withLifecycleLock(context.lockRoot, context.projectName, () => {
+    const endpoints = startInstance(context);
+    runRawPlaywright(mode, endpoints.environment, { playwrightArguments });
+    stopInstance(context, { removeVolume: true });
+    return 0;
+  });
+}
+
+/** Prints the supported worktree lifecycle commands. */
+function printUsage() {
+  process.stdout.write(
+    `用法：npm run instance -- <命令> [选项]\n\n命令：\n  up                 启动当前 worktree 的完整 Compose 栈\n  status             显示容器状态、访问地址和数据库连接信息\n  down               移除容器和网络，保留数据库卷\n  destroy --yes      移除当前实例的容器、网络和数据库卷\n  verify             执行完整验证；成功删除临时资源，失败保留现场\n\n通用选项：\n  --dry-run          只打印命令，不连接 Docker\n  --help             显示此帮助信息\n`,
+  );
+}
+
+/** Identifies command-line usage errors with shell-friendly exit code 64. */
+class CliUsageError extends Error {}
+
+/** Parses one worktree lifecycle command and its safety-sensitive flags. */
 function parseArguments(argumentsFromCli) {
   if (argumentsFromCli[0] === '--help' || argumentsFromCli[0] === '-h') {
     return { command: 'help' };
@@ -490,41 +420,33 @@ function parseArguments(argumentsFromCli) {
     'verify',
     'help',
   ]);
-  if (!allowedCommands.has(command))
+  if (!allowedCommands.has(command)) {
     throw new CliUsageError(`未知命令：${command}`);
-  const allowedFlags = new Set([
-    '--dry-run',
-    '--yes',
-    '--keep',
-    '--help',
-    '-h',
-  ]);
+  }
+  const allowedFlags = new Set(['--dry-run', '--yes', '--help', '-h']);
   for (const flag of flags) {
     if (!allowedFlags.has(flag)) throw new CliUsageError(`未知选项：${flag}`);
   }
-  if (flags.includes('--help') || flags.includes('-h'))
+  if (flags.includes('--help') || flags.includes('-h')) {
     return { command: 'help' };
+  }
   if (command === 'destroy' && !flags.includes('--yes')) {
     throw new CliUsageError('destroy 是破坏性操作，必须显式提供 --yes');
   }
   if (command !== 'destroy' && flags.includes('--yes')) {
     throw new CliUsageError('--yes 只适用于 destroy');
   }
-  if (command !== 'verify' && flags.includes('--keep')) {
-    throw new CliUsageError('--keep 只适用于 verify');
-  }
-  return {
-    command,
-    dryRun: flags.includes('--dry-run'),
-    keep: flags.includes('--keep'),
-  };
+  return { command, dryRun: flags.includes('--dry-run') };
 }
 
-/** Identifies command-line usage errors with the shell-friendly exit code 64. */
-class CliUsageError extends Error {}
-
-/** Executes an instance lifecycle command and returns its process exit code. */
+/** Executes a worktree lifecycle command and returns its process exit code. */
 export function runInstanceCommand(argumentsFromCli) {
+  try {
+    assertSupportedNodeVersion();
+  } catch (error) {
+    process.stderr.write(`错误：${error.message}\n`);
+    return 1;
+  }
   let options;
   try {
     options = parseArguments(argumentsFromCli);
@@ -543,19 +465,28 @@ export function runInstanceCommand(argumentsFromCli) {
   let context;
   try {
     context = readGitContext();
-    if (options.command === 'up') startInstance(context, options);
-    if (options.command === 'status') printStatus(context, options);
-    if (options.command === 'down') stopInstance(context, options);
-    if (options.command === 'destroy') destroyInstance(context, options);
-    if (options.command === 'verify') return verifyInstance(context, options);
-    return 0;
+    if (options.command === 'status') {
+      printStatus(context, options);
+      return 0;
+    }
+    const runCommand = () => {
+      if (options.command === 'up') startInstance(context, options);
+      if (options.command === 'down') stopInstance(context, options);
+      if (options.command === 'destroy') {
+        stopInstance(context, { ...options, removeVolume: true });
+      }
+      if (options.command === 'verify') return verifyInstance(context, options);
+      return 0;
+    };
+    if (options.dryRun) return runCommand();
+    return withLifecycleLock(context.lockRoot, context.projectName, runCommand);
   } catch (error) {
     process.stderr.write(
       `错误：${error instanceof Error ? error.message : String(error)}\n`,
     );
     if (options.command === 'verify' && context && !options.dryRun) {
       process.stderr.write(
-        `验证失败，实例已保留。排查后可执行：npm run instance -- down\n或删除数据：npm run instance -- destroy --yes\n`,
+        `验证失败，现场已保留。检查：docker compose -f compose.yaml -p ${context.projectName} ps\n日志：docker compose -f compose.yaml -p ${context.projectName} logs\n清理：npm run instance -- destroy --yes\n`,
       );
     }
     return 1;

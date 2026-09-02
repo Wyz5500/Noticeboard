@@ -8,44 +8,45 @@
 
 运行以下命令前，请先确保 Docker daemon 已运行；macOS 和 Windows 请先启动 Docker Desktop，Linux 请确保 Docker 服务已启动。
 
-Linux、macOS 和 Windows：
+Linux、macOS 和 Windows 的永久部署只能从主工作目录执行：
 
 ```bash
 npm ci
+npm run deploy
+```
+
+`npm run deploy` 固定升级 Compose project `noticeboard`，页面地址始终为 `http://127.0.0.1:3000`。PostgreSQL 只连接部署内部网络，不发布宿主机端口；数据保存在 `noticeboard-postgres` 卷中。部署入口只执行 `up -d --build --wait`，不提供删除命令；重复执行同一命令会重建并升级现有服务。linked worktree 中执行部署会在连接 Docker 前被拒绝。Linux/macOS 仍可使用等价兼容入口 `scripts/deploy.sh`。
+
+worktree 开发实例使用独立命令：
+
+```bash
 npm run instance -- up
 npm run instance -- status
 ```
 
-`status` 会打印当前 worktree 的页面、Swagger 和数据库地址。每个 worktree 使用独立的 Compose project、PostgreSQL 容器、网络和卷，应用与数据库宿主机端口由 Docker 动态分配。
+`status` 会打印当前 worktree 的页面、Swagger 和数据库地址。每个包含新版生命周期脚本的 worktree 使用独立的 Compose project、PostgreSQL 容器、网络和卷；应用与数据库宿主机端口由 Docker 动态分配，应用端口保证避开永久部署使用的 `3000`。
 
-停止当前实例但保留数据：
+停止当前 worktree 实例但保留数据：
 
 ```bash
 npm run instance -- down
 ```
 
-删除当前实例及其数据库数据：
+删除当前 worktree 实例及其数据库数据：
 
 ```bash
 npm run instance -- destroy --yes
 ```
 
-销毁后当前 worktree 会从干净数据库重新初始化；历史迁移卷仍保留为备份，但不会再次导入到该实例。
+这些 worktree 命令只操作当前路径对应的 project，不能删除或停止永久 `noticeboard` 部署。旧 worktree 必须合并新版生命周期脚本后才能获得该隔离保证。
 
-完整验证也使用当前实例，成功后移除容器和网络，失败时保留现场：
-
-```bash
-npm run instance -- verify
-npm run instance -- verify --keep  # 成功后也保留实例
-```
-
-访问地址以 `npm run instance -- status` 的输出为准。Linux/macOS 下的兼容旧入口部署脚本仍可启动当前 worktree 实例：
+完整验证使用当前 worktree 的隔离实例：
 
 ```bash
-scripts/deploy.sh
+npm run verify
 ```
 
-Compose 会依次等待 PostgreSQL、执行 migration、在任务表为空时写入演示 seed，再以非 root、只读文件系统运行无状态应用。重复部署不会覆盖已有任务。需要显式恢复演示数据时使用页面中的重置操作或 demo reset API。
+验证成功后删除验证容器、网络和数据库卷；验证失败时保留现场。再次执行同一命令会重建并升级保留的实例后重试。Compose 会依次等待 PostgreSQL、执行 migration、在任务表为空时写入演示 seed，再以非 root、只读文件系统运行无状态应用。需要显式恢复永久部署的演示数据时使用页面中的重置操作或 demo reset API。
 
 ## 演示行为与数据
 
@@ -61,6 +62,7 @@ Compose 会依次等待 PostgreSQL、执行 migration、在任务表为空时写
 ## 常用命令
 
 ```bash
+npm run deploy             # 从主工作目录部署或升级固定 noticeboard 实例
 npm run build              # 编译 API、浏览器 TypeScript 与静态页面
 npm run start:dev          # 监听后端源文件；修改前端后需重新 build:web
 npm run db:migrate         # 显式执行数据库迁移
@@ -75,7 +77,7 @@ npm run instance -- status  # 显示当前实例和动态端口
 npm run verify             # 完整交付门禁
 ```
 
-数据库命令读取 `DATABASE_URL`；API/契约集成测试读取 `DATABASE_URL_TEST`。由实例 CLI 执行的验证会自动注入当前实例的 `DATABASE_URL_TEST` 和 `E2E_BASE_URL`；Playwright 检测到 `E2E_BASE_URL` 后不会再启动第二个本地应用。
+数据库命令读取 `DATABASE_URL`；API/契约集成测试读取 `DATABASE_URL_TEST`。由实例 CLI 执行的验证会自动注入当前实例的 `DATABASE_URL_TEST` 和 `E2E_BASE_URL`。单独执行 `npm run test:e2e` 或 `npm run test:visual` 时，会创建带 `-playwright` 后缀的 worktree 专用 Compose project，使用动态端口且避开 `3000`；成功后删除容器、网络和数据库卷，失败时保留现场。Playwright 配置不再使用固定的 `3100` 或 `54329` 回退端口。
 
 ## 项目结构
 
@@ -85,7 +87,7 @@ npm run verify             # 完整交付门禁
 - `tests/e2e`：行为测试与由旧原型冻结的视觉基线。
 - `docs/architecture.md`：架构决策、边界和事务设计。
 - `style-configs/README.md`：主题令牌与注册说明。
-- `Dockerfile`、`compose.yaml`：固定版本的构建与本地部署。
+- `Dockerfile`、`compose.deploy.yaml`：固定 `noticeboard` 永久部署；`compose.yaml`：worktree 开发与验证实例。
 
 ## 健康与关闭
 

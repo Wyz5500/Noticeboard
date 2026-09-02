@@ -61,6 +61,10 @@ HTTP 使用 URI 版本 `/api/v1`。稳定枚举、字段、状态码与 demo-onl
 
 配置仅来自环境变量，并在启动时验证。PostgreSQL 连接、查询和 readiness 探测都有明确超时，意外异常在返回安全错误信封前写入结构化日志。镜像使用多阶段构建，生产层只安装运行依赖并以非 root 用户启动；Compose 的应用文件系统只读。migration 和非破坏性 seed 是先于无状态应用的一次性服务。存活检查不依赖数据库，就绪检查实际执行 PostgreSQL 查询。
 
+永久部署与 worktree 实例是两种隔离拓扑。永久部署只能从 Git 主工作目录通过 `npm run deploy` 升级，固定使用 Compose project `noticeboard` 和应用端口 `127.0.0.1:3000`；其 PostgreSQL 只连接内部网络并使用持久卷，部署入口不提供删除能力。linked worktree 必须拒绝永久部署。
+
+开发、完整验证和独立 Playwright 使用按 worktree 绝对路径派生的 Compose project、网络和数据库卷，宿主机端口由 Docker 动态分配，应用端口必须避开永久部署的 `3000`。独立 Playwright 使用额外的 `-playwright` project，不能回退到固定宿主机端口。生命周期操作以仓库共享锁和 project 锁避免并发修改；不同 worktree 的业务测试可在各自实例上并行。完整验证和独立 Playwright 成功后删除其容器、网络及数据库卷，失败时保留现场，重复相同命令会升级保留实例后重试。worktree 的 `down`、`destroy` 和验证清理只能作用于当前路径派生的 project，不得操作永久 `noticeboard`。
+
 ## 架构变更判定
 
 在既有边界内新增普通用例、读取投影、业务表或演示 fixture，不构成架构变化，无需更新本文。改变一级 Feature 拓扑、分层职责或依赖方向、Feature 公共合同、Composition Root 与 `common` 规则、事务及一致性策略、数据持久化原则、认证与安全边界、前端状态与持久化架构、部署拓扑或重大基础设施选型，属于架构变化，必须同步更新本文和相应的可执行验证。
