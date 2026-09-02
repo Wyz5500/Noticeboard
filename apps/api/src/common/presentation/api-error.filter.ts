@@ -43,6 +43,8 @@ function describeError(exception: unknown): ErrorDescription {
   if (exception instanceof CodedDomainError) {
     const statusByCode: Record<string, number> = {
       ACTION_FORBIDDEN: HttpStatus.FORBIDDEN,
+      TASK_EXPIRED: HttpStatus.CONFLICT,
+      TASK_NOT_EXPIRED: HttpStatus.CONFLICT,
       COMMENT_FORBIDDEN: HttpStatus.FORBIDDEN,
       COMMENT_NOT_FOUND: HttpStatus.NOT_FOUND,
       COMMENT_CONFLICT: HttpStatus.CONFLICT,

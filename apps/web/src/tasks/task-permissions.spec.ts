@@ -2,7 +2,9 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TaskResource } from '../core/api-types.js';
-import { availableActions } from './task-permissions.js';
+import * as taskPermissions from './task-permissions.js';
+
+const { availableActions } = taskPermissions;
 
 const REOPENED_TASK: TaskResource = {
   id: 'task-reopened',
@@ -20,6 +22,8 @@ const REOPENED_TASK: TaskResource = {
     roleLabel: '用户',
   },
   assignee: null,
+  workflowStatus: 'reopened',
+  workflowStatusLabel: '重新打开',
   status: 'reopened',
   statusLabel: '重新打开',
   createdAt: '2026-08-30T09:00:00.000Z',
@@ -34,6 +38,37 @@ describe('task action permissions', () => {
     expect(
       availableActions(REOPENED_TASK, 'adventurer-a', ['tasks.view']),
     ).not.toContain('accept');
+  });
+
+  /** Ensures only the publisher with review permission can renew an expired task. */
+  it('shows expired-task renewal only to the authorized publisher', () => {
+    const expiredTask = {
+      ...REOPENED_TASK,
+      status: 'expired',
+      statusLabel: '已失效',
+    } as TaskResource;
+    const canRenewExpiredTask = (taskPermissions as Record<string, unknown>)[
+      'canRenewExpiredTask'
+    ] as
+      | ((
+          task: TaskResource,
+          actorId: string,
+          permissions?: readonly string[],
+        ) => boolean)
+      | undefined;
+
+    expect(
+      canRenewExpiredTask?.(expiredTask, 'noticeboard-master', [
+        'tasks.view',
+        'tasks.review',
+      ]) ?? false,
+    ).toBe(true);
+    expect(
+      canRenewExpiredTask?.(expiredTask, 'adventurer-a', [
+        'tasks.view',
+        'tasks.review',
+      ]) ?? false,
+    ).toBe(false);
   });
 
   /** Ensures reopened tasks remain actionable when the role has accept permission. */

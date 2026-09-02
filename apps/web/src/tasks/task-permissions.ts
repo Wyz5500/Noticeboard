@@ -5,6 +5,19 @@ import type {
   TaskResource,
 } from '../core/api-types.js';
 
+/** Reports whether the current actor may open the expired-task renewal form. */
+export function canRenewExpiredTask(
+  task: TaskResource,
+  actorId: string,
+  permissions?: readonly PermissionCode[],
+): boolean {
+  return (
+    task.status === 'expired' &&
+    task.publisher.id === actorId &&
+    (!permissions || permissions.includes('tasks.review'))
+  );
+}
+
 /** Returns the actions that appear for one current demo actor and task projection. */
 export function availableActions(
   task: TaskResource,

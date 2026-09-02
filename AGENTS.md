@@ -19,7 +19,7 @@
 - 若终端未加载版本管理器，请先将当前运行时切换到 Node `24.20.0`，再执行 `npm run verify`。
 - 永久部署与 worktree 生命周期严格分离。永久部署只能从主工作目录执行 `npm run deploy`，固定使用 Compose project `noticeboard` 和应用端口 `127.0.0.1:3000`，PostgreSQL 不发布宿主机端口；linked worktree 中不得部署。部署命令只允许 `up -d --build --wait` 式升级，不得添加任何删除路径。
 - worktree 开发与完整验证通过 `npm run instance -- ...` 和 `npm run verify` 管理。每个包含新版脚本的 worktree 使用独立 Compose project、PostgreSQL 容器、网络和卷，宿主机端口由 Docker 动态分配且应用端口必须避开 `3000`；不要直接运行普通 `docker compose` 命令。验证成功必须删除容器、网络和数据库卷，验证失败才保留现场，再次执行相同命令会升级并重试。
-- instance verify 会自动向测试注入当前实例的 `DATABASE_URL_TEST` 和 `E2E_BASE_URL`。单独运行 `npm run test:e2e` 或 `npm run test:visual` 时会创建 worktree 专用的动态端口 Playwright 实例，成功清理全部临时 Compose 资源、失败保留现场；不得恢复固定 `3100` 或 `54329` 的 standalone 回退。
+- instance verify 会自动向测试注入当前实例的 `DATABASE_URL_TEST`、`E2E_BASE_URL`、`TASK_BUSINESS_TIME_ZONE=Asia/Shanghai` 和 `TASK_CURRENT_DATE_OVERRIDE=2026-09-01`。单独运行 `npm run test:e2e` 或 `npm run test:visual` 时会创建使用同一固定业务日期的 worktree 专用动态端口 Playwright 实例，成功清理全部临时 Compose 资源、失败保留现场；不得恢复固定 `3100` 或 `54329` 的 standalone 回退。永久部署只设置上海业务时区，不得设置日期覆盖。
 - 若出现 Docker socket `permission denied`（例如 OrbStack 的 `docker.sock`）或连接 localhost 动态端口时出现 `EPERM`，这是执行环境没有 Docker socket 或本机端口权限，不是应用故障。切换到允许访问 Docker 与本机测试端口的终端/执行环境后，重跑原命令；在受限代理环境中按其权限流程申请放行。
 
 ## 编码与注释

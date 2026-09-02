@@ -83,7 +83,7 @@ test('navigates and filters the in-memory task board', async ({
   await expect(page.locator('#homeView')).not.toContainText('状态概览');
   await expect(page.locator('#homeView')).not.toContainText('任务状态概览');
   await expect(page.locator('#statTotal')).toHaveText('5');
-  await expect(page.locator('.stat-card')).toHaveCount(6);
+  await expect(page.locator('.stat-card')).toHaveCount(7);
   await expect(page.locator('.stat-foot')).toHaveCount(0);
   await expect(page.locator('.stat-label')).toHaveText([
     '我的任务',
@@ -91,6 +91,7 @@ test('navigates and filters the in-memory task board', async ({
     '进行中',
     '已完成',
     '重新打开',
+    '已失效',
     '已关闭',
   ]);
   const desktopStatusColumns = await page
@@ -100,7 +101,7 @@ test('navigates and filters the in-memory task board', async ({
     );
   expect(desktopStatusColumns).toBe(isMobile ? 2 : 1);
   await expect(page.locator('.home-summary .stat-card')).toHaveCount(1);
-  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(5);
+  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(6);
   if (isMobile) {
     await page.locator('.home-summary .stat-card-total').click();
     await expect(
@@ -130,10 +131,12 @@ test('navigates and filters the in-memory task board', async ({
     );
   expect(desktopTaskColumns).toBe(isMobile ? 1 : 3);
   await openMobileTaskFilters(page, isMobile);
-  await page.getByRole('button', { name: '进行中 3' }).click();
-  await expect(page.locator('.task-card')).toHaveCount(3);
-  await page.locator('#searchInput').fill('北境');
-  await expect(page.locator('.task-card h3')).toHaveText('北境哨站补给护送');
+  await page.getByRole('button', { name: '进行中 2' }).click();
+  await expect(page.locator('.task-card')).toHaveCount(2);
+  await page.locator('#searchInput').fill('赤岩');
+  await expect(page.locator('.task-card h3')).toHaveText(
+    '赤岩采石场的矿脉勘探',
+  );
   await page.getByRole('button', { name: '我的任务' }).click();
   await expect(page).toHaveURL(/scope=mine/);
 });
@@ -144,7 +147,7 @@ test('renders the action-first home overview layout', async ({ page }) => {
 
   await expect(page.locator('.home-layout')).toBeVisible();
   await expect(page.locator('.home-summary .stat-card')).toHaveCount(1);
-  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(5);
+  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(6);
   await expect(page.locator('.home-primary-action')).toHaveAttribute(
     'href',
     '#tasks?scope=mine&filter=全部',
@@ -374,7 +377,7 @@ test('keeps the wide-high home as a complete single-screen dashboard', async ({
   );
   await expect(page.locator('.hero-copy')).toBeVisible();
   await expect(page.locator('.home-next-step')).toBeVisible();
-  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(5);
+  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(6);
 });
 
 /** Proves a representative wide-short viewport becomes a complete three-row compact dashboard. */
@@ -388,7 +391,7 @@ test('recomposes the wide-short home into a complete single-screen dashboard', a
 
   expect(layout.scrollHeight).toBe(layout.viewportHeight);
   expect(layout.overflowY).toBe('hidden');
-  expect(layout.statusColumns).toBe(5);
+  expect(layout.statusColumns).toBe(6);
   expect(layout.status.y).toBeGreaterThanOrEqual(
     layout.hero.y + layout.hero.height - 2,
   );
@@ -401,7 +404,7 @@ test('recomposes the wide-short home into a complete single-screen dashboard', a
   expect(Math.abs(layout.summary.y - layout.nextStep.y)).toBeLessThan(2);
   await expect(page.locator('.hero-copy')).toBeVisible();
   await expect(page.locator('.home-next-step')).toBeVisible();
-  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(5);
+  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(6);
   const statusOverview = page.getByRole('complementary', {
     name: '任务状态概览',
   });
@@ -431,7 +434,7 @@ test('stacks the narrow home into a complete scrollable flow', async ({
   expect(layout.statusColumns).toBe(3);
   await expect(page.locator('.hero-copy')).toBeVisible();
   await expect(page.locator('.home-next-step')).toBeVisible();
-  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(5);
+  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(6);
 });
 
 /** Proves an extremely short window falls back to complete scrolling instead of clipping or hiding content. */
@@ -450,7 +453,7 @@ test('keeps every home module reachable in an extremely short window', async ({
   );
   await expect(page.locator('.hero-copy')).toBeVisible();
   await expect(page.locator('.home-next-step')).toBeVisible();
-  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(5);
+  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(6);
 });
 
 /** Proves the smallest supported phone width keeps the poster headline readable without horizontal overflow. */
@@ -518,7 +521,7 @@ test('keeps home compositions stable around responsive boundaries', async ({
         layout.viewportHeight + 2,
       );
     } else if (layout.overflowY === 'hidden') {
-      expect(layout.statusColumns).toBe(5);
+      expect(layout.statusColumns).toBe(6);
       expect(layout.status.y).toBeGreaterThanOrEqual(
         layout.hero.y + layout.hero.height - 2,
       );
@@ -1095,7 +1098,7 @@ test('aligns home arrows to the bottom right of their cards', async ({
       bottom: '28px',
       ...taskCardArrowStyle,
     },
-    ...Array.from({ length: 5 }, () => ({
+    ...Array.from({ length: 6 }, () => ({
       position: 'absolute',
       right: isMobile ? '15px' : '26px',
       bottom: isMobile ? '14px' : '19px',
@@ -1117,7 +1120,7 @@ test('uses responsive home status-rail columns', async ({ page }) => {
       );
   };
 
-  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(5);
+  await expect(page.locator('.home-status-rail .stat-card')).toHaveCount(6);
   await expect.poll(() => columnsAt(1440)).toBe(1);
   await expect.poll(() => columnsAt(840)).toBe(3);
   await expect.poll(() => columnsAt(620)).toBe(2);
@@ -1740,7 +1743,7 @@ test('keeps the task page position while filtering, changing scope, and searchin
   await page.waitForTimeout(120);
 
   await activate('[data-filter="进行中"]');
-  await expect(page.locator('.task-card')).toHaveCount(3);
+  await expect(page.locator('.task-card')).toHaveCount(2);
   await expect.poll(() => readTaskScroll()).toEqual(initial);
 
   await expect
@@ -1782,7 +1785,144 @@ test('keeps mobile status rail separators between both columns', async ({
       cards.map((card) => getComputedStyle(card).borderRightWidth),
     );
 
-  expect(borderWidths).toEqual(['1px', '0px', '1px', '0px', '1px']);
+  expect(borderWidths).toEqual(['1px', '0px', '1px', '0px', '1px', '0px']);
+});
+
+/** Proves a task remains actionable through the end of its Shanghai due date. */
+test('keeps a task valid through its due date', async ({ page }) => {
+  await page.goto('/#tasks?scope=all&filter=全部');
+  await page
+    .locator('.task-card')
+    .filter({ hasText: '末影门遗迹的坐标校准' })
+    .click();
+
+  await expect(
+    page.locator('.detail-fact').filter({ hasText: '当前状态' }),
+  ).toContainText('重新打开');
+  await expect(
+    page.locator('.detail-fact').filter({ hasText: '截止时间' }),
+  ).toContainText('9月1日');
+  await expect(page.locator('[data-renew-expired]')).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: '直接关闭任务' }),
+  ).toBeVisible();
+});
+
+/** Proves only the publisher can renew an expired task while retaining workflow ownership details. */
+test('renews an expired task only as publisher while preserving status and mine ownership', async ({
+  page,
+  request,
+}) => {
+  const denied = await request.post(
+    '/api/v1/tasks/task-outpost/expiration-renewal',
+    {
+      headers: { 'X-Demo-User-Id': 'adventurer-a' },
+      data: {
+        dueDate: '2026-09-07',
+        recoveryStrategy: 'preserve_status',
+        expectedVersion: 2,
+      },
+    },
+  );
+  expect(denied.status()).toBe(403);
+  expect(await denied.json()).toMatchObject({
+    error: { code: 'ACTION_FORBIDDEN' },
+  });
+
+  await page.goto('/#tasks?scope=all&filter=全部');
+  await page
+    .locator('.task-card')
+    .filter({ hasText: '北境哨站补给护送' })
+    .click();
+  await expect(
+    page.locator('.detail-fact').filter({ hasText: '当前状态' }),
+  ).toContainText('已失效');
+  await page.getByRole('button', { name: '续期并重新打开' }).click();
+  await expect(page.locator('#renewalCurrentDueDate')).toHaveText('2026-08-31');
+  await expect(page.locator('#renewalWorkflowStatus')).toHaveText('进行中');
+  await expect(
+    page.locator('input[name="recoveryStrategy"][value="preserve_status"]'),
+  ).toBeChecked();
+  await page.locator('#renewalDueDate').fill('2026-09-07');
+  const renewalRequest = page.waitForRequest(
+    (candidate) =>
+      candidate.url().endsWith('/tasks/task-outpost/expiration-renewal') &&
+      candidate.method() === 'POST',
+  );
+  await page.getByRole('button', { name: '确认续期' }).click();
+  expect((await renewalRequest).postDataJSON()).toMatchObject({
+    dueDate: '2026-09-07',
+    recoveryStrategy: 'preserve_status',
+    expectedVersion: 2,
+  });
+
+  await expect(
+    page.locator('.detail-fact').filter({ hasText: '当前状态' }),
+  ).toContainText('进行中');
+  await expect(
+    page.locator('.detail-fact').filter({ hasText: '截止时间' }),
+  ).toContainText('9月7日');
+  await expect(
+    page.locator('.detail-fact').filter({ hasText: '当前接取者' }),
+  ).toContainText('用户 B');
+  const latestEvent = page.locator('.timeline li').first();
+  await expect(latestEvent.locator('.timeline-action')).toHaveText('任务续期');
+  await expect(latestEvent.locator('.timeline-meta')).toContainText('用户 A');
+  await expect(latestEvent.locator('.timeline-detail')).toHaveText(
+    '截止日期由 2026-08-31 调整为 2026-09-07；保留工作流状态：进行中；接取者保持不变',
+  );
+
+  await page.locator('[data-close-drawer]').click();
+  await navigateToHash(page, '#tasks?scope=mine&filter=全部');
+  await expect(page.locator('.task-card')).toHaveCount(6);
+  await expect(
+    page.locator('.task-card').filter({ hasText: '北境哨站补给护送' }),
+  ).toHaveCount(1);
+  await page.locator('#profileButton').click();
+  await page.locator('#identitySelect').selectOption('adventurer-a');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.task-card')).toHaveCount(4);
+  await expect(
+    page.locator('.task-card').filter({ hasText: '北境哨站补给护送' }),
+  ).toHaveCount(0);
+});
+
+/** Proves reopening an expired completed task clears its previous assignee atomically. */
+test('reopens an expired task and clears its assignee', async ({ page }) => {
+  await page.goto('/#tasks?scope=all&filter=全部');
+  await page
+    .locator('.task-card')
+    .filter({ hasText: '修复旧矿井的照明符文' })
+    .click();
+  await expect(
+    page.locator('.detail-fact').filter({ hasText: '当前状态' }),
+  ).toContainText('已失效');
+  await expect(
+    page.locator('.detail-fact').filter({ hasText: '当前接取者' }),
+  ).toContainText('用户 C');
+
+  await page.getByRole('button', { name: '续期并重新打开' }).click();
+  await page.locator('#renewalDueDate').fill('2026-09-08');
+  await page
+    .locator('input[name="recoveryStrategy"][value="reopened"]')
+    .check();
+  await page.getByRole('button', { name: '确认续期' }).click();
+
+  await expect(
+    page.locator('.detail-fact').filter({ hasText: '当前状态' }),
+  ).toContainText('重新打开');
+  await expect(
+    page.locator('.detail-fact').filter({ hasText: '当前接取者' }),
+  ).toContainText('未接取');
+  await expect(
+    page.getByRole('button', { name: /重新接取任务/ }),
+  ).toBeVisible();
+  const latestEvent = page.locator('.timeline li').first();
+  await expect(latestEvent.locator('.timeline-action')).toHaveText('任务续期');
+  await expect(latestEvent.locator('.timeline-meta')).toContainText('用户 A');
+  await expect(latestEvent.locator('.timeline-detail')).toHaveText(
+    '截止日期由 2026-08-29 调整为 2026-09-08；工作流状态改为：重新打开；接取者已清空',
+  );
 });
 
 /** Proves create, accept, complete, reopen, replacement acceptance, and approval traverse the API. */
@@ -1796,7 +1936,7 @@ test('completes a reopened task with a replacement assignee', async ({
   await page.locator('#newTaskButton').click();
   await page.locator('[name="title"]').fill('替换接取者任务');
   await page.locator('[name="type"]').selectOption('bounty');
-  await page.locator('[name="dueDate"]').fill('2026-09-12');
+  await page.locator('#taskForm [name="dueDate"]').fill('2026-09-12');
   await page
     .locator('textarea[name="description"]')
     .fill('验证重新打开后替换接取者');
@@ -1834,7 +1974,7 @@ test('comments on an open task and keeps deleted tombstones', async ({
   await page.locator('#newTaskButton').click();
   await page.locator('[name="title"]').fill('评论协作任务');
   await page.locator('[name="type"]').selectOption('exploration');
-  await page.locator('[name="dueDate"]').fill('2026-09-12');
+  await page.locator('#taskForm [name="dueDate"]').fill('2026-09-12');
   await page
     .locator('textarea[name="description"]')
     .fill('验证评论、删除占位和任务归属');
@@ -1991,7 +2131,7 @@ test('renders user-provided task text safely', async ({ page }) => {
   await page.locator('#newTaskButton').click();
   await page.locator('[name="title"]').fill('<img src=x onerror=alert(1)>');
   await page.locator('[name="type"]').selectOption('exploration');
-  await page.locator('[name="dueDate"]').fill('2026-09-12');
+  await page.locator('#taskForm [name="dueDate"]').fill('2026-09-12');
   await page
     .locator('textarea[name="description"]')
     .fill('<script>window.hacked=true</script>');

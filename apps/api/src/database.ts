@@ -3,7 +3,8 @@ import { DataSource, type DataSourceOptions } from 'typeorm';
 
 import { authorizationPersistenceEntities } from './authorization/public/composition/persistence.js';
 import { AddAdminUpdatedAt1788062403000 } from './common/infrastructure/database/migrations/1788062403000-add-admin-updated-at.js';
-import { AddTimelineComments1788062404000 } from './common/infrastructure/database/migrations/1788062404000-add-timeline-comments.js';
+import { AddTaskRenewedEvent1788062404000 } from './common/infrastructure/database/migrations/1788062404000-add-task-renewed-event.js';
+import { AddTimelineComments1788062405000 } from './common/infrastructure/database/migrations/1788062405000-add-timeline-comments.js';
 import { AddAuthorizationSchema1788062402000 } from './common/infrastructure/database/migrations/1788062402000-add-authorization-schema.js';
 import { CreateNoticeboardSchema1788062400000 } from './common/infrastructure/database/migrations/1788062400000-create-noticeboard-schema.js';
 import { AddEventActorSnapshot1788062401000 } from './common/infrastructure/database/migrations/1788062401000-add-event-actor-snapshot.js';
@@ -35,7 +36,8 @@ export function postgresDataSourceOptions(
       AddEventActorSnapshot1788062401000,
       AddAuthorizationSchema1788062402000,
       AddAdminUpdatedAt1788062403000,
-      AddTimelineComments1788062404000,
+      AddTaskRenewedEvent1788062404000,
+      AddTimelineComments1788062405000,
     ],
     migrationsTableName: 'schema_migrations',
   };

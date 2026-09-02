@@ -4,6 +4,8 @@ import { CodedDomainError } from '../../common/domain/domain-error.js';
 export type DomainErrorCode =
   | 'INVALID_TASK'
   | 'ACTION_FORBIDDEN'
+  | 'TASK_EXPIRED'
+  | 'TASK_NOT_EXPIRED'
   | 'INVALID_COMMENT'
   | 'COMMENT_NOT_FOUND'
   | 'COMMENT_FORBIDDEN'

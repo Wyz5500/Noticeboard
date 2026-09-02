@@ -81,6 +81,22 @@ describe('hash router', () => {
     });
   });
 
+  /** Proves the derived expired status round-trips through the Chinese hash vocabulary. */
+  it('round-trips the expired task filter', () => {
+    const hash = buildTaskHash({
+      scope: 'all',
+      filter: '已失效',
+      query: '',
+    });
+
+    expect(hash).toBe('#tasks?scope=all&filter=已失效');
+    expect(parseHash(hash)).toMatchObject({
+      view: 'tasks',
+      scope: 'all',
+      filter: '已失效',
+    });
+  });
+
   /** Proves malformed routes and unsupported filters normalize to safe visible defaults. */
   it('normalizes unknown route values', () => {
     expect(parseHash('#unknown?scope=wrong&filter=不存在')).toEqual({

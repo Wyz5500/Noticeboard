@@ -3,8 +3,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { Actor } from '../../identity/public/actor.js';
 import { DomainError } from './domain-error.js';
-import { Task } from './task.js';
-import type { TaskSnapshot } from './task.types.js';
+import { deriveTaskEffectiveStatus, Task } from './task.js';
+import type {
+  TaskEffectiveStatus,
+  TaskSnapshot,
+  TaskStatus,
+} from './task.types.js';
 
 const PUBLISHER: Actor = {
   id: 'noticeboard-master',
@@ -25,6 +29,7 @@ const REPLACEMENT: Actor = {
   role: 'user',
 };
 const CREATED_AT = '2026-08-29T12:00:00.000Z';
+const CURRENT_DATE = '2026-08-29';
 
 /** Creates one deterministic task so assertions remain independent from clocks and IDs. */
 function createTask(): Task {
@@ -45,12 +50,25 @@ function createTask(): Task {
 /** Drives a task through acceptance and completion for publisher review tests. */
 function completedTask(): Task {
   const task = createTask();
-  task.act('accept', ASSIGNEE, '2026-08-29T13:00:00.000Z');
-  task.act('complete', ASSIGNEE, '2026-08-29T14:00:00.000Z');
+  task.act('accept', ASSIGNEE, '2026-08-29T13:00:00.000Z', CURRENT_DATE);
+  task.act('complete', ASSIGNEE, '2026-08-29T14:00:00.000Z', CURRENT_DATE);
   return task;
 }
 
 describe('Task aggregate', () => {
+  it.each<[TaskStatus, string, string, TaskEffectiveStatus]>([
+    ['in_progress', '2026-09-01', '2026-09-02', 'expired'],
+    ['completed', '2026-09-01', '2026-09-01', 'completed'],
+    ['closed', '2026-09-01', '2026-09-02', 'closed'],
+  ])(
+    'derives %s with due date %s on business date %s as %s',
+    (status, dueDate, currentDate, expected) => {
+      expect(deriveTaskEffectiveStatus(status, dueDate, currentDate)).toBe(
+        expected,
+      );
+    },
+  );
+
   it('creates a trimmed not-started task and records the publisher', () => {
     const snapshot = createTask().toSnapshot();
 
@@ -104,10 +122,119 @@ describe('Task aggregate', () => {
     },
   );
 
+  it('rejects ordinary actions after an open task expires without mutating it', () => {
+    const task = createTask();
+    const before = task.toSnapshot();
+
+    expect(task.canAct('accept', ASSIGNEE, '2026-09-02')).toBe(false);
+    expect(() =>
+      task.act('accept', ASSIGNEE, '2026-08-29T13:00:00.000Z', '2026-09-02'),
+    ).toThrowError(expect.objectContaining({ code: 'TASK_EXPIRED' }));
+    expect(task.toSnapshot()).toEqual(before);
+  });
+
+  it('lets the publisher renew an expired task while preserving its workflow state', () => {
+    const task = createTask();
+    task.act('accept', ASSIGNEE, '2026-08-29T13:00:00.000Z', CURRENT_DATE);
+    task.renewExpired(PUBLISHER, {
+      dueDate: '2026-09-03',
+      recoveryStrategy: 'preserve_status',
+      currentDate: '2026-09-02',
+      at: '2026-09-02T04:00:00.000Z',
+    });
+
+    expect(task.toSnapshot()).toMatchObject({
+      dueDate: '2026-09-03',
+      status: 'in_progress',
+      assignee: ASSIGNEE,
+      updatedAt: '2026-09-02T04:00:00.000Z',
+      version: 3,
+    });
+    expect(task.toSnapshot().timeline.at(-1)).toEqual({
+      sequence: 3,
+      action: 'renewed',
+      actor: PUBLISHER,
+      at: '2026-09-02T04:00:00.000Z',
+      detail:
+        '截止日期由 2026-09-01 调整为 2026-09-03；保留工作流状态：进行中；接取者保持不变',
+    });
+  });
+
+  it('clears the assignee when an expired task is renewed as reopened', () => {
+    const task = completedTask();
+
+    task.renewExpired(PUBLISHER, {
+      dueDate: '2026-09-03',
+      recoveryStrategy: 'reopened',
+      currentDate: '2026-09-02',
+      at: '2026-09-02T04:00:00.000Z',
+    });
+
+    expect(task.toSnapshot()).toMatchObject({
+      dueDate: '2026-09-03',
+      status: 'reopened',
+      assignee: null,
+      version: 4,
+    });
+    expect(task.toSnapshot().timeline.at(-1)).toMatchObject({
+      action: 'renewed',
+      detail:
+        '截止日期由 2026-09-01 调整为 2026-09-03；工作流状态改为：重新打开；接取者已清空',
+    });
+  });
+
+  it('rejects renewal by an actor other than the publisher', () => {
+    const task = createTask();
+    const before = task.toSnapshot();
+
+    expect(() =>
+      task.renewExpired(ASSIGNEE, {
+        dueDate: '2026-09-03',
+        recoveryStrategy: 'preserve_status',
+        currentDate: '2026-09-02',
+        at: '2026-09-02T04:00:00.000Z',
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'ACTION_FORBIDDEN' }));
+    expect(task.toSnapshot()).toEqual(before);
+  });
+
+  it('rejects renewal while a task is still active', () => {
+    const task = createTask();
+    const before = task.toSnapshot();
+
+    expect(() =>
+      task.renewExpired(PUBLISHER, {
+        dueDate: '2026-09-03',
+        recoveryStrategy: 'preserve_status',
+        currentDate: '2026-09-01',
+        at: '2026-09-01T04:00:00.000Z',
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'TASK_NOT_EXPIRED' }));
+    expect(task.toSnapshot()).toEqual(before);
+  });
+
+  it.each(['2026-09-02', 'not-a-date'])(
+    'rejects invalid renewal due date %s',
+    (dueDate) => {
+      const task = createTask();
+      const before = task.toSnapshot();
+
+      expect(() =>
+        task.renewExpired(PUBLISHER, {
+          dueDate,
+          recoveryStrategy: 'preserve_status',
+          currentDate: '2026-09-02',
+          at: '2026-09-02T04:00:00.000Z',
+        }),
+      ).toThrowError(expect.objectContaining({ code: 'INVALID_TASK' }));
+      expect(task.toSnapshot()).toEqual(before);
+    },
+  );
+
   it('allows any known actor to accept an available task', () => {
     const task = createTask();
 
-    task.act('accept', ASSIGNEE, '2026-08-29T13:00:00.000Z');
+    task.act('accept', ASSIGNEE, '2026-08-29T13:00:00.000Z', CURRENT_DATE);
 
     expect(task.toSnapshot()).toMatchObject({
       assignee: ASSIGNEE,
@@ -125,15 +252,20 @@ describe('Task aggregate', () => {
 
   it('allows only the current assignee to complete an in-progress task', () => {
     const task = createTask();
-    task.act('accept', ASSIGNEE, '2026-08-29T13:00:00.000Z');
+    task.act('accept', ASSIGNEE, '2026-08-29T13:00:00.000Z', CURRENT_DATE);
 
-    expect(task.canAct('complete', ASSIGNEE)).toBe(true);
-    expect(task.canAct('complete', REPLACEMENT)).toBe(false);
+    expect(task.canAct('complete', ASSIGNEE, CURRENT_DATE)).toBe(true);
+    expect(task.canAct('complete', REPLACEMENT, CURRENT_DATE)).toBe(false);
     expect(() =>
-      task.act('complete', REPLACEMENT, '2026-08-29T14:00:00.000Z'),
+      task.act(
+        'complete',
+        REPLACEMENT,
+        '2026-08-29T14:00:00.000Z',
+        CURRENT_DATE,
+      ),
     ).toThrowError(expect.objectContaining({ code: 'ACTION_FORBIDDEN' }));
 
-    task.act('complete', ASSIGNEE, '2026-08-29T14:00:00.000Z');
+    task.act('complete', ASSIGNEE, '2026-08-29T14:00:00.000Z', CURRENT_DATE);
     expect(task.toSnapshot()).toMatchObject({
       status: 'completed',
       version: 3,
@@ -143,8 +275,8 @@ describe('Task aggregate', () => {
   it('lets only the publisher approve and appends approval plus closing in order', () => {
     const task = completedTask();
 
-    expect(task.canAct('approve', ASSIGNEE)).toBe(false);
-    task.act('approve', PUBLISHER, '2026-08-29T15:00:00.000Z');
+    expect(task.canAct('approve', ASSIGNEE, CURRENT_DATE)).toBe(false);
+    task.act('approve', PUBLISHER, '2026-08-29T15:00:00.000Z', CURRENT_DATE);
 
     const snapshot = task.toSnapshot();
     expect(snapshot.status).toBe('closed');
@@ -170,14 +302,14 @@ describe('Task aggregate', () => {
   it('keeps the old assignee on reopen and permits a replacement acceptance', () => {
     const task = completedTask();
 
-    task.act('reopen', PUBLISHER, '2026-08-29T15:00:00.000Z');
+    task.act('reopen', PUBLISHER, '2026-08-29T15:00:00.000Z', CURRENT_DATE);
     expect(task.toSnapshot()).toMatchObject({
       status: 'reopened',
       assignee: ASSIGNEE,
       version: 4,
     });
 
-    task.act('accept', REPLACEMENT, '2026-08-29T16:00:00.000Z');
+    task.act('accept', REPLACEMENT, '2026-08-29T16:00:00.000Z', CURRENT_DATE);
     expect(task.toSnapshot()).toMatchObject({
       status: 'in_progress',
       assignee: REPLACEMENT,
@@ -191,11 +323,11 @@ describe('Task aggregate', () => {
 
   it('allows the publisher to close a reopened task directly', () => {
     const task = completedTask();
-    task.act('reopen', PUBLISHER, '2026-08-29T15:00:00.000Z');
+    task.act('reopen', PUBLISHER, '2026-08-29T15:00:00.000Z', CURRENT_DATE);
 
-    expect(task.canAct('close', PUBLISHER)).toBe(true);
-    expect(task.canAct('close', ASSIGNEE)).toBe(false);
-    task.act('close', PUBLISHER, '2026-08-29T16:00:00.000Z');
+    expect(task.canAct('close', PUBLISHER, CURRENT_DATE)).toBe(true);
+    expect(task.canAct('close', ASSIGNEE, CURRENT_DATE)).toBe(false);
+    task.act('close', PUBLISHER, '2026-08-29T16:00:00.000Z', CURRENT_DATE);
     expect(task.toSnapshot().status).toBe('closed');
   });
 
@@ -307,7 +439,7 @@ describe('Task aggregate', () => {
   /** Proves closed tasks reject new comments without changing their version. */
   it('rejects new comments after the task is closed', () => {
     const task = completedTask();
-    task.act('approve', PUBLISHER, '2026-08-29T15:00:00.000Z');
+    task.act('approve', PUBLISHER, '2026-08-29T15:00:00.000Z', '2026-08-29');
 
     expect(() =>
       task.addComment(
@@ -368,7 +500,7 @@ describe('Task aggregate', () => {
       ASSIGNEE,
       '2026-08-29T14:30:00.000Z',
     );
-    task.act('approve', PUBLISHER, '2026-08-29T15:00:00.000Z');
+    task.act('approve', PUBLISHER, '2026-08-29T15:00:00.000Z', '2026-08-29');
 
     expect(() =>
       task.deleteComment(

@@ -1,12 +1,30 @@
 /** Adds stable usernames and append-only task comment event payloads. */
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddTimelineComments1788062404000 implements MigrationInterface {
-  name = 'AddTimelineComments1788062404000';
+export class AddTimelineComments1788062405000 implements MigrationInterface {
+  name = 'AddTimelineComments1788062405000';
 
   /** Backfills stable username snapshots before enforcing comment-event integrity. */
   async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query("SET LOCAL statement_timeout = '30s'");
+    const schemaStates = (await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'accounts'
+          AND column_name = 'username'
+      ) AS comment_schema_exists
+    `)) as Array<{ comment_schema_exists: boolean }>;
+    if (schemaStates[0]?.comment_schema_exists) {
+      await queryRunner.query(
+        'ALTER TABLE task_events DROP CONSTRAINT IF EXISTS task_events_action_check',
+      );
+      await queryRunner.query(
+        "ALTER TABLE task_events ADD CONSTRAINT task_events_action_check CHECK (action IN ('created', 'accepted', 'completed', 'approved', 'reopened', 'renewed', 'closed', 'comment_created', 'comment_deleted'))",
+      );
+      return;
+    }
     await queryRunner.query(
       'ALTER TABLE accounts ADD COLUMN username varchar(64)',
     );
@@ -61,7 +79,7 @@ export class AddTimelineComments1788062404000 implements MigrationInterface {
       'ALTER TABLE task_events DROP CONSTRAINT task_events_action_check',
     );
     await queryRunner.query(
-      "ALTER TABLE task_events ADD CONSTRAINT task_events_action_check CHECK (action IN ('created', 'accepted', 'completed', 'approved', 'reopened', 'closed', 'comment_created', 'comment_deleted'))",
+      "ALTER TABLE task_events ADD CONSTRAINT task_events_action_check CHECK (action IN ('created', 'accepted', 'completed', 'approved', 'reopened', 'renewed', 'closed', 'comment_created', 'comment_deleted'))",
     );
     await queryRunner.query(`
       ALTER TABLE task_events
@@ -83,7 +101,7 @@ export class AddTimelineComments1788062404000 implements MigrationInterface {
           AND btrim(target_comment_id) <> ''
         )
         OR (
-          action IN ('created', 'accepted', 'completed', 'approved', 'reopened', 'closed')
+          action IN ('created', 'accepted', 'completed', 'approved', 'reopened', 'renewed', 'closed')
           AND comment_id IS NULL
           AND content IS NULL
           AND target_comment_id IS NULL
@@ -112,7 +130,7 @@ export class AddTimelineComments1788062404000 implements MigrationInterface {
       'ALTER TABLE task_events DROP CONSTRAINT task_events_comment_payload_check, DROP CONSTRAINT task_events_action_check',
     );
     await queryRunner.query(
-      "ALTER TABLE task_events ADD CONSTRAINT task_events_action_check CHECK (action IN ('created', 'accepted', 'completed', 'approved', 'reopened', 'closed'))",
+      "ALTER TABLE task_events ADD CONSTRAINT task_events_action_check CHECK (action IN ('created', 'accepted', 'completed', 'approved', 'reopened', 'renewed', 'closed'))",
     );
     await queryRunner.query(
       'DROP TRIGGER IF EXISTS task_events_actor_username_default_trigger ON task_events',

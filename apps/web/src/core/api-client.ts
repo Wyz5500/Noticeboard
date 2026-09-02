@@ -10,6 +10,7 @@ import type {
   CreateTaskCommentRequest,
   CreateTaskRequest,
   DeleteTaskCommentRequest,
+  RenewExpiredTaskRequest,
   UpdateAdminRoleRequest,
   UpdateAdminUserRequest,
   TaskResource,
@@ -190,6 +191,19 @@ export class ApiClient {
       `/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`,
       actorId,
       'DELETE',
+      body,
+    );
+  }
+
+  /** Renews one expired task with a new deadline and recovery strategy. */
+  renewExpiredTask(
+    actorId: string,
+    taskId: string,
+    body: RenewExpiredTaskRequest,
+  ): Promise<TaskResource> {
+    return this.command(
+      `/tasks/${encodeURIComponent(taskId)}/expiration-renewal`,
+      actorId,
       body,
     );
   }

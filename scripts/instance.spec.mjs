@@ -2,7 +2,13 @@
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +27,7 @@ import {
 } from './instance.mjs';
 
 const SCRIPT_PATH = fileURLToPath(new URL('./instance.mjs', import.meta.url));
+const COMPOSE_PATH = fileURLToPath(new URL('../compose.yaml', import.meta.url));
 
 /** Prevents lifecycle commands from starting Docker under an unsupported Node runtime. */
 test('requires the repository Node version before lifecycle work starts', () => {
@@ -174,15 +181,37 @@ test('builds instance-specific test environment variables', () => {
     DATABASE_URL_TEST:
       'postgresql://noticeboard:noticeboard@127.0.0.1:41002/noticeboard',
     E2E_BASE_URL: 'http://127.0.0.1:41001',
+    TASK_BUSINESS_TIME_ZONE: 'Asia/Shanghai',
+    TASK_CURRENT_DATE_OVERRIDE: '2026-09-01',
   });
 });
 
-/** Verifies instance Compose overrides retain dynamic ports without changing default Compose behavior. */
-test('builds empty host-port overrides for isolated Compose commands', () => {
+/** Verifies instance Compose receives dynamic ports and the same stable business date as tests. */
+test('builds isolated Compose environment variables', () => {
   assert.deepEqual(createInstanceComposeEnvironment(), {
     APP_HOST_PORT: '',
     POSTGRES_HOST_PORT: '',
+    TASK_BUSINESS_TIME_ZONE: 'Asia/Shanghai',
+    TASK_CURRENT_DATE_OVERRIDE: '2026-09-01',
   });
+});
+
+/** Verifies the worktree application container consumes stable task-clock configuration. */
+test('configures a stable business date in worktree Compose', () => {
+  const compose = readFileSync(COMPOSE_PATH, 'utf8');
+  const appSection = compose.slice(
+    compose.indexOf('  app:'),
+    compose.indexOf('\nvolumes:'),
+  );
+
+  assert.match(
+    appSection,
+    /TASK_BUSINESS_TIME_ZONE: \$\{TASK_BUSINESS_TIME_ZONE:-Asia\/Shanghai\}/,
+  );
+  assert.match(
+    appSection,
+    /TASK_CURRENT_DATE_OVERRIDE: \$\{TASK_CURRENT_DATE_OVERRIDE:-2026-09-01\}/,
+  );
 });
 
 /** Verifies destroy refuses to contact Docker until explicit data-loss confirmation is supplied. */

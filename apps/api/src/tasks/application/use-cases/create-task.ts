@@ -2,8 +2,11 @@
 import type { AuthorizationPort } from '../../../authorization/public/authorization.port.js';
 import type { IdentityDirectoryPort } from '../../../identity/public/identity-directory.port.js';
 import { Task } from '../../domain/task.js';
-import type { TaskSnapshot, TaskType } from '../../domain/task.types.js';
+import type { TaskType } from '../../domain/task.types.js';
+import type { TaskClockPort } from '../ports/task-clock.port.js';
 import type { TaskTransactionPort } from '../ports/task-transaction.port.js';
+import { projectTask } from '../project-task.js';
+import type { TaskViewModel } from '../read-models/task-read-model.js';
 import { requireDemoActor } from '../require-demo-actor.js';
 import { requirePermission } from '../require-permission.js';
 
@@ -21,7 +24,7 @@ export class CreateTask {
     private readonly transaction: TaskTransactionPort,
     private readonly identities: IdentityDirectoryPort,
     private readonly nextId: () => string,
-    private readonly now: () => string,
+    private readonly clock: TaskClockPort,
     private readonly authorization?: AuthorizationPort,
   ) {}
 
@@ -29,16 +32,17 @@ export class CreateTask {
   async execute(
     actorId: string,
     command: CreateTaskCommand,
-  ): Promise<TaskSnapshot> {
+  ): Promise<TaskViewModel> {
     if (this.authorization)
       await requirePermission(this.authorization, actorId, 'tasks.create');
     const actor = await requireDemoActor(this.identities, actorId);
+    const reading = this.clock.read();
     const task = Task.create(
       { id: this.nextId(), ...command },
       actor,
-      this.now(),
+      reading.instant,
     );
     await this.transaction.run(async (repository) => repository.insert(task));
-    return task.toSnapshot();
+    return projectTask(task.toSnapshot(), reading.currentDate);
   }
 }

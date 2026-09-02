@@ -5,11 +5,24 @@ import {
   TASK_EVENT_ACTIONS,
   TASK_TYPES,
   type CreateTaskValues,
+  type RenewExpiredTaskValues,
   type TaskAction,
+  type TaskEffectiveStatus,
   type TaskEvent,
   type TaskEventAction,
   type TaskSnapshot,
+  type TaskStatus,
 } from './task.types.js';
+
+/** Derives the client-visible status without mutating the persisted workflow state. */
+export function deriveTaskEffectiveStatus(
+  status: TaskStatus,
+  dueDate: string,
+  currentDate: string,
+): TaskEffectiveStatus {
+  if (status === 'closed') return status;
+  return dueDate < currentDate ? 'expired' : status;
+}
 
 const EVENT_DETAILS: Record<TaskEventAction, string> = {
   created: '任务发布至冒险家工会',
@@ -17,7 +30,16 @@ const EVENT_DETAILS: Record<TaskEventAction, string> = {
   completed: '等待发布者验收',
   approved: '任务成果符合要求',
   reopened: '验收未通过，退回继续执行',
+  renewed: '任务已设置新的截止日期',
   closed: '任务流程结束',
+};
+
+const WORKFLOW_STATUS_LABELS: Record<TaskStatus, string> = {
+  not_started: '未开始',
+  in_progress: '进行中',
+  completed: '已完成',
+  reopened: '重新打开',
+  closed: '关闭',
 };
 
 /** Produces a detached actor value so callers cannot mutate aggregate state by reference. */
@@ -116,8 +138,16 @@ export class Task {
   }
 
   /** Reports whether an actor may perform an action in the current aggregate state. */
-  canAct(action: TaskAction, actor: Actor): boolean {
+  canAct(action: TaskAction, actor: Actor, currentDate: string): boolean {
     if (!actor.id) return false;
+    if (
+      deriveTaskEffectiveStatus(
+        this.snapshot.status,
+        this.snapshot.dueDate,
+        currentDate,
+      ) === 'expired'
+    )
+      return false;
     if (action === 'accept') {
       return (
         (this.snapshot.status === 'not_started' && !this.snapshot.assignee) ||
@@ -141,8 +171,17 @@ export class Task {
   }
 
   /** Applies one authorized state transition and increments the optimistic version once. */
-  act(action: TaskAction, actor: Actor, at: string): void {
-    if (!this.canAct(action, actor)) {
+  act(action: TaskAction, actor: Actor, at: string, currentDate: string): void {
+    if (
+      deriveTaskEffectiveStatus(
+        this.snapshot.status,
+        this.snapshot.dueDate,
+        currentDate,
+      ) === 'expired'
+    ) {
+      throw new DomainError('TASK_EXPIRED', '任务已失效，请先设置新的截止日期');
+    }
+    if (!this.canAct(action, actor, currentDate)) {
       throw new DomainError(
         'ACTION_FORBIDDEN',
         '当前身份或任务状态无法执行此操作',
@@ -266,6 +305,42 @@ export class Task {
     });
     this.snapshot.updatedAt = at;
     this.snapshot.version += 1;
+  }
+
+  /** Renews an expired task while preserving or reopening its persisted workflow. */
+  renewExpired(actor: Actor, values: RenewExpiredTaskValues): void {
+    if (!this.isPublisher(actor)) {
+      throw new DomainError('ACTION_FORBIDDEN', '仅任务发布者可以续期');
+    }
+    if (
+      deriveTaskEffectiveStatus(
+        this.snapshot.status,
+        this.snapshot.dueDate,
+        values.currentDate,
+      ) !== 'expired'
+    ) {
+      throw new DomainError('TASK_NOT_EXPIRED', '仅已失效任务可以续期');
+    }
+    if (!isDateOnly(values.dueDate) || values.dueDate <= values.currentDate) {
+      throw new DomainError('INVALID_TASK', '新截止日期必须晚于当前日期');
+    }
+    const previousDueDate = this.snapshot.dueDate;
+    const previousStatus = this.snapshot.status;
+    this.snapshot.dueDate = values.dueDate;
+    if (values.recoveryStrategy === 'reopened') {
+      this.snapshot.status = 'reopened';
+      this.snapshot.assignee = null;
+    }
+    this.snapshot.updatedAt = values.at;
+    this.snapshot.version += 1;
+    this.appendEvent(
+      'renewed',
+      actor,
+      values.at,
+      values.recoveryStrategy === 'reopened'
+        ? `截止日期由 ${previousDueDate} 调整为 ${values.dueDate}；工作流状态改为：重新打开；接取者已清空`
+        : `截止日期由 ${previousDueDate} 调整为 ${values.dueDate}；保留工作流状态：${WORKFLOW_STATUS_LABELS[previousStatus]}；接取者保持不变`,
+    );
   }
 
   /** Finds the newest lifecycle actor still recognized by the current identity directory. */

@@ -28,6 +28,8 @@ function task(overrides: Partial<TaskResource> = {}): TaskResource {
       role: 'user',
       roleLabel: '演示用户',
     },
+    workflowStatus: 'in_progress',
+    workflowStatusLabel: '进行中',
     status: 'in_progress',
     statusLabel: '进行中',
     createdAt: '2026-08-30T09:00:00.000Z',
@@ -227,15 +229,17 @@ describe('task filtering', () => {
         status: 'reopened',
         statusLabel: '重新打开',
       }),
+      task({ id: 'task-expired', status: 'expired', statusLabel: '已失效' }),
       task({ id: 'task-closed', status: 'closed', statusLabel: '关闭' }),
     ];
 
     expect(taskCounts(tasks)).toEqual({
-      total: 5,
+      total: 6,
       notStarted: 1,
       inProgress: 1,
       completed: 1,
       reopened: 1,
+      expired: 1,
       closed: 1,
     });
   });

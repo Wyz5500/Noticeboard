@@ -45,7 +45,9 @@ services:
     build:
       context: .
       target: production
-    environment: *app-environment
+    environment:
+      <<: *app-environment
+      TASK_BUSINESS_TIME_ZONE: Asia/Shanghai
     depends_on:
       seed:
         condition: service_completed_successfully

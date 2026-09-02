@@ -1,12 +1,13 @@
 /** Verifies architecture rules through the real checker process and controlled source fixtures. */
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
 const PROJECT_ROOT = process.cwd();
 const CHECKER = resolve(PROJECT_ROOT, 'scripts/check-architecture.ts');
-const TSX_LOADER = resolve(PROJECT_ROOT, 'node_modules/tsx/dist/loader.mjs');
+const TSX_LOADER = fileURLToPath(import.meta.resolve('tsx'));
 
 interface CheckerResult {
   status: number | null;

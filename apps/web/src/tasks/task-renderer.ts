@@ -5,7 +5,7 @@ import type {
   TaskResource,
 } from '../core/api-types.js';
 import { createNode } from '../core/dom.js';
-import { availableActions } from './task-permissions.js';
+import { availableActions, canRenewExpiredTask } from './task-permissions.js';
 
 const ACTION_LABELS: Record<TaskAction, string> = {
   accept: '接取任务',
@@ -139,6 +139,18 @@ function actionControls(
   permissions?: readonly PermissionCode[],
 ): HTMLElement {
   const container = createNode(document, 'div', 'drawer-actions');
+  if (canRenewExpiredTask(task, actorId, permissions)) {
+    const button = createNode(
+      document,
+      'button',
+      'primary-button',
+      '续期并重新打开',
+    );
+    button.type = 'button';
+    button.dataset.renewExpired = '';
+    container.append(button);
+    return container;
+  }
   const actions = availableActions(task, actorId, permissions);
   if (!actions.length) {
     container.append(
@@ -146,7 +158,9 @@ function actionControls(
         document,
         'p',
         'drawer-hint',
-        '当前身份在此任务状态下暂无可执行操作。',
+        task.status === 'expired'
+          ? '任务已失效，仅任务发布者可以设置新截止日期后重新打开。'
+          : '当前身份在此任务状态下暂无可执行操作。',
       ),
     );
     return container;

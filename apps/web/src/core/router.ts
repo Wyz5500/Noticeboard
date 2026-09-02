@@ -15,6 +15,7 @@ export const FILTER_LABELS = [
   '进行中',
   '已完成',
   '重新打开',
+  '已失效',
   '关闭',
 ] as const;
 export type FilterLabel = (typeof FILTER_LABELS)[number];
@@ -29,7 +30,7 @@ export interface RouteState {
   sort?: AdminSortState | undefined;
 }
 
-/** Recognizes only the six visible filter labels supported by the task board. */
+/** Recognizes only the seven visible filter labels supported by the task board. */
 function isFilterLabel(value: string | null): value is FilterLabel {
   return FILTER_LABELS.some((label) => label === value);
 }

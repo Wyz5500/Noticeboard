@@ -31,12 +31,14 @@ import { CreateTask } from '../application/use-cases/create-task.js';
 import { DeleteTaskComment } from '../application/use-cases/delete-task-comment.js';
 import { GetTask } from '../application/use-cases/get-task.js';
 import { ListTasks } from '../application/use-cases/list-tasks.js';
+import { RenewExpiredTask } from '../application/use-cases/renew-expired-task.js';
 import { ActTaskDto } from './dto/act-task.dto.js';
 import {
   AddTaskCommentDto,
   DeleteTaskCommentDto,
 } from './dto/comment-task.dto.js';
 import { CreateTaskDto } from './dto/create-task.dto.js';
+import { RenewExpiredTaskDto } from './dto/renew-expired-task.dto.js';
 import { TaskResponseDto, toTaskResponse } from './dto/task-response.dto.js';
 
 @ApiTags('tasks')
@@ -50,6 +52,7 @@ export class TasksController {
     private readonly actOnTask: ActOnTask,
     private readonly addTaskComment: AddTaskComment,
     private readonly deleteTaskComment: DeleteTaskComment,
+    private readonly renewExpiredTask: RenewExpiredTask,
   ) {}
 
   /** Lists all task projections for client-side filtering and statistics. */
@@ -176,6 +179,27 @@ export class TasksController {
       body.action,
       body.expectedVersion,
     );
+    return toTaskResponse(await this.getTask.execute(taskId, actorId));
+  }
+
+  /** Renews one expired task and returns the freshly synchronized projection. */
+  @Post(':taskId/expiration-renewal')
+  @HttpCode(200)
+  @RequireDemoIdentity()
+  @ApiSecurity('demo-user')
+  @ApiHeader({ name: 'X-Demo-User-Id', required: true })
+  @ApiOkResponse({ type: TaskResponseDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiNotFoundResponse({ type: ApiErrorResponseDto })
+  @ApiConflictResponse({ type: ApiErrorResponseDto })
+  async renewExpired(
+    @Headers('x-demo-user-id') actorId: string,
+    @Param('taskId') taskId: string,
+    @Body() body: RenewExpiredTaskDto,
+  ): Promise<TaskResponseDto> {
+    await this.renewExpiredTask.execute(actorId, taskId, body);
     return toTaskResponse(await this.getTask.execute(taskId, actorId));
   }
 }

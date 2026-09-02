@@ -8,17 +8,17 @@ import {
 
 import { ALL_PERMISSION_CODES } from '../../../authorization/public/permission.js';
 import type { Actor } from '../../../identity/public/actor.js';
-import { projectTaskTimeline } from '../../application/read-models/project-task-timeline.js';
 import type {
-  TaskReadModel,
   TaskTimelineReadModel,
+  TaskViewModel,
 } from '../../application/read-models/task-read-model.js';
 import {
+  TASK_EFFECTIVE_STATUSES,
   TASK_EVENT_ACTIONS,
   TASK_STATUSES,
   TASK_TYPES,
+  type TaskEffectiveStatus,
   type TaskEventAction,
-  type TaskSnapshot,
   type TaskStatus,
   type TaskType,
 } from '../../domain/task.types.js';
@@ -29,6 +29,7 @@ const STATUS_LABELS = {
   completed: '已完成',
   reopened: '重新打开',
   closed: '关闭',
+  expired: '已失效',
 } as const;
 
 const TYPE_LABELS = {
@@ -45,6 +46,7 @@ const EVENT_LABELS = {
   completed: '标记完成',
   approved: '验收通过',
   reopened: '重新打开',
+  renewed: '任务续期',
   closed: '关闭任务',
 } as const;
 
@@ -153,7 +155,13 @@ export class TaskResponseDto {
   assignee!: ActorResponseDto | null;
 
   @ApiProperty({ enum: TASK_STATUSES })
-  status!: TaskStatus;
+  workflowStatus!: TaskStatus;
+
+  @ApiProperty()
+  workflowStatusLabel!: string;
+
+  @ApiProperty({ enum: TASK_EFFECTIVE_STATUSES })
+  status!: TaskEffectiveStatus;
 
   @ApiProperty()
   statusLabel!: string;
@@ -205,21 +213,11 @@ function activityResponse(
   };
 }
 
-/** Recognizes an already projected timeline without depending on its first item. */
-function isProjectedTimeline(
-  timeline: TaskSnapshot['timeline'] | TaskReadModel['timeline'],
-): timeline is TaskReadModel['timeline'] {
-  return timeline.every((event) => 'kind' in event);
-}
-
-/** Adds response labels to a shared safe timeline projection. */
+/** Adds response labels to the already sanitized application timeline projection. */
 function timelineResponse(
-  timeline: TaskSnapshot['timeline'] | TaskReadModel['timeline'],
+  timeline: TaskViewModel['timeline'],
 ): TaskTimelineResponseDto[] {
-  const projected = isProjectedTimeline(timeline)
-    ? timeline
-    : projectTaskTimeline(timeline);
-  return projected.map((event) =>
+  return timeline.map((event) =>
     event.kind === 'activity'
       ? activityResponse(event)
       : { ...event, actor: toActorResponse(event.actor) },
@@ -227,9 +225,7 @@ function timelineResponse(
 }
 
 /** Adds presentation labels while preserving stable machine codes and detached values. */
-export function toTaskResponse(
-  task: TaskReadModel | TaskSnapshot,
-): TaskResponseDto {
+export function toTaskResponse(task: TaskViewModel): TaskResponseDto {
   return {
     id: task.id,
     title: task.title,
@@ -240,6 +236,8 @@ export function toTaskResponse(
     dueDate: task.dueDate,
     publisher: toActorResponse(task.publisher),
     assignee: task.assignee ? toActorResponse(task.assignee) : null,
+    workflowStatus: task.workflowStatus,
+    workflowStatusLabel: STATUS_LABELS[task.workflowStatus],
     status: task.status,
     statusLabel: STATUS_LABELS[task.status],
     createdAt: task.createdAt,

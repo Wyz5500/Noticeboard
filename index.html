@@ -188,6 +188,15 @@
                 <button
                   class="stat-card"
                   type="button"
+                  data-status-shortcut="已失效"
+                >
+                  <span class="stat-label">已失效</span
+                  ><strong id="statExpired">0</strong
+                  ><span class="stat-arrow" aria-hidden="true">↗</span>
+                </button>
+                <button
+                  class="stat-card"
+                  type="button"
                   data-status-shortcut="关闭"
                 >
                   <span class="stat-label">已关闭</span
@@ -300,6 +309,15 @@
                     <button
                       class="filter-button"
                       type="button"
+                      data-filter="已失效"
+                      aria-pressed="false"
+                    >
+                      <span>已失效</span
+                      ><span class="filter-count" data-count="已失效">0</span>
+                    </button>
+                    <button
+                      class="filter-button"
+                      type="button"
                       data-filter="关闭"
                       aria-pressed="false"
                     >
@@ -367,6 +385,77 @@
     >
       <div class="drawer-inner" id="drawerInner"></div>
     </aside>
+
+    <div class="modal-backdrop renewal-backdrop" id="renewalBackdrop"></div>
+    <section
+      class="task-modal renewal-modal"
+      id="renewalModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="renewalTitle"
+      aria-hidden="true"
+    >
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">任务续期 <span>/</span> 已失效任务</p>
+          <h2 id="renewalTitle">设置新的截止日期</h2>
+        </div>
+        <button
+          class="icon-button"
+          id="closeRenewalButton"
+          type="button"
+          aria-label="关闭任务续期对话框"
+        >
+          ×
+        </button>
+      </div>
+      <form id="renewalForm">
+        <div class="renewal-context" aria-label="当前任务信息">
+          <p>原截止日期 <strong id="renewalCurrentDueDate"></strong></p>
+          <p>原工作流状态 <strong id="renewalWorkflowStatus"></strong></p>
+        </div>
+        <label>
+          新截止日期
+          <input id="renewalDueDate" name="dueDate" type="date" required />
+        </label>
+        <fieldset class="renewal-strategies">
+          <legend>恢复方式</legend>
+          <label>
+            <input
+              type="radio"
+              name="recoveryStrategy"
+              value="preserve_status"
+              checked
+              required
+            />
+            <span id="renewalPreserveLabel">保留原状态</span>
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="recoveryStrategy"
+              value="reopened"
+              required
+            />
+            <span>改为重新打开（将清空当前接取者）</span>
+          </label>
+        </fieldset>
+        <p class="form-note">
+          新截止日期必须晚于当前日期。改为重新打开后，其他成员可以重新接取任务。
+        </p>
+        <p class="form-error" id="renewalError" role="alert"></p>
+        <div class="modal-actions">
+          <button
+            class="secondary-button"
+            id="cancelRenewalButton"
+            type="button"
+          >
+            取消
+          </button>
+          <button class="primary-button" type="submit">确认续期</button>
+        </div>
+      </form>
+    </section>
 
     <div class="modal-backdrop" id="modalBackdrop"></div>
     <section

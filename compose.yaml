@@ -46,7 +46,10 @@ services:
     build:
       context: .
       target: production
-    environment: *app-environment
+    environment:
+      <<: *app-environment
+      TASK_BUSINESS_TIME_ZONE: ${TASK_BUSINESS_TIME_ZONE:-Asia/Shanghai}
+      TASK_CURRENT_DATE_OVERRIDE: ${TASK_CURRENT_DATE_OVERRIDE:-2026-09-01}
     depends_on:
       seed:
         condition: service_completed_successfully

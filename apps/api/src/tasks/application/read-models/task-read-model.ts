@@ -1,6 +1,7 @@
 /** Defines database-independent read projections returned by task queries. */
 import type { Actor } from '../../../identity/public/actor.js';
 import type {
+  TaskEffectiveStatus,
   TaskEventAction,
   TaskStatus,
   TaskType,
@@ -44,4 +45,9 @@ export interface TaskReadModel {
   updatedAt: string;
   version: number;
   timeline: TaskTimelineReadModel[];
+}
+
+export interface TaskViewModel extends Omit<TaskReadModel, 'status'> {
+  workflowStatus: TaskStatus;
+  status: TaskEffectiveStatus;
 }

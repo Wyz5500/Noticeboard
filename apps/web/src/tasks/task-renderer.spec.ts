@@ -1,7 +1,7 @@
-/** Verifies task timeline comments render as safe, permission-aware drawer controls. */
+/** Verifies comment and expired-task controls in the safe task detail renderer. */
 import { describe, expect, it } from 'vitest';
 
-import type { TaskResource } from '../core/api-types.js';
+import type { PermissionCode, TaskResource } from '../core/api-types.js';
 import { renderTaskDrawer } from './task-renderer.js';
 
 class FakeNode {
@@ -132,6 +132,8 @@ function task(overrides: Partial<TaskResource> = {}): TaskResource {
     dueDate: '2026-09-10',
     publisher,
     assignee: null,
+    workflowStatus: 'not_started',
+    workflowStatusLabel: '未开始',
     status: 'not_started',
     statusLabel: '未开始',
     createdAt: '2026-09-01T08:00:00.000Z',
@@ -184,7 +186,7 @@ function task(overrides: Partial<TaskResource> = {}): TaskResource {
 function render(
   value: TaskResource,
   actorId: string,
-  permissions: readonly ('tasks.view' | 'system.manage')[],
+  permissions: readonly PermissionCode[],
   draft = '',
 ): FakeElement {
   const document = new FakeDocument();
@@ -200,7 +202,7 @@ function render(
   return container;
 }
 
-describe('task comment renderer', () => {
+describe('task detail renderer', () => {
   /** Proves the existing drawer node order is preserved while the timeline section gains comments. */
   it('keeps the drawer top-level order and renders mixed timeline entries newest first', () => {
     const container = render(task(), 'commenter', ['tasks.view']);
@@ -272,7 +274,15 @@ describe('task comment renderer', () => {
 
   /** Proves closed tasks and actors without tasks.view never receive a comment form. */
   it.each([
-    [task({ status: 'closed', statusLabel: '关闭' }), ['tasks.view'] as const],
+    [
+      task({
+        workflowStatus: 'closed',
+        workflowStatusLabel: '关闭',
+        status: 'closed',
+        statusLabel: '关闭',
+      }),
+      ['tasks.view'] as const,
+    ],
     [task(), [] as const],
   ])(
     'hides the comment form when commenting is unavailable',
@@ -312,5 +322,40 @@ describe('task comment renderer', () => {
     expect(rule).toContain('white-space: pre-wrap');
     expect(rule).toContain('overflow-wrap: anywhere');
     expect(rule).not.toMatch(/#[0-9a-f]{3,8}|rgb\(|hsl\(/i);
+  });
+
+  /** Proves renewal remains available only to the authorized publisher of an expired task. */
+  it('renders the renewal control only for the authorized publisher', () => {
+    const expiredTask = task({
+      id: 'task-expired-renderer',
+      title: '失效任务',
+      description: '验证续期入口',
+      dueDate: '2026-09-01',
+      workflowStatus: 'in_progress',
+      workflowStatusLabel: '进行中',
+      status: 'expired',
+      statusLabel: '已失效',
+      version: 2,
+      timeline: [],
+    });
+
+    const publisherContainer = render(expiredTask, 'publisher', [
+      'tasks.view',
+      'tasks.review',
+    ]);
+    const otherContainer = render(expiredTask, 'adventurer-a', [
+      'tasks.view',
+      'tasks.review',
+    ]);
+
+    expect(
+      findAll(
+        publisherContainer,
+        (element) => element.dataset.renewExpired === '',
+      ),
+    ).toHaveLength(1);
+    expect(
+      findAll(otherContainer, (element) => element.dataset.renewExpired === ''),
+    ).toHaveLength(0);
   });
 });
