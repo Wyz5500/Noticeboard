@@ -19,6 +19,7 @@ class FakeElement {
   type = '';
   name = '';
   value = '';
+  placeholder = '';
   required = false;
   selected = false;
   checked = false;
@@ -264,6 +265,7 @@ describe('admin renderer', () => {
       {
         section: 'users',
         sort: { field: 'name', direction: 'asc' },
+        userStatus: 'all',
       },
     );
 
@@ -290,8 +292,140 @@ describe('admin renderer', () => {
     expect(edit?.dataset.adminId).toBe('user-alpha');
     expect(edit?.dataset.adminAction).toBeUndefined();
     expect(findData(container, 'adminOpen', 'create-user')).toBeDefined();
-    expect(findData(container, 'adminSortSelect', 'users')?.name).toBe('sort');
-    expect(findData(container, 'adminDirection', 'asc')).toBeDefined();
+    expect(findData(container, 'adminDirection', 'asc')).toBeUndefined();
+  });
+
+  /** Ensures the normal user list excludes deleted accounts while preserving an explicit recovery view. */
+  it('hides deleted users by default and reveals them only through the deleted status filter', () => {
+    const document = new FakeDocument();
+    const container = document.createElement('main');
+
+    renderAdminView(
+      document as unknown as Document,
+      container as unknown as HTMLElement,
+      overview,
+      { section: 'users' },
+    );
+
+    const defaultTable = findAll(
+      container,
+      (element) => element.tagName === 'table',
+    )[0]!;
+    expect(
+      findAll(defaultTable, (element) => element.tagName === 'tr')
+        .slice(1)
+        .map((row) => row.querySelector('strong')?.textContent),
+    ).toEqual(['乙用户']);
+
+    renderAdminView(
+      document as unknown as Document,
+      container as unknown as HTMLElement,
+      overview,
+      { section: 'users', userStatus: 'deleted' },
+    );
+
+    const deletedTable = findAll(
+      container,
+      (element) => element.tagName === 'table',
+    )[0]!;
+    expect(
+      findAll(deletedTable, (element) => element.tagName === 'tr')
+        .slice(1)
+        .map((row) => row.querySelector('strong')?.textContent),
+    ).toEqual(['甲用户']);
+    expect(findData(container, 'adminAction', 'restore-user')).toBeDefined();
+  });
+
+  /** Ensures user search and role filtering operate over the complete administrator snapshot. */
+  it('filters users by trimmed case-insensitive name and role selections', () => {
+    const document = new FakeDocument();
+    const container = document.createElement('main');
+
+    renderAdminView(
+      document as unknown as Document,
+      container as unknown as HTMLElement,
+      {
+        ...overview,
+        users: [
+          ...overview.users,
+          {
+            ...overview.users[0]!,
+            id: 'user-admin',
+            name: 'Alpha Admin',
+            roleId: 'role-admin',
+            roleCode: 'admin',
+            roleName: '管理员',
+          },
+        ],
+      },
+      {
+        section: 'users',
+        userQuery: '  ALPHA ',
+        userRole: 'role-admin',
+      },
+    );
+
+    const table = findAll(
+      container,
+      (element) => element.tagName === 'table',
+    )[0]!;
+    expect(
+      findAll(table, (element) => element.tagName === 'tr')
+        .slice(1)
+        .map((row) => row.querySelector('strong')?.textContent),
+    ).toEqual(['Alpha Admin']);
+  });
+
+  /** Ensures the redesigned user header, summary, toolbar, and compact row vocabulary are exposed. */
+  it('renders the compact user management hierarchy and accessible toolbar', () => {
+    const document = new FakeDocument();
+    const container = document.createElement('main');
+
+    renderAdminView(
+      document as unknown as Document,
+      container as unknown as HTMLElement,
+      overview,
+      { section: 'users' },
+    );
+
+    const intro = findAll(
+      container,
+      (element) => element.className === 'admin-user-header',
+    )[0]!;
+    expect(intro.textContent).toBe(
+      '管理/用户管理用户管理管理系统中的用户账号、角色与账号状态+ 创建用户',
+    );
+    expect(
+      findAll(
+        container,
+        (element) => element.className === 'admin-user-summary',
+      )[0]?.textContent,
+    ).toBe('2 个用户 · 1 个活跃 · 1 个已删除');
+    const search = findData(container, 'adminUserQuery', 'true');
+    expect(search?.placeholder).toBe('搜索用户…');
+    expect(findData(container, 'adminUserRole', 'true')).toBeDefined();
+    expect(findData(container, 'adminUserStatus', 'true')).toBeDefined();
+    expect(findData(container, 'adminDirection', 'desc')).toBeUndefined();
+
+    const table = findAll(
+      container,
+      (element) => element.tagName === 'table',
+    )[0]!;
+    const rows = findAll(table, (element) => element.tagName === 'tr');
+    expect(rows[0]!.children.map((cell) => cell.textContent)).toEqual([
+      '用户',
+      '角色',
+      '状态',
+      '最近修改⌄',
+      '操作',
+    ]);
+    expect(rows[1]!.children.map((cell) => cell.textContent)).toEqual([
+      '乙用户',
+      '用户',
+      '●活跃',
+      expect.stringMatching(/^2026-08-30 \d{2}:\d{2}$/),
+      '编辑•••编辑删除',
+    ]);
   });
 
   /** Ensures every desktop user column has a matching cell in the same semantic order. */
@@ -303,7 +437,11 @@ describe('admin renderer', () => {
       document as unknown as Document,
       container as unknown as HTMLElement,
       overview,
-      { section: 'users', sort: { field: 'name', direction: 'asc' } },
+      {
+        section: 'users',
+        sort: { field: 'name', direction: 'asc' },
+        userStatus: 'all',
+      },
     );
 
     const table = findAll(
@@ -312,7 +450,7 @@ describe('admin renderer', () => {
     )[0]!;
     const rows = findAll(table, (element) => element.tagName === 'tr');
     expect(rows[0]!.children.map((cell) => cell.textContent)).toEqual([
-      '名称',
+      '用户⌃',
       '角色',
       '状态',
       '最近修改',
@@ -322,9 +460,9 @@ describe('admin renderer', () => {
     expect(rows[1]!.children.map((cell) => cell.textContent)).toEqual([
       '甲用户',
       '用户',
-      '已删除',
-      '修改时间：时间未知',
-      '编辑恢复',
+      '○已删除',
+      '时间未知',
+      '编辑•••编辑恢复',
     ]);
   });
 
@@ -389,6 +527,47 @@ describe('admin renderer', () => {
       '',
     ]);
     expect(findData(container, 'adminSort', 'role')?.ariaSort).toBe('');
+    const indicators = findAll(
+      table,
+      (element) => element.dataset.adminSortIndicator !== undefined,
+    );
+    expect(indicators.map((indicator) => indicator.textContent)).toEqual(['⌄']);
+    expect(findData(container, 'adminSortIndicator', 'role')?.className).toBe(
+      'admin-sort-indicator',
+    );
+  });
+
+  /** Keeps all user sort fields reachable after the desktop-only toolbar sort is removed. */
+  it('renders a compact mobile sort header for every user information field', () => {
+    const document = new FakeDocument();
+    const container = document.createElement('main');
+
+    renderAdminView(
+      document as unknown as Document,
+      container as unknown as HTMLElement,
+      overview,
+      { section: 'users', sort: { field: 'updatedAt', direction: 'asc' } },
+    );
+
+    const mobileHeader = findAll(
+      container,
+      (element) => element.className === 'admin-user-mobile-sort',
+    )[0]!;
+    expect(
+      findAll(
+        mobileHeader,
+        (element) => element.dataset.adminSort !== undefined,
+      ).map((button) => button.dataset.adminSort),
+    ).toEqual(['name', 'role', 'status', 'updatedAt']);
+    expect(
+      findAll(
+        mobileHeader,
+        (element) => element.dataset.adminSortIndicator !== undefined,
+      ).map((indicator) => [
+        indicator.dataset.adminSortIndicator,
+        indicator.textContent,
+      ]),
+    ).toEqual([['updatedAt', '⌃']]);
   });
 
   /** Ensures mobile markup has a separate card list and a delegated sort control. */
@@ -427,19 +606,18 @@ describe('admin renderer', () => {
       document as unknown as Document,
       userContainer as unknown as HTMLElement,
       overview,
-      { section: 'users' },
+      { section: 'users', userStatus: 'all' },
     );
 
     const userList = findAll(
       userContainer,
       (element) => element.className === 'admin-mobile-list',
     )[0]!;
-    const userStatuses = findAll(
-      userList,
-      (element) => element.className === 'admin-status',
+    const userStatuses = findAll(userList, (element) =>
+      element.className.split(' ').includes('admin-user-status'),
     ).map((element) => element.textContent);
     expect(userStatuses).toHaveLength(2);
-    expect(userStatuses).toEqual(expect.arrayContaining(['活跃', '已删除']));
+    expect(userStatuses).toEqual(expect.arrayContaining(['●活跃', '○已删除']));
 
     const roleContainer = document.createElement('main');
     renderAdminView(
@@ -473,6 +651,7 @@ describe('admin renderer', () => {
       overview,
       {
         section: 'users',
+        userStatus: 'all',
       },
     );
 
@@ -480,11 +659,9 @@ describe('admin renderer', () => {
       container,
       (element) => element.className === 'admin-updated-at',
     ).map((element) => element.textContent);
-    expect(metadata).toContain('修改时间：时间未知');
+    expect(metadata).toContain('时间未知');
     expect(
-      metadata.some((value) =>
-        /^修改时间：2026-08-30 \d{2}:\d{2}$/.test(value),
-      ),
+      metadata.some((value) => /^2026-08-30 \d{2}:\d{2}$/.test(value)),
     ).toBe(true);
   });
 

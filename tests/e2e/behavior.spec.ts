@@ -560,7 +560,9 @@ test('manages roles and users from the admin view', async ({
     await route.continue();
   });
   if (isMobile) {
-    await page.locator('[data-admin-sort-select="users"]').selectOption('name');
+    await page
+      .locator('.admin-user-mobile-sort [data-admin-sort="name"]')
+      .click();
   } else {
     await page.locator('.admin-table:visible [data-admin-sort="name"]').click();
   }
@@ -577,7 +579,34 @@ test('manages roles and users from the admin view', async ({
     page.locator('.admin-table:visible, .admin-mobile-list:visible'),
   ).toContainText(userName);
 
-  await page.getByRole('link', { name: '返回管理首页' }).click();
+  const userRecord = page
+    .locator(visibleRecords)
+    .filter({ hasText: userName })
+    .first();
+  await userRecord.locator('.admin-more-actions summary').click();
+  page.once('dialog', (dialog) => dialog.accept());
+  await userRecord.locator('[data-admin-action="delete-user"]').click();
+  await expect(
+    page.locator(visibleRecords).filter({ hasText: userName }),
+  ).toHaveCount(0);
+  await page.locator('[data-admin-user-status]').selectOption('deleted');
+  const deletedUserRecord = page
+    .locator(visibleRecords)
+    .filter({ hasText: userName })
+    .first();
+  await expect(deletedUserRecord).toBeVisible();
+  await deletedUserRecord.locator('.admin-more-actions summary').click();
+  await deletedUserRecord.locator('[data-admin-action="restore-user"]').click();
+  await expect(deletedUserRecord).toHaveCount(0);
+  await page.locator('[data-admin-user-status]').selectOption('active');
+  await expect(
+    page.locator(visibleRecords).filter({ hasText: userName }).first(),
+  ).toBeVisible();
+
+  await page
+    .getByRole('navigation', { name: '面包屑' })
+    .getByRole('link', { name: '管理', exact: true })
+    .click();
   await page.getByRole('link', { name: '角色管理' }).click();
   await page.locator('[data-admin-open="create-role"]').click();
   const roleDialog = page.locator('dialog[open]');
@@ -744,7 +773,7 @@ test('keeps the management landing fluid across width and height changes', async
   await expect(firstLink).toHaveCSS('outline-style', 'solid');
 });
 
-/** Proves mobile management uses cards and a sticky sort control below the fixed topbar. */
+/** Proves mobile user management stacks complete records below a responsive sticky toolbar. */
 test('renders mobile admin cards and sorting controls', async ({
   page,
   isMobile,
@@ -757,13 +786,13 @@ test('renders mobile admin cards and sorting controls', async ({
   await page.getByRole('link', { name: '用户管理' }).click();
   await expect(page.locator('.admin-mobile-list')).toBeVisible();
   await expect(page.locator('.admin-table')).toBeHidden();
-  const sortBar = page.locator('.admin-sort-bar');
+  const sortBar = page.locator('.admin-user-toolbar');
   await expect(sortBar).toBeVisible();
   await expect(sortBar).toHaveCSS('position', 'sticky');
   await expect(sortBar).toHaveCSS('top', '99px');
   await expect(
     page.locator('.admin-mobile-card .admin-record-actions').first(),
-  ).toHaveCSS('justify-content', 'flex-end');
+  ).toHaveCSS('justify-content', 'flex-start');
   const actionAlignment = await page
     .locator('.admin-mobile-card')
     .first()
@@ -783,45 +812,136 @@ test('renders mobile admin cards and sorting controls', async ({
         display: cardStyle.display,
         gridTracks: cardStyle.gridTemplateColumns.split(' ').length,
         alignItems: cardStyle.alignItems,
-        sameRow: Math.abs(infoBox.top - actionsBox.top) <= 1,
-        infoRight: infoBox.right,
-        actionsLeft: actionsBox.left,
-        buttonHeights,
+        actionsBelow: actionsBox.top >= infoBox.bottom,
+        buttonHeights: buttonHeights.filter((height) => height > 0),
       };
     });
   expect(actionAlignment.display).toBe('grid');
-  expect(actionAlignment.gridTracks).toBe(2);
+  expect(actionAlignment.gridTracks).toBe(1);
   expect(actionAlignment.alignItems).toBe('start');
-  expect(actionAlignment.sameRow).toBe(true);
-  expect(actionAlignment.infoRight).toBeLessThanOrEqual(
-    actionAlignment.actionsLeft,
-  );
-  expect(actionAlignment.buttonHeights.every((height) => height === 38)).toBe(
-    true,
-  );
-  const directionMarginLeft = await sortBar
-    .locator('.admin-direction')
-    .evaluate((element) =>
-      Number.parseFloat(getComputedStyle(element).marginLeft),
-    );
-  expect(directionMarginLeft).toBeGreaterThan(0);
-  await sortBar
-    .locator('[data-admin-sort-select="users"]')
-    .selectOption('name');
-  await expect(page).toHaveURL(/sort=name&direction=asc/);
-  await sortBar.locator('[data-admin-direction]').click();
-  await expect(page).toHaveURL(/sort=name&direction=desc/);
-  await expect(page.locator('.admin-mobile-card .admin-status')).toHaveCount(
-    await page.locator('.admin-mobile-card').count(),
-  );
+  expect(actionAlignment.actionsBelow).toBe(true);
+  expect(
+    actionAlignment.buttonHeights.every(
+      (height) => height >= 32 && height <= 38,
+    ),
+  ).toBe(true);
+  await page
+    .locator('.admin-user-mobile-sort [data-admin-sort="updatedAt"]')
+    .click();
+  await expect(page).toHaveURL(/sort=updatedAt&direction=asc/);
+  await expect(
+    page.locator('.admin-mobile-card .admin-user-status'),
+  ).toHaveCount(await page.locator('.admin-mobile-card').count());
 
-  await page.getByRole('link', { name: '返回管理首页' }).click();
+  await page
+    .getByRole('navigation', { name: '面包屑' })
+    .getByRole('link', { name: '管理', exact: true })
+    .click();
   await page.getByRole('link', { name: '角色管理' }).click();
   await expect(page.locator('.admin-mobile-list')).toBeVisible();
   const roleStatusTexts = await page
     .locator('.admin-mobile-card .admin-status')
     .allTextContents();
   expect(roleStatusTexts).toContain('内置角色');
+});
+
+/** Proves the user list stays dense, filterable, and free of horizontal overflow across target viewports. */
+test('keeps user management responsive across width and height changes', async ({
+  page,
+}) => {
+  await page.locator('#profileButton').click();
+  await page.locator('#identitySelect').selectOption('noticeboard-admin');
+  await page.keyboard.press('Escape');
+  await page.locator('#adminNavLink').click();
+  await page.getByRole('link', { name: '用户管理' }).click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  const search = page.locator('[data-admin-user-query]');
+  await search.fill('公会管理员');
+  await expect(
+    page.locator('.admin-table:visible tbody tr, .admin-mobile-card:visible'),
+  ).toHaveCount(1);
+  await page
+    .locator('[data-admin-user-role]')
+    .selectOption('role-system-admin');
+  await expect(
+    page.locator('.admin-table:visible tbody tr, .admin-mobile-card:visible'),
+  ).toHaveCount(1);
+  await page.locator('[data-admin-user-query]').fill('');
+  await page.locator('[data-admin-user-role]').selectOption('all');
+
+  await expect(page.locator('[data-admin-direction]')).toHaveCount(0);
+  for (const field of ['name', 'role', 'status', 'updatedAt']) {
+    await page.locator(`.admin-table [data-admin-sort="${field}"]`).click();
+    await expect(page).toHaveURL(new RegExp(`sort=${field}&direction=`));
+  }
+
+  const rowLineOffsets = await page
+    .locator('.admin-table:visible tbody tr')
+    .first()
+    .locator('td')
+    .evaluateAll((cells) =>
+      cells.map((cell) => cell.getBoundingClientRect().bottom),
+    );
+  expect(
+    Math.max(...rowLineOffsets) - Math.min(...rowLineOffsets),
+  ).toBeLessThan(0.1);
+
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 900, height: 700 },
+    { width: 700, height: 700 },
+    { width: 620, height: 800 },
+    { width: 375, height: 667 },
+    { width: 1280, height: 600 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    if (viewport.width <= 620) {
+      await expect(page.locator('.admin-mobile-list')).toBeVisible();
+      await expect(page.locator('.admin-table')).toBeHidden();
+    } else {
+      await expect(page.locator('.admin-table')).toBeVisible();
+      await expect(page.locator('.admin-mobile-list')).toBeHidden();
+    }
+    const layout = await page.evaluate(() => {
+      const header = document.querySelector('.admin-user-header');
+      const toolbar = document.querySelector('.admin-user-toolbar');
+      const searchInput = document.querySelector('[data-admin-user-query]');
+      const firstRecord = Array.from(
+        document.querySelectorAll('.admin-table tbody tr, .admin-mobile-card'),
+      ).find((record) => record.getClientRects().length > 0);
+      if (!header || !toolbar || !searchInput || !firstRecord)
+        throw new Error('Expected the complete user management layout');
+      return {
+        horizontalOverflow:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+        headerHeight: header.getBoundingClientRect().height,
+        firstRecordTop: firstRecord.getBoundingClientRect().top,
+        toolbarWidth: toolbar.getBoundingClientRect().width,
+        searchWidth: searchInput.getBoundingClientRect().width,
+        scrollHeight: document.documentElement.scrollHeight,
+        viewportHeight: window.innerHeight,
+      };
+    });
+    expect(layout.horizontalOverflow).toBeLessThanOrEqual(0);
+    expect(layout.headerHeight).toBeGreaterThanOrEqual(100);
+    expect(layout.headerHeight).toBeLessThanOrEqual(130);
+    expect(layout.firstRecordTop).toBeLessThan(viewport.height);
+    if (viewport.width <= 620) {
+      expect(layout.searchWidth).toBeGreaterThanOrEqual(
+        layout.toolbarWidth - 2,
+      );
+    }
+    if (viewport.height === 600)
+      expect(layout.scrollHeight).toBeGreaterThan(layout.viewportHeight);
+  }
 });
 
 /** Proves built-in role names stay immutable while their supported permissions remain editable. */
@@ -1501,6 +1621,7 @@ test('isolates task and admin positions from the responsive home', async ({
   });
   expect(taskScrollY).toBeGreaterThan(0);
 
+  if (!isMobile) await page.setViewportSize({ width: 1280, height: 600 });
   await navigateToHash(page, '#admin/users');
   await expect(page.locator('#adminView')).toBeVisible();
   await expect(

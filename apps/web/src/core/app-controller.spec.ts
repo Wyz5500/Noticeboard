@@ -1562,6 +1562,54 @@ describe('AppController administration management UI', () => {
     expect(controller.render).toHaveBeenCalledOnce();
   });
 
+  /** Ensures declining the explicit user deletion warning leaves the account untouched. */
+  it('requires confirmation before deleting a user', async () => {
+    installDomShims();
+    const deleteAdminUser = vi.fn(() => Promise.resolve());
+    const controller = Object.create(AppController.prototype) as {
+      window: { confirm: ReturnType<typeof vi.fn> };
+      api: { deleteAdminUser: typeof deleteAdminUser };
+      adminEditor: unknown;
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      refreshAdminOverview: () => Promise<boolean>;
+      render: ReturnType<typeof vi.fn>;
+      showToast: ReturnType<typeof vi.fn>;
+      gate: {
+        run: (_key: string, operation: () => Promise<void>) => Promise<void>;
+      };
+      handleAdminClick: (event: Event) => Promise<void>;
+    };
+    controller.window = { confirm: vi.fn(() => false) };
+    controller.api = { deleteAdminUser };
+    controller.adminEditor = null;
+    controller.requestSnapshot = () => ({
+      actorId: 'admin',
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.refreshAdminOverview = () => Promise.resolve(true);
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+    controller.gate = { run: (_key, operation) => operation() };
+    const button = new TestElement({
+      adminAction: 'delete-user',
+      adminId: 'user-1',
+    });
+
+    await controller.handleAdminClick({ target: button } as unknown as Event);
+
+    expect(controller.window.confirm).toHaveBeenCalledWith(
+      '确定删除该用户吗？删除后该用户将无法参与正常业务流程。',
+    );
+    expect(deleteAdminUser).not.toHaveBeenCalled();
+  });
+
   /** Ensures a failed delete keeps the current editor open for retry or correction. */
   it('preserves the editor when delete fails', async () => {
     installDomShims();

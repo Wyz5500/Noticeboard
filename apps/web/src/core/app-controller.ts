@@ -25,6 +25,7 @@ import { nextAdminSort, type AdminSortField } from '../admin/admin-sort.js';
 import type {
   AdminEditorDraft,
   AdminEditorState,
+  AdminUserStatusFilter,
 } from '../admin/admin-renderer.js';
 import {
   loadCurrentUserId,
@@ -187,6 +188,9 @@ export class AppController {
   private tasksLoaded = false;
   private adminOverview: AdminOverviewResource | null = null;
   private adminEditor: AdminEditorState | null = null;
+  private adminUserQuery = '';
+  private adminUserRole = 'all';
+  private adminUserStatus: AdminUserStatusFilter = 'active';
   private currentUserId = '';
   private identityChangeSequence = 0;
   private routeChangeSequence = 0;
@@ -324,6 +328,9 @@ export class AppController {
     this.elements.adminView.addEventListener(
       'change',
       (event) => void this.handleAdminChange(event),
+    );
+    this.elements.adminView.addEventListener('input', (event) =>
+      this.handleAdminInput(event),
     );
     this.elements.drawerInner.addEventListener(
       'click',
@@ -697,6 +704,11 @@ export class AppController {
     if (this.route.section) state.section = this.route.section;
     if (this.route.sort) state.sort = this.route.sort;
     if (this.adminEditor) state.editor = this.adminEditor;
+    if (this.adminUserQuery) state.userQuery = this.adminUserQuery;
+    if (this.adminUserRole && this.adminUserRole !== 'all')
+      state.userRole = this.adminUserRole;
+    if (this.adminUserStatus && this.adminUserStatus !== 'active')
+      state.userStatus = this.adminUserStatus;
     renderAdminView(
       this.document,
       this.elements.adminView,
@@ -1277,6 +1289,13 @@ export class AppController {
     if (!button?.dataset.adminAction || !button.dataset.adminId) return;
     const action = button.dataset.adminAction;
     const id = button.dataset.adminId;
+    if (
+      action === 'delete-user' &&
+      !this.window.confirm(
+        '确定删除该用户吗？删除后该用户将无法参与正常业务流程。',
+      )
+    )
+      return;
     await this.gate.run(`admin:${action}:${id}`, async () => {
       const request = this.requestSnapshot();
       try {
@@ -1304,14 +1323,52 @@ export class AppController {
     });
   }
 
-  /** Handles mobile sort-field changes without requesting a fresh overview. */
+  /** Applies user list filters or mobile sort fields without requesting a fresh overview. */
   private handleAdminChange(event: Event): void {
     if (!(event.target instanceof Element)) return;
+    const role = event.target.closest<HTMLSelectElement>(
+      '[data-admin-user-role]',
+    );
+    if (role) {
+      this.adminUserRole = role.value || 'all';
+      this.render();
+      return;
+    }
+    const status = event.target.closest<HTMLSelectElement>(
+      '[data-admin-user-status]',
+    );
+    if (status) {
+      this.adminUserStatus = ['active', 'deleted', 'all'].includes(status.value)
+        ? (status.value as AdminUserStatusFilter)
+        : 'active';
+      this.render();
+      return;
+    }
     const select = event.target.closest<HTMLSelectElement>(
       '[data-admin-sort-select]',
     );
     if (!select?.value) return;
     this.updateAdminSort(select.value as AdminSortField);
+  }
+
+  /** Filters users as the administrator types and restores focus after safe rerendering. */
+  private handleAdminInput(event: Event): void {
+    if (!(event.target instanceof Element)) return;
+    const input = event.target.closest<HTMLInputElement>(
+      '[data-admin-user-query]',
+    );
+    if (!input) return;
+    this.adminUserQuery = input.value;
+    this.render();
+    const replacement = this.elements.adminView.querySelector<HTMLInputElement>(
+      '[data-admin-user-query]',
+    );
+    if (!replacement) return;
+    replacement.focus();
+    replacement.setSelectionRange(
+      replacement.value.length,
+      replacement.value.length,
+    );
   }
 
   /** Replaces only the active admin child sort hash and re-renders memory state. */

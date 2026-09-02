@@ -24,7 +24,11 @@ async function stabilizeDynamicAdminRecords(
 ): Promise<void> {
   await page.waitForLoadState('networkidle');
   await expect(page.locator('#adminView h1')).toBeVisible();
-  await expect(page.locator('.admin-sort-bar')).toBeVisible();
+  await expect(
+    page.locator(
+      section === 'users' ? '.admin-user-toolbar' : '.admin-sort-bar',
+    ),
+  ).toBeVisible();
   const keepCount = section === 'users' ? 4 : 2;
   const records = page.locator(
     isMobile ? '.admin-mobile-card:visible' : '.admin-table:visible tbody tr',
@@ -34,6 +38,11 @@ async function stabilizeDynamicAdminRecords(
   for (let index = recordCount - 1; index >= keepCount; index -= 1)
     await records.nth(index).evaluate((record) => record.remove());
   await expect(records).toHaveCount(keepCount);
+  if (section === 'users') {
+    await page.locator('.admin-user-summary').evaluate((summary, count) => {
+      summary.textContent = `${count} 个用户 · ${count} 个活跃 · 0 个已删除`;
+    }, keepCount);
+  }
 
   if (isMobile) {
     await expect(page.locator('.admin-mobile-list:visible')).toBeVisible();
@@ -41,12 +50,19 @@ async function stabilizeDynamicAdminRecords(
       cards.forEach((card, index) => {
         card.querySelector('strong')!.textContent =
           kind === 'users' ? `用户 ${index + 1}` : `角色 ${index + 1}`;
-        card.querySelector('.admin-meta')!.textContent =
-          kind === 'users' ? '角色：用户' : `代码：role-${index + 1}`;
+        const metadata = card.querySelector(
+          kind === 'users' ? '.admin-role-tag' : '.admin-meta',
+        );
+        const status = card.querySelector(
+          kind === 'users' ? '.admin-user-status' : '.admin-status',
+        );
+        if (!metadata || !status)
+          throw new Error('Expected management metadata and status');
+        metadata.textContent =
+          kind === 'users' ? '用户' : `代码：role-${index + 1}`;
         card.querySelector('.admin-updated-at')!.textContent =
-          '修改时间：2026-08-31 00:00';
-        card.querySelector('.admin-status')!.textContent =
-          kind === 'users' ? '活跃' : '自定义角色';
+          kind === 'users' ? '2026-08-31 00:00' : '修改时间：2026-08-31 00:00';
+        status.textContent = kind === 'users' ? '●活跃' : '自定义角色';
         if (kind === 'roles') {
           // Role baselines model seeded built-in roles, which have no lifecycle actions.
           card
@@ -62,16 +78,17 @@ async function stabilizeDynamicAdminRecords(
         cards.map((card) => card.querySelectorAll(selector).length),
       editSelector,
     );
-    expect(editCounts).toEqual(Array.from({ length: keepCount }, () => 1));
+    expect(editCounts).toEqual(
+      Array.from({ length: keepCount }, () => (section === 'users' ? 2 : 1)),
+    );
     const lifecycle = records.locator('[data-admin-action]');
     if (section === 'roles') {
       await expect(lifecycle).toHaveCount(0);
     } else if ((await lifecycle.count()) > 0) {
       const labels = await lifecycle.allTextContents();
-      expect(labels.every((label) => /^(逻辑删除|恢复)$/.test(label))).toBe(
-        true,
-      );
+      expect(labels.every((label) => /^(删除|恢复)$/.test(label))).toBe(true);
     }
+    await page.mouse.move(0, 0);
     return;
   }
 
@@ -109,16 +126,25 @@ async function stabilizeDynamicAdminRecords(
       }
       name.textContent =
         kind === 'users' ? `用户 ${index + 1}` : `角色 ${index + 1}`;
-      roleOrCodeCell.textContent =
-        kind === 'users' ? '用户' : `role-${index + 1}`;
+      const roleOrCode =
+        kind === 'users'
+          ? roleOrCodeCell.querySelector('.admin-role-tag')
+          : roleOrCodeCell;
+      if (!roleOrCode) throw new Error('Expected management role or code');
+      roleOrCode.textContent = kind === 'users' ? '用户' : `role-${index + 1}`;
       if (kind === 'roles') {
         const permissionCell = cells[2];
         if (!permissionCell) throw new Error('Expected role permission cell');
         permissionCell.textContent = String(index + 1);
       }
-      statusOrPermissionCell.textContent =
-        kind === 'users' ? '活跃' : '自定义角色';
-      updatedAt.textContent = '修改时间：2026-08-31 00:00';
+      const status =
+        kind === 'users'
+          ? statusOrPermissionCell.querySelector('.admin-user-status')
+          : statusOrPermissionCell;
+      if (!status) throw new Error('Expected management status');
+      status.textContent = kind === 'users' ? '●活跃' : '自定义角色';
+      updatedAt.textContent =
+        kind === 'users' ? '2026-08-31 00:00' : '修改时间：2026-08-31 00:00';
       if (kind === 'roles') {
         // Role baselines model seeded built-in roles, which have no lifecycle actions.
         row
@@ -134,14 +160,17 @@ async function stabilizeDynamicAdminRecords(
       rows.map((row) => row.querySelectorAll(selector).length),
     editSelector,
   );
-  expect(editCounts).toEqual(Array.from({ length: keepCount }, () => 1));
+  expect(editCounts).toEqual(
+    Array.from({ length: keepCount }, () => (section === 'users' ? 2 : 1)),
+  );
   const lifecycle = records.locator('[data-admin-action]');
   if (section === 'roles') {
     await expect(lifecycle).toHaveCount(0);
   } else if ((await lifecycle.count()) > 0) {
     const labels = await lifecycle.allTextContents();
-    expect(labels.every((label) => /^(逻辑删除|恢复)$/.test(label))).toBe(true);
+    expect(labels.every((label) => /^(删除|恢复)$/.test(label))).toBe(true);
   }
+  await page.mouse.move(0, 0);
 }
 
 /** Restores deterministic server or legacy local state before each visual scenario. */
@@ -212,11 +241,15 @@ for (const themeId of THEME_IDS) {
       /#admin\/users\?sort=updatedAt&direction=desc/,
     );
     await stabilizeDynamicAdminRecords(page, isMobile, 'users');
-    await expect(page.locator('#adminView')).toHaveScreenshot(
-      `${themeId}-admin-users.png`,
-    );
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(page).toHaveScreenshot(`${themeId}-admin-users.png`, {
+      fullPage: false,
+    });
 
-    await page.getByRole('link', { name: '返回管理首页' }).click();
+    await page
+      .getByRole('navigation', { name: '面包屑' })
+      .getByRole('link', { name: '管理', exact: true })
+      .click();
     await page.getByRole('link', { name: '角色管理' }).click();
     await expect(page).toHaveURL(
       /#admin\/roles\?sort=updatedAt&direction=desc/,
