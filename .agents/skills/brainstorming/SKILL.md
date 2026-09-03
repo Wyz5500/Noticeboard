@@ -45,7 +45,7 @@ override it:
 - **Architectural** — new projects, new subsystems, changes that
   restructure how components fit together or alter interfaces others
   depend on. Follow the full process: questions, approaches, sectioned
-  design, written spec, then the writing-plans skill.
+  design, written spec, then a detailed implementation plan.
 
 When in doubt between two paths, take the heavier one. The ratchet is
 one-way: hidden complexity discovered mid-task upgrades the path —
@@ -100,7 +100,7 @@ your path and complete them in order.
 6. **Write design doc** — save to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` and commit
 7. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below)
 8. **User reviews written spec** — ask user to review the spec file before proceeding
-9. **Transition to implementation** — invoke writing-plans skill to create implementation plan
+9. **Transition to implementation** — write a detailed implementation plan
 
 ## Process Flow
 
@@ -121,7 +121,7 @@ digraph brainstorming {
     "Write design doc" [shape=box];
     "Spec self-review\n(fix inline)" [shape=box];
     "User reviews spec?" [shape=diamond];
-    "Invoke writing-plans skill" [shape=doublecircle];
+    "Write implementation plan" [shape=doublecircle];
     "Hidden complexity? Upgrade path" [shape=box];
 
     "Classify: spike / bounded / architectural" -> "Present question + probe (2-3 sentences)" [label="spike"];
@@ -142,16 +142,15 @@ digraph brainstorming {
     "Write design doc" -> "Spec self-review\n(fix inline)";
     "Spec self-review\n(fix inline)" -> "User reviews spec?";
     "User reviews spec?" -> "Write design doc" [label="changes requested"];
-    "User reviews spec?" -> "Invoke writing-plans skill" [label="approved"];
+    "User reviews spec?" -> "Write implementation plan" [label="approved"];
 }
 ```
 
-**Terminal states are path-bound.** Architectural: the ONLY skill you
-invoke after brainstorming is writing-plans — never frontend-design,
-mcp-builder, or any other implementation skill. Bounded: after
-approval, implementation proceeds directly through the normal
-development workflow; no plan document. Spike: the terminal state is a
-reported recommendation.
+**Terminal states are path-bound.** Architectural: after brainstorming,
+write the implementation plan before invoking any implementation skill.
+Bounded: after approval, implementation proceeds directly through the
+normal development workflow; no plan document. Spike: the terminal state
+is a reported recommendation.
 
 ## The Process
 
@@ -205,7 +204,6 @@ is the whole process.
 
 - Write the validated design (spec) to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`
   - (User preferences for spec location override this default)
-- Use elements-of-style:writing-clearly-and-concisely skill if available
 - Commit the design document to git
 
 **Spec Self-Review:**
@@ -227,8 +225,8 @@ Wait for the user's response. If they request changes, make them and re-run the 
 
 **Implementation:**
 
-- Invoke the writing-plans skill to create a detailed implementation plan
-- Do NOT invoke any other skill. writing-plans is the next step.
+- Write a detailed implementation plan before starting implementation.
+- Do not invoke an implementation skill until the plan is complete.
 
 ## Visual Companion
 
@@ -247,4 +245,4 @@ A browser-based companion for showing mockups, diagrams, and visual options duri
 A question about a UI topic is not automatically a visual question. "What does personality mean in this context?" is a conceptual question — use the terminal. "Which wizard layout works better?" is a visual question — use the browser.
 
 If they agree to the companion, read the detailed guide before proceeding:
-`skills/brainstorming/visual-companion.md`
+[Visual Companion Guide](visual-companion.md)
