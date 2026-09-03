@@ -18,7 +18,11 @@ import { PostgresTaskRepository } from './postgres-task-repository.js';
 import { PostgresTaskTransaction } from './postgres-task-transaction.js';
 
 const DATABASE_URL = process.env.DATABASE_URL_TEST;
-const describeDatabase = DATABASE_URL ? describe : describe.skip;
+if (!DATABASE_URL) {
+  throw new Error(
+    'DATABASE_URL_TEST is required for PostgreSQL contract tests',
+  );
+}
 const MANAGEMENT_INVARIANT_LOCK_KEY = 1788062402;
 const ACCOUNT_PERSISTENCE = new PostgresAccountPersistence();
 
@@ -50,14 +54,14 @@ async function waitForAdvisoryLockWaiter(
   throw new Error(`Timed out waiting for advisory lock waiter: ${key}`);
 }
 
-describeDatabase('PostgreSQL task repository contract', () => {
+describe('PostgreSQL task repository contract', () => {
   let dataSource: DataSource;
   let transaction: PostgresTaskTransaction;
   let query: PostgresTaskQuery;
 
   /** Migrates the isolated contract database once before exercising adapters. */
   beforeAll(async () => {
-    dataSource = createPostgresDataSource(DATABASE_URL!, 'migration');
+    dataSource = createPostgresDataSource(DATABASE_URL, 'migration');
     await dataSource.initialize();
     await dataSource.runMigrations();
     transaction = new PostgresTaskTransaction(dataSource);

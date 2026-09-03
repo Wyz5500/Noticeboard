@@ -6,17 +6,26 @@ export interface RuntimeConfig {
   port: number;
 }
 
-/** Loads mandatory database and bounded listen settings from environment variables. */
+/** Loads the mandatory PostgreSQL URL shared by application and database-only commands. */
+export function loadDatabaseUrl(
+  environment: NodeJS.ProcessEnv = process.env,
+): string {
+  const databaseUrl = environment.DATABASE_URL?.trim();
+  if (!databaseUrl) throw new Error('DATABASE_URL is required');
+  return databaseUrl;
+}
+
+/** Loads mandatory database and explicit bounded listen settings from environment variables. */
 export function loadRuntimeConfig(
   environment: NodeJS.ProcessEnv = process.env,
 ): RuntimeConfig {
-  const databaseUrl = environment.DATABASE_URL?.trim();
-  if (!databaseUrl) throw new Error('DATABASE_URL is required');
-  const port = Number(environment.PORT ?? '3000');
-  if (!Number.isInteger(port) || port < 1 || port > 65_535)
-    throw new Error('PORT must be an integer from 1 to 65535');
+  const portText = environment.PORT?.trim();
+  if (!portText) throw new Error('PORT is required');
+  const port = Number(portText);
+  if (!Number.isInteger(port) || port < 0 || port > 65_535)
+    throw new Error('PORT must be an integer from 0 to 65535');
   return {
-    databaseUrl,
+    databaseUrl: loadDatabaseUrl(environment),
     host: environment.HOST?.trim() || '0.0.0.0',
     port,
   };

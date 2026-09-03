@@ -62,4 +62,4 @@ checker 根据 `apps/api/src/<first-segment>/...` 自动识别 Feature；`common
 
 允许 fixture 覆盖另一 Feature public contract、同 Feature 合法分层、Feature → common，以及顶层 Composition Root → composition entry。回归 fixture 保证原有逆向 layer 依赖仍失败，并覆盖 public re-export 和非顶层代码滥用 composition entry。
 
-实现后依次运行架构测试、architecture checker、单元/API/contract 等针对性检查，最终在 Node 24.20.0、npm 11.19.1 和项目 PostgreSQL 前置条件下执行完整 `npm run verify`。只有完整门禁退出码为零才报告完成。
+实现后依次运行架构测试、architecture checker、单元/API/contract 等针对性检查，最终在 Node 24.x、npm 11.x 和项目 PostgreSQL 前置条件下执行完整 `npm run verify`。只有完整门禁退出码为零才报告完成。

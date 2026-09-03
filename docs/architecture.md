@@ -59,11 +59,15 @@ HTTP 使用 URI 版本 `/api/v1`。稳定枚举、字段、状态码与 demo-onl
 
 ## 运行与部署
 
-配置仅来自环境变量，并在启动时验证。PostgreSQL 连接、查询和 readiness 探测都有明确超时，意外异常在返回安全错误信封前写入结构化日志。镜像使用多阶段构建，生产层只安装运行依赖并以非 root 用户启动；Compose 的应用文件系统只读。migration 和非破坏性 seed 是先于无状态应用的一次性服务。存活检查不依赖数据库，就绪检查实际执行 PostgreSQL 查询。
+配置仅来自环境变量，并在启动时验证。PostgreSQL 连接、查询和 readiness 探测都有明确超时，意外异常在返回安全错误信封前写入结构化日志。宿主机应用必须显式提供监听配置：本地编排固定绑定 `127.0.0.1` 并以 `PORT=0` 取得操作系统动态端口，结构化 `application.ready` 事件公布实际 URL；永久容器显式监听 3000。存活检查不依赖数据库，就绪检查实际执行 PostgreSQL 查询。
 
-永久部署与 worktree 实例是两种隔离拓扑。永久部署只能从 Git 主工作目录通过 `npm run deploy` 升级，固定使用 Compose project `noticeboard` 和应用端口 `127.0.0.1:3000`；其 PostgreSQL 只连接内部网络并使用持久卷，部署入口不提供删除能力。linked worktree 必须拒绝永久部署。
+永久部署与本地开发/验证是两种隔离拓扑。永久部署只能从 Git primary checkout 的 clean `main` 分支升级，固定使用 Compose project `noticeboard` 和应用端口 `127.0.0.1:3000`；其 PostgreSQL 只连接内部网络并使用持久卷。镜像使用多阶段构建，生产层只安装运行依赖并以非 root 用户启动，应用文件系统只读；migration 和非破坏性 seed 是先于无状态应用的一次性服务。部署入口只提供非破坏性升级，并在 Compose 启动后验证数据库 readiness、首页、OpenAPI 和数据库只读 API。linked worktree、其他分支和 detached HEAD 必须拒绝永久部署及其 dry-run。
 
-开发、完整验证和独立 Playwright 使用按 worktree 绝对路径派生的 Compose project、网络和数据库卷，宿主机端口由 Docker 动态分配，应用端口必须避开永久部署的 `3000`。独立 Playwright 使用额外的 `-playwright` project，不能回退到固定宿主机端口。生命周期操作以仓库共享锁和 project 锁避免并发修改；不同 worktree 的业务测试可在各自实例上并行。完整验证和独立 Playwright 成功后删除其容器、网络及数据库卷，失败时保留现场，重复相同命令会升级保留实例后重试。worktree 的 `down`、`destroy` 和验证清理只能作用于当前路径派生的 project，不得操作永久 `noticeboard`。
+本机开发与全部测试在宿主机执行 migration、seed、build、API 应用、Vitest、Node Test、Playwright 和 Chromium；Docker 在本地只承载 PostgreSQL。每个 worktree 按绝对路径和用途派生相互独立的 `dev`、`verify`、`playwright` Compose project、网络和数据库卷，数据库宿主机端口由 Docker 动态分配。生命周期操作以 project 锁避免并发修改；不同 worktree 的业务测试可并行。本机应用端口不得使用永久部署的 3000，也不得回退到固定 3100；PostgreSQL 不得回退到固定 54329。
+
+完整验证和独立 Playwright 成功后删除各自 PostgreSQL 容器、网络及数据库卷，失败时保留数据库和测试产物，但宿主机应用进程始终停止。`dev` 的 `down`、`destroy` 以及验证清理只能作用于当前路径和用途派生的 project，不得操作永久 `noticeboard`。`npm run verify -- --final` 只验证 clean 候选提交并记录本地 verified ref，不执行永久部署。
+
+标准 release 在 primary `main` 校验候选 verified ref 后创建 no-ff merge commit，并立即执行永久部署验证。失败补偿只允许对本次 release 创建且仍位于 HEAD 的 merge commit追加 revert commit，再从 revert 后源码尝试一次部署；不得改写 Git 历史、自动 push 或自动执行 migration revert。常规 migration 必须与上一应用版本向后兼容；破坏性或不可逆 migration 需要独立发布方案。
 
 ## 架构变更判定
 
