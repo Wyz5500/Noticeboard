@@ -265,7 +265,6 @@ function commentForm(
   textarea.name = 'content';
   textarea.dataset.commentInput = task.id;
   textarea.required = true;
-  textarea.maxLength = 1000;
   textarea.rows = 4;
   textarea.value = draft;
   label.append(textarea);

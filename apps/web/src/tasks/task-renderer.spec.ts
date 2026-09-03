@@ -251,8 +251,8 @@ describe('task detail renderer', () => {
     expect(container.textContent).not.toContain('绝不能出现的原评论');
   });
 
-  /** Proves eligible viewers receive a constrained multiline form with their in-memory draft. */
-  it('renders the required 1000-character comment form for an open visible task', () => {
+  /** Proves the editor leaves Unicode-aware length enforcement to the domain instead of UTF-16 maxlength. */
+  it('renders a required comment form without a native UTF-16 length limit', () => {
     const container = render(task(), 'commenter', ['tasks.view'], '保留\n草稿');
     const forms = findAll(
       container,
@@ -267,7 +267,7 @@ describe('task detail renderer', () => {
     expect(textareas).toHaveLength(1);
     expect(textareas[0]).toMatchObject({
       required: true,
-      maxLength: 1000,
+      maxLength: -1,
       value: '保留\n草稿',
     });
   });

@@ -778,6 +778,8 @@ describe('HTTP API contract', () => {
                 format?: string;
                 maxLength?: number;
                 minLength?: number;
+                nullable?: boolean;
+                type?: string;
                 items?: {
                   enum?: string[];
                   oneOf?: Array<{ $ref?: string }>;
@@ -882,6 +884,16 @@ describe('HTTP API contract', () => {
       document.components.schemas.TaskCommentResponseDto?.properties?.kind
         ?.enum,
     ).toEqual(['comment']);
+    expect(
+      document.components.schemas.TaskCommentResponseDto?.properties?.content,
+    ).toMatchObject({ type: 'string', nullable: true, maxLength: 1000 });
+    expect(
+      document.components.schemas.TaskCommentResponseDto?.properties?.deletedAt,
+    ).toMatchObject({ type: 'string', nullable: true, format: 'date-time' });
+    expect(
+      document.components.schemas.TaskCommentResponseDto?.properties
+        ?.deletedByUsername,
+    ).toMatchObject({ type: 'string', nullable: true });
     expect(
       document.components.schemas.ActorResponseDto?.properties?.username,
     ).toBeDefined();

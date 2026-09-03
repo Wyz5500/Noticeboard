@@ -109,16 +109,16 @@ export class TaskCommentResponseDto {
   @ApiProperty({ format: 'date-time' })
   at!: string;
 
-  @ApiProperty({ nullable: true, maxLength: 1000 })
+  @ApiProperty({ type: String, nullable: true, maxLength: 1000 })
   content!: string | null;
 
   @ApiProperty()
   deleted!: boolean;
 
-  @ApiProperty({ format: 'date-time', nullable: true })
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
   deletedAt!: string | null;
 
-  @ApiProperty({ nullable: true })
+  @ApiProperty({ type: String, nullable: true })
   deletedByUsername!: string | null;
 }
 

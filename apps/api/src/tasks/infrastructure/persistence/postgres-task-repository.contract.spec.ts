@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { DataSource, QueryRunner } from 'typeorm';
 
 import { PostgresAuthorization } from '../../../authorization/infrastructure/postgres-authorization.js';
+import { AddTaskRenewedEvent1788062404000 } from '../../../common/infrastructure/database/migrations/1788062404000-add-task-renewed-event.js';
 import { AddTimelineComments1788062405000 } from '../../../common/infrastructure/database/migrations/1788062405000-add-timeline-comments.js';
 import { createPostgresDataSource } from '../../../database.js';
 import { PostgresAccountPersistence } from '../../../identity/infrastructure/persistence/postgres-account-persistence.js';
@@ -338,6 +339,101 @@ describeDatabase('PostgreSQL task repository contract', () => {
         ),
       ).resolves.toEqual([
         { actor_id: 'legacy-writer', actor_username: 'legacy-writer' },
+      ]);
+    } finally {
+      await runner.rollbackTransaction();
+      await runner.release();
+    }
+  });
+
+  /** Proves the earlier renewed migration preserves retained comment rows while widening the action constraint. */
+  it('applies the renewed migration to an existing comment schema with comment rows', async () => {
+    const task = Task.create(
+      {
+        id: 'task-retained-comment-migration',
+        title: '保留评论迁移',
+        type: 'exploration',
+        description: '验证续期迁移兼容已有评论行',
+        reward: '12 金币',
+        dueDate: '2026-09-10',
+      },
+      DEMO_ACTORS[0]!,
+      '2026-08-30T09:00:00.000Z',
+    );
+    task.addComment(
+      'comment-retained-migration',
+      '迁移前已有评论',
+      DEMO_ACTORS[1]!,
+      '2026-08-30T10:00:00.000Z',
+    );
+    await transaction.run(async (repository) => repository.insert(task));
+    const runner = dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+
+    try {
+      await runner.query(
+        'ALTER TABLE task_events DROP CONSTRAINT task_events_comment_payload_check, DROP CONSTRAINT task_events_action_check',
+      );
+      await runner.query(
+        "ALTER TABLE task_events ADD CONSTRAINT task_events_action_check CHECK (action IN ('created', 'accepted', 'completed', 'approved', 'reopened', 'closed', 'comment_created', 'comment_deleted'))",
+      );
+      await runner.query(`
+        ALTER TABLE task_events
+        ADD CONSTRAINT task_events_comment_payload_check CHECK (
+          (
+            action = 'comment_created'
+            AND comment_id IS NOT NULL
+            AND btrim(comment_id) <> ''
+            AND content IS NOT NULL
+            AND btrim(content) <> ''
+            AND char_length(content) <= 1000
+            AND target_comment_id IS NULL
+          )
+          OR (
+            action = 'comment_deleted'
+            AND comment_id IS NULL
+            AND content IS NULL
+            AND target_comment_id IS NOT NULL
+            AND btrim(target_comment_id) <> ''
+          )
+          OR (
+            action IN ('created', 'accepted', 'completed', 'approved', 'reopened', 'closed')
+            AND comment_id IS NULL
+            AND content IS NULL
+            AND target_comment_id IS NULL
+          )
+        )
+      `);
+      await new AddTaskRenewedEvent1788062404000().up(runner);
+      await runner.query(`
+        INSERT INTO task_events (
+          task_id, sequence, action, actor_id, actor_username, at, detail,
+          actor_name, actor_role, actor_role_name
+        ) VALUES (
+          'task-retained-comment-migration', 3, 'renewed',
+          'noticeboard-master', 'noticeboard-master',
+          '2026-08-30T11:00:00.000Z', '', '用户 A', 'user', '用户'
+        )
+      `);
+      const [{ definition }] = await runner.query(`
+        SELECT pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint
+        WHERE conname = 'task_events_action_check'
+      `);
+      const normalized = String(definition).toLowerCase();
+
+      expect(normalized).toContain("'renewed'::character varying");
+      expect(normalized).toContain("'comment_created'::character varying");
+      expect(normalized).toContain("'comment_deleted'::character varying");
+      await expect(
+        runner.query(
+          "SELECT action FROM task_events WHERE task_id = 'task-retained-comment-migration' ORDER BY sequence",
+        ),
+      ).resolves.toEqual([
+        { action: 'created' },
+        { action: 'comment_created' },
+        { action: 'renewed' },
       ]);
     } finally {
       await runner.rollbackTransaction();

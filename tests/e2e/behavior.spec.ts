@@ -1983,7 +1983,6 @@ test('comments on an open task and keeps deleted tombstones', async ({
 
   await switchUserAndOpenTask(page, 'adventurer-b', '评论协作任务');
   const commentInput = page.locator('[data-comment-input]');
-  await expect(commentInput).toHaveAttribute('maxlength', '1000');
   await commentInput.fill('<img src=x onerror=alert(1)>\n第二行');
   await page.getByRole('button', { name: '发表评论' }).click();
 
@@ -2026,6 +2025,10 @@ test('comments on an open task and keeps deleted tombstones', async ({
   await expect(page.locator('.comment-deleted').first()).toHaveText(
     '该评论已被@noticeboard-admin删除',
   );
+  await expect(commentInput).not.toHaveAttribute('maxlength', /.+/);
+  await commentInput.focus();
+  await page.keyboard.insertText('😀'.repeat(600));
+  expect(Array.from(await commentInput.inputValue())).toHaveLength(600);
 
   const tasksResponse = await request.get('/api/v1/tasks', {
     headers: { 'X-Demo-User-Id': 'noticeboard-master' },
