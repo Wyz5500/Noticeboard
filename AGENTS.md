@@ -1,5 +1,10 @@
 # 仓库贡献规则
 
+## Agent 命令执行前置规则
+
+- 在 linked worktree 中执行命令时，始终以当前 worktree 为工作目录，并使用可静态确认的字面量命令与参数。直接调用当前环境中的可执行文件；需要定位指定版本的 Node/npm 时，先用独立命令取得其绝对路径，再以该字面绝对路径执行。不得在复合命令中使用 `source`、动态拼接或覆盖 `PATH`，也不得使用 `git -C`、子 shell 或其他方式转向主工作目录或 worktree 外部路径。
+- **linked worktree 中禁止部署，包括 `npm run deploy`、直接调用 `scripts/deploy.*` 以及这些部署入口的 `--dry-run`。** 开始工作后先确认当前目录是否为 linked worktree；若是，只能使用 `npm run instance -- ...`、`npm run verify` 及相应测试命令进行开发验证。永久部署只能由主工作目录执行。
+
 ## 架构约束
 
 - 仓库采用按 Feature 划分的模块化单体；完整架构定义、分层职责、依赖方向、公共契约、数据与事务边界以 `docs/architecture.md` 为唯一事实源。涉及架构的任务必须先阅读该文档。
