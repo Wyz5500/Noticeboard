@@ -6,10 +6,9 @@
   "description": "告示牌（Noticeboard）任务协作平台的 NestJS、PostgreSQL 与原生 TypeScript 单体应用。",
   "license": "UNLICENSED",
   "engines": {
-    "node": "24.20.0",
-    "npm": "11.19.1"
+    "node": ">=24 <25",
+    "npm": ">=11 <12"
   },
-  "packageManager": "npm@11.19.1",
   "scripts": {
     "architecture": "node --import tsx scripts/check-architecture.ts",
     "build": "npm run clean && npm run build:api && npm run build:web && node scripts/copy-web-assets.mjs",
@@ -21,16 +20,17 @@
     "db:revert": "tsx --tsconfig apps/api/tsconfig.json apps/api/src/database-cli.ts migration:revert",
     "db:seed": "tsx --tsconfig apps/api/tsconfig.json apps/api/src/database-cli.ts seed",
     "deploy": "node scripts/deploy.mjs",
+    "release": "node scripts/release.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "start": "node dist/api/main.js",
-    "start:dev": "npm run build:web && tsx --tsconfig apps/api/tsconfig.json --watch apps/api/src/main.ts",
+    "start:dev": "node scripts/run-local.mjs",
     "test": "npm run test:unit && npm run test:api",
     "test:api": "vitest run --config vitest.http.config.ts",
     "test:contract": "vitest run --config vitest.contract.config.ts",
     "test:e2e": "node scripts/run-playwright.mjs e2e",
-    "test:instance": "node --test scripts/instance.spec.mjs scripts/deploy.spec.mjs",
+    "test:instance": "node --test scripts/instance.spec.mjs scripts/local-app.spec.mjs scripts/verify.spec.mjs scripts/deploy.spec.mjs scripts/release.spec.mjs",
     "test:unit": "vitest run --config vitest.config.ts",
     "test:visual": "node scripts/run-playwright.mjs visual",
     "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",

@@ -2,7 +2,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { loadRuntimeConfig } from './common/infrastructure/config/runtime-config.js';
+import { loadDatabaseUrl } from './common/infrastructure/config/runtime-config.js';
 import { postgresDataSourceOptions } from './database.js';
 import { HealthModule } from './health/public/health.module.js';
 import { AuthorizationModule } from './authorization/public/authorization.module.js';
@@ -12,8 +12,7 @@ import { TasksModule } from './tasks/public/tasks.module.js';
 @Module({
   imports: [
     TypeOrmModule.forRootAsync({
-      useFactory: () =>
-        postgresDataSourceOptions(loadRuntimeConfig().databaseUrl),
+      useFactory: () => postgresDataSourceOptions(loadDatabaseUrl()),
     }),
     IdentityModule,
     AuthorizationModule,

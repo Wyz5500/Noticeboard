@@ -1,5 +1,5 @@
 /** Runs explicit migration, rollback, and deterministic demo seed operations for deployment jobs. */
-import { loadRuntimeConfig } from './common/infrastructure/config/runtime-config.js';
+import { loadDatabaseUrl } from './common/infrastructure/config/runtime-config.js';
 import { createPostgresDataSource } from './database.js';
 import { seedDemoData } from './seed-demo-data.js';
 
@@ -13,7 +13,7 @@ async function run(): Promise<void> {
   )
     throw new Error('Expected migration:run, migration:revert, or seed');
   const dataSource = createPostgresDataSource(
-    loadRuntimeConfig().databaseUrl,
+    loadDatabaseUrl(),
     command === 'seed' ? 'application' : 'migration',
   );
   await dataSource.initialize();

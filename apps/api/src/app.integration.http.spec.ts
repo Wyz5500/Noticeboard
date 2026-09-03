@@ -10,14 +10,18 @@ import { AppModule } from './app.module.js';
 import { configureHttpApplication } from './common/presentation/configure-http-application.js';
 
 const DATABASE_URL = process.env.DATABASE_URL_TEST;
-const describeDatabase = DATABASE_URL ? describe : describe.skip;
+if (!DATABASE_URL) {
+  throw new Error(
+    'DATABASE_URL_TEST is required for application integration tests',
+  );
+}
 
 /** Waits until the millisecond precision of JSON ISO timestamps can distinguish the next mutation. */
 function waitForTimestampTick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 2));
 }
 
-describeDatabase('application composition', () => {
+describe('application composition', () => {
   let app: NestFastifyApplication;
 
   /** Starts the production module graph against the migrated contract database. */
