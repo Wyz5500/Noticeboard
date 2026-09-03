@@ -6,17 +6,24 @@ import { seedDemoData } from './seed-demo-data.js';
 /** Executes exactly one database command and always closes the connection pool. */
 async function run(): Promise<void> {
   const command = process.argv[2];
-  const dataSource = createPostgresDataSource(loadRuntimeConfig().databaseUrl);
+  if (
+    command !== 'migration:run' &&
+    command !== 'migration:revert' &&
+    command !== 'seed'
+  )
+    throw new Error('Expected migration:run, migration:revert, or seed');
+  const dataSource = createPostgresDataSource(
+    loadRuntimeConfig().databaseUrl,
+    command === 'seed' ? 'application' : 'migration',
+  );
   await dataSource.initialize();
   try {
     if (command === 'migration:run') {
-      await dataSource.runMigrations({ transaction: 'all' });
+      await dataSource.runMigrations();
     } else if (command === 'migration:revert') {
-      await dataSource.undoLastMigration({ transaction: 'all' });
+      await dataSource.undoLastMigration({ transaction: 'none' });
     } else if (command === 'seed') {
       await dataSource.transaction(seedDemoData);
-    } else {
-      throw new Error('Expected migration:run, migration:revert, or seed');
     }
     console.log(JSON.stringify({ level: 'info', command, status: 'complete' }));
   } finally {

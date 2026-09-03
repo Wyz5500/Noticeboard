@@ -57,9 +57,9 @@ describeDatabase('PostgreSQL task repository contract', () => {
 
   /** Migrates the isolated contract database once before exercising adapters. */
   beforeAll(async () => {
-    dataSource = createPostgresDataSource(DATABASE_URL!);
+    dataSource = createPostgresDataSource(DATABASE_URL!, 'migration');
     await dataSource.initialize();
-    await dataSource.runMigrations({ transaction: 'all' });
+    await dataSource.runMigrations();
     transaction = new PostgresTaskTransaction(dataSource);
     query = new PostgresTaskQuery(dataSource);
   });
@@ -477,8 +477,8 @@ describeDatabase('PostgreSQL task repository contract', () => {
     }
   });
 
-  /** Proves a retained worktree database can reconcile the pre-merge comment schema with renewed events. */
-  it('reconciles the renewed action when the comment schema already exists', async () => {
+  /** Proves the historical comment migration remains unaware of later edit events. */
+  it('keeps the recovered comment schema limited to its original event actions', async () => {
     const runner = dataSource.createQueryRunner();
     await runner.connect();
     await runner.startTransaction();
@@ -495,7 +495,7 @@ describeDatabase('PostgreSQL task repository contract', () => {
       expect(normalized).toContain("'renewed'::character varying");
       expect(normalized).toContain("'comment_created'::character varying");
       expect(normalized).toContain("'comment_deleted'::character varying");
-      expect(normalized).toContain("'comment_edited'::character varying");
+      expect(normalized).not.toContain("'comment_edited'::character varying");
     } finally {
       await runner.rollbackTransaction();
       await runner.release();
@@ -552,6 +552,80 @@ describeDatabase('PostgreSQL task repository contract', () => {
       expect(normalized).toContain('char_length((content)::text) <= 1000');
     } finally {
       await runner.rollbackTransaction();
+      await runner.release();
+    }
+  });
+
+  /** Proves full validation runs after the exclusive add lock has been committed. */
+  it('validates comment edit checks while an ordinary writer lock remains held', async () => {
+    const migration = new AddCommentEdits1788062406000();
+    const runner = dataSource.createQueryRunner();
+    const writer = dataSource.createQueryRunner();
+    await runner.connect();
+    await writer.connect();
+    await migration.down(runner);
+    const originalQuery = runner.query.bind(runner);
+    let observedValidation = false;
+    const validatingRunner = new Proxy(runner, {
+      /** Inserts a concurrent writer lock immediately before the validation scan. */
+      get(target, property) {
+        if (property === 'query') {
+          return async (sql: string): Promise<unknown> => {
+            if (!observedValidation && sql.includes('VALIDATE CONSTRAINT')) {
+              observedValidation = true;
+              await writer.startTransaction();
+              await writer.query(
+                'LOCK TABLE task_events IN ROW EXCLUSIVE MODE',
+              );
+              try {
+                return await originalQuery(sql);
+              } finally {
+                await writer.rollbackTransaction();
+              }
+            }
+            return originalQuery(sql);
+          };
+        }
+        if (property === 'startTransaction')
+          return (): Promise<void> => target.startTransaction();
+        if (property === 'commitTransaction')
+          return (): Promise<void> => target.commitTransaction();
+        if (property === 'rollbackTransaction')
+          return (): Promise<void> => target.rollbackTransaction();
+        return Reflect.get(target, property, target) as unknown;
+      },
+    });
+
+    try {
+      await migration.up(validatingRunner);
+      const constraints = await runner.query(`
+        SELECT conname, convalidated
+        FROM pg_constraint
+        WHERE conrelid = 'task_events'::regclass
+          AND (
+            conname IN (
+              'task_events_action_check',
+              'task_events_comment_payload_check'
+            )
+            OR conname LIKE 'task_events_%_check_next'
+          )
+        ORDER BY conname
+      `);
+
+      expect(observedValidation).toBe(true);
+      expect(constraints).toEqual([
+        {
+          conname: 'task_events_action_check',
+          convalidated: true,
+        },
+        {
+          conname: 'task_events_comment_payload_check',
+          convalidated: true,
+        },
+      ]);
+    } finally {
+      if (writer.isTransactionActive) await writer.rollbackTransaction();
+      await writer.release();
       await runner.release();
     }
   });

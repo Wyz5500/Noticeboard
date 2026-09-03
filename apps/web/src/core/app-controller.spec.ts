@@ -12,6 +12,7 @@ vi.mock('../admin/admin-renderer.js', () => ({
   renderAdminView: vi.fn(),
 }));
 import { AppController } from './app-controller.js';
+import { RequestGate } from './request-gate.js';
 import * as adminRenderer from '../admin/admin-renderer.js';
 import * as taskRenderer from '../tasks/task-renderer.js';
 
@@ -351,6 +352,61 @@ describe('AppController expired task renewal', () => {
 
     expect(controller.tasks).toEqual([fresh]);
     expect(controller.render).not.toHaveBeenCalled();
+  });
+
+  /** Ensures an obsolete resume failure cannot report an error over a newer projection. */
+  it('discards a resume refresh error after a newer task projection is installed', async () => {
+    let rejectTasks!: (error: Error) => void;
+    const stale = { ...STALE_TASK, version: 4 };
+    const fresh = { ...STALE_TASK, version: 5 };
+    const controller = Object.create(AppController.prototype) as {
+      api: Pick<ApiClient, 'listTasks'>;
+      gate: { run: (_key: string, work: () => Promise<void>) => Promise<void> };
+      users: ActorResource[];
+      tasks: TaskResource[];
+      tasksLoaded: boolean;
+      currentUserId: string;
+      taskProjectionSequence: number;
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      render: ReturnType<typeof vi.fn>;
+      showToast: ReturnType<typeof vi.fn>;
+      replaceTask?: (task: TaskResource) => void;
+      refreshTasksAfterResume?: () => Promise<void>;
+    };
+    controller.api = {
+      listTasks: () =>
+        new Promise((_resolve, reject) => {
+          rejectTasks = reject;
+        }),
+    };
+    controller.gate = { run: (_key, work) => work() };
+    controller.users = [TASK_VIEWER];
+    controller.tasks = [stale];
+    controller.tasksLoaded = true;
+    controller.currentUserId = TASK_VIEWER.id;
+    controller.taskProjectionSequence = 0;
+    controller.requestSnapshot = () => ({
+      actorId: TASK_VIEWER.id,
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+
+    const refresh = controller.refreshTasksAfterResume?.();
+    await Promise.resolve();
+    controller.replaceTask?.(fresh);
+    rejectTasks(new Error('obsolete refresh failed'));
+    await refresh;
+
+    expect(controller.tasks).toEqual([fresh]);
+    expect(controller.showToast).not.toHaveBeenCalled();
   });
 
   /** Ensures the renewal dialog explains the original workflow and assignee reset. */
@@ -2292,6 +2348,7 @@ describe('AppController task comments', () => {
       tasks: TaskResource[];
       selectedTaskId: string;
       currentUserId: string;
+      commentEditSequence: number;
       commentEditor: unknown;
       renderDrawer: ReturnType<typeof vi.fn>;
       handleDrawerClick: (event: Event) => Promise<void>;
@@ -2299,6 +2356,7 @@ describe('AppController task comments', () => {
     controller.tasks = [COMMENT_TASK];
     controller.selectedTaskId = COMMENT_TASK.id;
     controller.currentUserId = CURRENT_USER.id;
+    controller.commentEditSequence = 0;
     controller.commentEditor = null;
     controller.renderDrawer = vi.fn();
 
@@ -2312,8 +2370,50 @@ describe('AppController task comments', () => {
       commentId: 'comment-owned',
       draft: '原评论',
       expectedVersion: COMMENT_TASK.version,
+      sessionId: 1,
     });
     expect(controller.renderDrawer).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures a second edit trigger cannot overwrite the active comment draft. */
+  it('ignores another comment edit trigger while one editor is active', async () => {
+    installCommentDomShims();
+    const otherComment = {
+      ...COMMENT_TASK.timeline[1]!,
+      sequence: 3,
+      commentId: 'comment-other',
+      content: '另一条评论',
+    };
+    const activeEditor = {
+      actorId: CURRENT_USER.id,
+      taskId: COMMENT_TASK.id,
+      commentId: 'comment-owned',
+      draft: '不能丢失的草稿',
+      expectedVersion: COMMENT_TASK.version,
+      sessionId: 1,
+    };
+    const controller = Object.create(AppController.prototype) as {
+      tasks: TaskResource[];
+      selectedTaskId: string;
+      currentUserId: string;
+      commentEditor: typeof activeEditor | null;
+      renderDrawer: ReturnType<typeof vi.fn>;
+      handleDrawerClick: (event: Event) => Promise<void>;
+    };
+    controller.tasks = [
+      { ...COMMENT_TASK, timeline: [...COMMENT_TASK.timeline, otherComment] },
+    ];
+    controller.selectedTaskId = COMMENT_TASK.id;
+    controller.currentUserId = CURRENT_USER.id;
+    controller.commentEditor = activeEditor;
+    controller.renderDrawer = vi.fn();
+
+    await controller.handleDrawerClick({
+      target: new CommentElement({ editCommentId: 'comment-other' }),
+    } as unknown as Event);
+
+    expect(controller.commentEditor).toBe(activeEditor);
+    expect(controller.renderDrawer).not.toHaveBeenCalled();
   });
 
   /** Ensures closing the task drawer cannot leak one comment editor into a later task. */
@@ -2515,6 +2615,7 @@ describe('AppController task comments', () => {
         commentId: string;
         draft: string;
         expectedVersion: number;
+        sessionId: number;
       } | null;
       api: { editTaskComment: typeof editTaskComment };
       gate: {
@@ -2540,6 +2641,7 @@ describe('AppController task comments', () => {
       commentId: 'comment-owned',
       draft: '修改后的正文',
       expectedVersion: 3,
+      sessionId: 1,
     };
     controller.api = { editTaskComment };
     controller.gate = {
@@ -2576,8 +2678,8 @@ describe('AppController task comments', () => {
     expect(controller.showToast).toHaveBeenCalledWith('评论已更新');
   });
 
-  /** Ensures a completed request cannot clear a newer draft created while it was pending. */
-  it('preserves a newer comment edit session after an earlier request succeeds', async () => {
+  /** Ensures a duplicate submit cannot replace the identity owned by the accepted request. */
+  it('keeps one editor identity across a double save', async () => {
     installCommentDomShims();
     let releaseEdit!: (task: TaskResource) => void;
     const editTaskComment = vi.fn(
@@ -2593,11 +2695,10 @@ describe('AppController task comments', () => {
         commentId: string;
         draft: string;
         expectedVersion: number;
+        sessionId: number;
       } | null;
       api: { editTaskComment: typeof editTaskComment };
-      gate: {
-        run: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
-      };
+      gate: RequestGate;
       requestSnapshot: () => {
         actorId: string;
         sequence: number;
@@ -2618,6 +2719,80 @@ describe('AppController task comments', () => {
       commentId: 'comment-owned',
       draft: '准备提交',
       expectedVersion: COMMENT_TASK.version,
+      sessionId: 1,
+    };
+    controller.api = { editTaskComment };
+    controller.gate = new RequestGate();
+    controller.requestSnapshot = () => ({
+      actorId: CURRENT_USER.id,
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.replaceTask = vi.fn();
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+    const event = {
+      preventDefault: () => undefined,
+      target: new CommentEditForm('comment-owned', '已提交正文'),
+    } as unknown as SubmitEvent;
+
+    const firstSave = controller.handleDrawerSubmit(event);
+    await Promise.resolve();
+    const secondSave = controller.handleDrawerSubmit(event);
+    await secondSave;
+    releaseEdit({ ...COMMENT_TASK, version: 5 });
+    await firstSave;
+
+    expect(editTaskComment).toHaveBeenCalledOnce();
+    expect(controller.commentEditor).toBeNull();
+    expect(controller.showToast).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures a completed request cannot clear a newer draft created while it was pending. */
+  it('preserves a newer comment edit session after an earlier request succeeds', async () => {
+    installCommentDomShims();
+    let releaseEdit!: (task: TaskResource) => void;
+    const editTaskComment = vi.fn(
+      () => new Promise<TaskResource>((resolve) => (releaseEdit = resolve)),
+    );
+    const controller = Object.create(AppController.prototype) as {
+      tasks: TaskResource[];
+      selectedTaskId: string;
+      currentUserId: string;
+      commentEditor: {
+        actorId: string;
+        taskId: string;
+        commentId: string;
+        draft: string;
+        expectedVersion: number;
+        sessionId: number;
+      } | null;
+      api: { editTaskComment: typeof editTaskComment };
+      gate: {
+        run: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
+      };
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      taskProjectionSequence: number;
+      render: ReturnType<typeof vi.fn>;
+      showToast: ReturnType<typeof vi.fn>;
+      handleDrawerSubmit: (event: SubmitEvent) => Promise<void>;
+    };
+    controller.tasks = [COMMENT_TASK];
+    controller.selectedTaskId = COMMENT_TASK.id;
+    controller.currentUserId = CURRENT_USER.id;
+    controller.commentEditor = {
+      actorId: CURRENT_USER.id,
+      taskId: COMMENT_TASK.id,
+      commentId: 'comment-owned',
+      draft: '准备提交',
+      expectedVersion: COMMENT_TASK.version,
+      sessionId: 1,
     };
     controller.api = { editTaskComment };
     controller.gate = { run: (_key, operation) => operation() };
@@ -2627,7 +2802,7 @@ describe('AppController task comments', () => {
       routeSequence: 0,
     });
     controller.isCurrentRequest = () => true;
-    controller.replaceTask = vi.fn();
+    controller.taskProjectionSequence = 0;
     controller.render = vi.fn();
     controller.showToast = vi.fn();
 
@@ -2642,21 +2817,30 @@ describe('AppController task comments', () => {
       commentId: 'comment-owned',
       draft: '请求期间继续修改',
       expectedVersion: COMMENT_TASK.version,
+      sessionId: 1,
     };
     controller.commentEditor = newerEditor;
     releaseEdit({ ...COMMENT_TASK, version: 5 });
     await pending;
 
-    expect(controller.commentEditor).toEqual(newerEditor);
-    expect(controller.replaceTask).toHaveBeenCalledOnce();
+    expect(controller.commentEditor).toEqual({
+      ...newerEditor,
+      expectedVersion: 5,
+    });
+    expect(controller.tasks).toEqual([{ ...COMMENT_TASK, version: 5 }]);
     expect(controller.render).toHaveBeenCalledOnce();
   });
 
-  /** Ensures an edit failure resynchronizes without discarding the submitted draft. */
-  it('preserves the active comment edit draft after failure', async () => {
+  /** Ensures an edit failure refreshes only its task and advances the retained draft version. */
+  it('refreshes one task and preserves a retryable edit draft after failure', async () => {
     installCommentDomShims();
+    const freshTask = { ...COMMENT_TASK, version: 5 };
+    const getTask = vi.fn(() => Promise.resolve(freshTask));
+    const listTasks = vi.fn(() => Promise.resolve([freshTask]));
     const controller = Object.create(AppController.prototype) as {
       tasks: TaskResource[];
+      tasksLoaded: boolean;
+      taskProjectionSequence: number;
       selectedTaskId: string;
       currentUserId: string;
       commentEditor: {
@@ -2664,8 +2848,10 @@ describe('AppController task comments', () => {
         taskId: string;
         commentId: string;
         draft: string;
+        expectedVersion: number;
+        sessionId: number;
       } | null;
-      api: { editTaskComment: () => Promise<never> };
+      api: Pick<ApiClient, 'editTaskComment' | 'getTask' | 'listTasks'>;
       gate: {
         run: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
       };
@@ -2675,11 +2861,13 @@ describe('AppController task comments', () => {
         routeSequence: number;
       };
       isCurrentRequest: () => boolean;
-      resynchronizeTasks: ReturnType<typeof vi.fn>;
+      render: ReturnType<typeof vi.fn>;
       showToast: ReturnType<typeof vi.fn>;
       handleDrawerSubmit: (event: SubmitEvent) => Promise<void>;
     };
     controller.tasks = [COMMENT_TASK];
+    controller.tasksLoaded = true;
+    controller.taskProjectionSequence = 0;
     controller.selectedTaskId = COMMENT_TASK.id;
     controller.currentUserId = CURRENT_USER.id;
     controller.commentEditor = {
@@ -2687,9 +2875,13 @@ describe('AppController task comments', () => {
       taskId: COMMENT_TASK.id,
       commentId: 'comment-owned',
       draft: '提交前',
+      expectedVersion: COMMENT_TASK.version,
+      sessionId: 1,
     };
     controller.api = {
       editTaskComment: () => Promise.reject(new Error('failed')),
+      getTask,
+      listTasks,
     };
     controller.gate = { run: (_key, operation) => operation() };
     controller.requestSnapshot = () => ({
@@ -2698,7 +2890,7 @@ describe('AppController task comments', () => {
       routeSequence: 0,
     });
     controller.isCurrentRequest = () => true;
-    controller.resynchronizeTasks = vi.fn(() => Promise.resolve());
+    controller.render = vi.fn();
     controller.showToast = vi.fn();
 
     await controller.handleDrawerSubmit({
@@ -2707,7 +2899,10 @@ describe('AppController task comments', () => {
     } as unknown as SubmitEvent);
 
     expect(controller.commentEditor?.draft).toBe('失败后保留');
-    expect(controller.resynchronizeTasks).toHaveBeenCalledOnce();
+    expect(controller.commentEditor?.expectedVersion).toBe(5);
+    expect(getTask).toHaveBeenCalledWith(COMMENT_TASK.id, CURRENT_USER.id);
+    expect(listTasks).not.toHaveBeenCalled();
+    expect(controller.tasks).toEqual([freshTask]);
     expect(controller.showToast).toHaveBeenCalledOnce();
   });
 

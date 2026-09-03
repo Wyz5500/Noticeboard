@@ -298,6 +298,7 @@ function commentEntry(
     );
     edit.type = 'button';
     edit.dataset.editCommentId = event.commentId;
+    edit.disabled = Boolean(editor);
     actions.append(edit);
   }
   if (

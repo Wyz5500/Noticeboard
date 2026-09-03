@@ -48,6 +48,7 @@ class FakeElement extends FakeNode {
   public type = '';
   public value = '';
   public required = false;
+  public disabled = false;
   public maxLength = -1;
   public tabIndex = -1;
 
@@ -393,6 +394,53 @@ describe('task detail renderer', () => {
     expect(container.textContent).not.toContain(
       '<img src=x onerror=alert(1)>\n第二行',
     );
+  });
+
+  /** Proves one active draft cannot be replaced through another comment's edit control. */
+  it('disables other comment edit controls while one editor is active', () => {
+    const baseTask = task();
+    const container = render(
+      task({
+        version: 4,
+        timeline: [
+          ...baseTask.timeline,
+          {
+            kind: 'comment',
+            sequence: 4,
+            commentId: 'comment-other',
+            actor: {
+              id: 'commenter',
+              username: 'commenter-user',
+              name: '评论者',
+              role: 'user',
+              roleLabel: '演示用户',
+            },
+            at: '2026-09-01T11:00:00.000Z',
+            content: '另一条评论',
+            edited: false,
+            deleted: false,
+            deletedAt: null,
+            deletedByUsername: null,
+          },
+        ],
+      }),
+      'commenter',
+      ['tasks.view'],
+      '',
+      {
+        actorId: 'commenter',
+        taskId: 'task-comments',
+        commentId: 'comment-live',
+        draft: '尚未提交的修改',
+      },
+    );
+    const otherEditControls = findAll(
+      container,
+      (element) => element.dataset.editCommentId === 'comment-other',
+    );
+
+    expect(otherEditControls).toHaveLength(1);
+    expect(otherEditControls[0]?.disabled).toBe(true);
   });
 
   /** Proves a defensive tombstone renderer never exposes whether revisions existed. */

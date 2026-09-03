@@ -142,6 +142,7 @@ interface RequestSnapshot extends IdentitySnapshot {
 
 interface CommentEditSession extends CommentEditorState {
   expectedVersion: number;
+  sessionId: number;
 }
 
 interface ViewScrollState {
@@ -214,6 +215,7 @@ export class AppController {
   private readonly gate = new RequestGate();
   private readonly commentDrafts = new Map<string, string>();
   private commentEditor: CommentEditSession | null = null;
+  private commentEditSequence = 0;
   private readonly compactTaskQuery: MediaQueryList;
   private users: ActorResource[] = [];
   private tasks: TaskResource[] = [];
@@ -545,18 +547,17 @@ export class AppController {
     await this.gate.run('tasks:resume', async () => {
       const request = this.requestSnapshot();
       const taskProjectionSequence = this.taskProjectionSequence ?? 0;
+      const isCurrentProjectionRequest = (): boolean =>
+        this.isCurrentRequest(request) &&
+        taskProjectionSequence === (this.taskProjectionSequence ?? 0);
       try {
         const tasks = await this.loadTasksForCurrentUser(request.actorId);
-        if (
-          !this.isCurrentRequest(request) ||
-          taskProjectionSequence !== (this.taskProjectionSequence ?? 0)
-        )
-          return;
+        if (!isCurrentProjectionRequest()) return;
         this.tasks = tasks;
         this.tasksLoaded = true;
         this.render();
       } catch (error) {
-        if (!this.isCurrentRequest(request)) return;
+        if (!isCurrentProjectionRequest()) return;
         this.showToast(this.errorMessage(error));
       }
     });
@@ -845,8 +846,15 @@ export class AppController {
       comment.deleted ||
       comment.content === null ||
       comment.actor.id !== this.currentUserId
-    )
+    ) {
       this.commentEditor = null;
+      return;
+    }
+    if (this.commentEditor.expectedVersion !== task.version)
+      this.commentEditor = {
+        ...this.commentEditor,
+        expectedVersion: task.version,
+      };
   }
 
   /** Restores keyboard focus to one comment's edit trigger after cancellation. */
@@ -1162,10 +1170,18 @@ export class AppController {
       )
         return;
       const content = formText(new FormData(form), 'content');
-      const expectedVersion = this.commentEditor.expectedVersion;
-      const submittedEditor = { ...this.commentEditor, draft: content };
-      this.commentEditor = submittedEditor;
       await this.gate.run(`task:${task.id}`, async () => {
+        const editor = this.commentEditor;
+        if (
+          !editor ||
+          editor.actorId !== this.currentUserId ||
+          editor.taskId !== task.id ||
+          editor.commentId !== editCommentId
+        )
+          return;
+        const expectedVersion = editor.expectedVersion;
+        const submittedEditor = { ...editor, draft: content };
+        this.commentEditor = submittedEditor;
         const request = this.requestSnapshot();
         try {
           const updated = await this.api.editTaskComment(
@@ -1175,13 +1191,17 @@ export class AppController {
             { content, expectedVersion },
           );
           if (!this.isCurrentRequest(request)) return;
-          if (this.commentEditor === submittedEditor) this.commentEditor = null;
+          if (
+            this.commentEditor?.sessionId === submittedEditor.sessionId &&
+            this.commentEditor.draft === submittedEditor.draft
+          )
+            this.commentEditor = null;
           this.replaceTask(updated);
           this.render();
           this.showToast('评论已更新');
         } catch (error) {
           if (!this.isCurrentRequest(request)) return;
-          await this.resynchronizeTasks(request);
+          await this.resynchronizeTask(task.id, request);
           if (!this.isCurrentRequest(request)) return;
           this.showToast(this.errorMessage(error));
         }
@@ -1257,6 +1277,7 @@ export class AppController {
       '[data-edit-comment-id]',
     );
     if (editButton?.dataset.editCommentId) {
+      if (this.commentEditor) return;
       const comment = task.timeline.find(
         (entry) =>
           entry.kind === 'comment' &&
@@ -1276,7 +1297,9 @@ export class AppController {
         commentId: comment.commentId,
         draft: comment.content,
         expectedVersion: task.version,
+        sessionId: (this.commentEditSequence ?? 0) + 1,
       };
+      this.commentEditSequence = this.commentEditor.sessionId;
       this.renderDrawer();
       return;
     }
@@ -1381,6 +1404,7 @@ export class AppController {
       this.tasks = this.tasks.map((task) =>
         task.id === updated.id ? updated : task,
       );
+    this.reconcileCommentEditor();
   }
 
   /** Switches the current demo identity and persists only its ID. */
@@ -1921,6 +1945,22 @@ export class AppController {
       this.tasksLoaded = true;
       this.taskProjectionSequence = (this.taskProjectionSequence ?? 0) + 1;
       this.reconcileCommentEditor();
+      this.render();
+    } catch {
+      // The original command error remains the most useful message when refresh also fails.
+    }
+  }
+
+  /** Reloads only one affected task while retaining a retryable comment edit draft. */
+  private async resynchronizeTask(
+    taskId: string,
+    request: RequestSnapshot = this.requestSnapshot(),
+  ): Promise<void> {
+    if (!this.isCurrentRequest(request)) return;
+    try {
+      const task = await this.api.getTask(taskId, request.actorId);
+      if (!this.isCurrentRequest(request)) return;
+      this.replaceTask(task);
       this.render();
     } catch {
       // The original command error remains the most useful message when refresh also fails.

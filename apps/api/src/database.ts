@@ -12,9 +12,12 @@ import { AddEventActorSnapshot1788062401000 } from './common/infrastructure/data
 import { identityPersistenceEntities } from './identity/public/composition/persistence.js';
 import { taskPersistenceEntities } from './tasks/public/composition/persistence.js';
 
-/** Builds shared PostgreSQL options while permanently disabling schema synchronization. */
+type DatabasePurpose = 'application' | 'migration';
+
+/** Builds purpose-specific PostgreSQL options while permanently disabling schema synchronization. */
 export function postgresDataSourceOptions(
   databaseUrl: string,
+  purpose: DatabasePurpose = 'application',
 ): DataSourceOptions {
   if (!databaseUrl.trim()) throw new Error('DATABASE_URL is required');
   return {
@@ -22,7 +25,7 @@ export function postgresDataSourceOptions(
     url: databaseUrl,
     connectTimeoutMS: 3_000,
     extra: {
-      query_timeout: 2_000,
+      query_timeout: purpose === 'migration' ? 0 : 2_000,
       statement_timeout: 2_000,
     },
     synchronize: false,
@@ -42,10 +45,14 @@ export function postgresDataSourceOptions(
       AddCommentEdits1788062406000,
     ],
     migrationsTableName: 'schema_migrations',
+    migrationsTransactionMode: purpose === 'migration' ? 'each' : 'all',
   };
 }
 
 /** Creates an uninitialized PostgreSQL DataSource for runtime, CLI, or contract tests. */
-export function createPostgresDataSource(databaseUrl: string): DataSource {
-  return new DataSource(postgresDataSourceOptions(databaseUrl));
+export function createPostgresDataSource(
+  databaseUrl: string,
+  purpose: DatabasePurpose = 'application',
+): DataSource {
+  return new DataSource(postgresDataSourceOptions(databaseUrl, purpose));
 }

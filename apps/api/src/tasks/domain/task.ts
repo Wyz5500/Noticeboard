@@ -14,6 +14,13 @@ import {
   type TaskStatus,
 } from './task.types.js';
 
+type TaskCommentEvent = Exclude<TaskEvent, { action: TaskEventAction }>;
+type CommentEventPayload = TaskCommentEvent extends infer Event
+  ? Event extends TaskCommentEvent
+    ? Omit<Event, 'sequence' | 'actor' | 'at'>
+    : never
+  : never;
+
 /** Derives the client-visible status without mutating the persisted workflow state. */
 export function deriveTaskEffectiveStatus(
   status: TaskStatus,
@@ -256,20 +263,15 @@ export class Task {
     ) {
       throw new DomainError('COMMENT_CONFLICT', '评论标识冲突');
     }
-    if (!actor.id || !actor.username || Number.isNaN(new Date(at).valueOf())) {
-      throw new DomainError('INVALID_COMMENT', '评论信息无效');
-    }
-    const lastSequence = this.snapshot.timeline.at(-1)?.sequence ?? 0;
-    this.snapshot.timeline.push({
-      sequence: lastSequence + 1,
-      action: 'comment_created',
-      commentId: commentId.trim(),
-      content: normalized,
-      actor: copyActor(actor),
+    this.appendCommentEvent(
+      {
+        action: 'comment_created',
+        commentId: commentId.trim(),
+        content: normalized,
+      },
+      actor,
       at,
-    });
-    this.snapshot.updatedAt = at;
-    this.snapshot.version += 1;
+    );
   }
 
   /** Appends a normalized revision when the original author edits an available comment. */
@@ -314,20 +316,15 @@ export class Task {
     if (normalized === currentContent) {
       throw new DomainError('COMMENT_CONFLICT', '评论内容没有变化');
     }
-    if (!actor.id || !actor.username || Number.isNaN(new Date(at).valueOf())) {
-      throw new DomainError('INVALID_COMMENT', '评论信息无效');
-    }
-    const lastSequence = this.snapshot.timeline.at(-1)?.sequence ?? 0;
-    this.snapshot.timeline.push({
-      sequence: lastSequence + 1,
-      action: 'comment_edited',
-      targetCommentId: commentId,
-      content: normalized,
-      actor: copyActor(actor),
+    this.appendCommentEvent(
+      {
+        action: 'comment_edited',
+        targetCommentId: commentId,
+        content: normalized,
+      },
+      actor,
       at,
-    });
-    this.snapshot.updatedAt = at;
-    this.snapshot.version += 1;
+    );
   }
 
   /** Appends a deletion marker when the current actor is the author or a live manager. */
@@ -355,19 +352,14 @@ export class Task {
     if (created.actor.id !== actor.id && !canManage) {
       throw new DomainError('COMMENT_FORBIDDEN', '只能删除自己的评论');
     }
-    if (!actor.id || !actor.username || Number.isNaN(new Date(at).valueOf())) {
-      throw new DomainError('INVALID_COMMENT', '评论信息无效');
-    }
-    const lastSequence = this.snapshot.timeline.at(-1)?.sequence ?? 0;
-    this.snapshot.timeline.push({
-      sequence: lastSequence + 1,
-      action: 'comment_deleted',
-      targetCommentId: commentId,
-      actor: copyActor(actor),
+    this.appendCommentEvent(
+      {
+        action: 'comment_deleted',
+        targetCommentId: commentId,
+      },
+      actor,
       at,
-    });
-    this.snapshot.updatedAt = at;
-    this.snapshot.version += 1;
+    );
   }
 
   /** Renews an expired task while preserving or reopening its persisted workflow. */
@@ -440,6 +432,26 @@ export class Task {
   /** Checks publisher authority using the stable actor identifier. */
   private isPublisher(actor: Actor): boolean {
     return this.snapshot.publisher.id === actor.id;
+  }
+
+  /** Appends one validated comment event and advances aggregate metadata exactly once. */
+  private appendCommentEvent(
+    event: CommentEventPayload,
+    actor: Actor,
+    at: string,
+  ): void {
+    if (!actor.id || !actor.username || Number.isNaN(new Date(at).valueOf())) {
+      throw new DomainError('INVALID_COMMENT', '评论信息无效');
+    }
+    const lastSequence = this.snapshot.timeline.at(-1)?.sequence ?? 0;
+    this.snapshot.timeline.push({
+      ...event,
+      sequence: lastSequence + 1,
+      actor: copyActor(actor),
+      at,
+    });
+    this.snapshot.updatedAt = at;
+    this.snapshot.version += 1;
   }
 
   /** Adds a sequenced event while preserving actor data as an immutable historical snapshot. */
