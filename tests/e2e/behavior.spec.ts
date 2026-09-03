@@ -2001,6 +2001,31 @@ test('comments on an open task and keeps deleted tombstones', async ({
     page.evaluate(() => Object.keys(localStorage).sort()),
   ).resolves.toEqual(['noticeboard-user']);
 
+  const editButton = newestComment.getByRole('button', {
+    name: '编辑评论',
+  });
+  await editButton.click();
+  const editInput = newestComment.locator('[data-edit-comment-input]');
+  await expect(editInput).toBeFocused();
+  await expect(editInput).toHaveValue('<img src=x onerror=alert(1)>\n第二行');
+  await editInput.fill('不应保存的修改');
+  await page.keyboard.press('Escape');
+  await expect(editButton).toBeFocused();
+  await expect(newestComment.locator('.comment-content')).toHaveText(
+    '<img src=x onerror=alert(1)>\n第二行',
+  );
+
+  await editButton.click();
+  await newestComment
+    .locator('[data-edit-comment-input]')
+    .fill('<script>window.hacked=true</script>\n更新进度');
+  await newestComment.getByRole('button', { name: '保存' }).click();
+  await expect(newestComment.locator('.comment-content')).toHaveText(
+    '<script>window.hacked=true</script>\n更新进度',
+  );
+  await expect(newestComment.locator('.comment-edited')).toHaveText('已编辑');
+  await expect(newestComment.locator('script')).toHaveCount(0);
+
   await page.locator('[data-close-drawer]').click();
   await openMobileTaskFilters(page, isMobile);
   await page.locator('[data-scope="mine"]').click();
@@ -2009,18 +2034,29 @@ test('comments on an open task and keeps deleted tombstones', async ({
   ).toHaveCount(0);
   await page.locator('[data-scope="all"]').click();
   await page.locator('.task-card').filter({ hasText: '评论协作任务' }).click();
+  await expect(page.locator('[data-edit-comment-id]')).toHaveCount(1);
 
+  await switchUserAndOpenTask(page, 'adventurer-a', '评论协作任务');
+  await expect(page.locator('[data-edit-comment-id]')).toHaveCount(0);
+  await switchUserAndOpenTask(page, 'adventurer-b', '评论协作任务');
   await page.getByRole('button', { name: '删除评论' }).click();
   await expect(page.locator('.comment-deleted').first()).toHaveText(
     '该评论已被@adventurer-b删除',
   );
+  await expect(
+    page.locator('.timeline-comment').first().locator('.comment-edited'),
+  ).toHaveCount(0);
   await expect(page.locator('#detailDrawer')).not.toContainText(
     '<img src=x onerror=alert(1)>',
+  );
+  await expect(page.locator('#detailDrawer')).not.toContainText(
+    '<script>window.hacked=true</script>',
   );
 
   await commentInput.fill('请管理员删除这条评论');
   await page.getByRole('button', { name: '发表评论' }).click();
   await switchUserAndOpenTask(page, 'noticeboard-admin', '评论协作任务');
+  await expect(page.locator('[data-edit-comment-id]')).toHaveCount(0);
   await page.getByRole('button', { name: '删除评论' }).click();
   await expect(page.locator('.comment-deleted').first()).toHaveText(
     '该评论已被@noticeboard-admin删除',

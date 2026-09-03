@@ -36,6 +36,7 @@ import { ActOnTask } from '../tasks/application/use-cases/act-on-task.js';
 import { AddTaskComment } from '../tasks/application/use-cases/add-task-comment.js';
 import { CreateTask } from '../tasks/application/use-cases/create-task.js';
 import { DeleteTaskComment } from '../tasks/application/use-cases/delete-task-comment.js';
+import { EditTaskComment } from '../tasks/application/use-cases/edit-task-comment.js';
 import { GetTask } from '../tasks/application/use-cases/get-task.js';
 import { ListTasks } from '../tasks/application/use-cases/list-tasks.js';
 import { RenewExpiredTask } from '../tasks/application/use-cases/renew-expired-task.js';
@@ -99,9 +100,35 @@ const COMMENT_TASK: TaskViewModel = {
       },
       at: '2026-08-30T10:00:00.000Z',
       content: null,
+      edited: false,
       deleted: true,
       deletedAt: '2026-08-30T11:00:00.000Z',
       deletedByUsername: 'noticeboard-master',
+    },
+  ],
+};
+
+const EDITED_TASK: TaskViewModel = {
+  ...COMMENT_TASK,
+  version: 4,
+  timeline: [
+    ...TASK.timeline,
+    {
+      kind: 'comment',
+      sequence: 2,
+      commentId: 'comment-http',
+      actor: {
+        id: 'noticeboard-master',
+        username: 'noticeboard-master',
+        name: '用户 A',
+        role: 'user',
+      },
+      at: '2026-08-30T10:00:00.000Z',
+      content: '编辑后的进度',
+      edited: true,
+      deleted: false,
+      deletedAt: null,
+      deletedByUsername: null,
     },
   ],
 };
@@ -252,6 +279,53 @@ describe('HTTP API contract', () => {
                 );
               }
               return Promise.resolve({ ...COMMENT_TASK, id });
+            },
+          },
+        },
+        {
+          provide: EditTaskComment,
+          useValue: {
+            execute: (
+              _actorId: string,
+              id: string,
+              commentId: string,
+              content: string,
+            ) => {
+              if (!content.trim()) {
+                return Promise.reject(
+                  new DomainError(
+                    'INVALID_COMMENT',
+                    '评论内容必须为 1 至 1000 个字符',
+                  ),
+                );
+              }
+              if (id === 'task-missing') {
+                return Promise.reject(
+                  new AppError('TASK_NOT_FOUND', '任务不存在'),
+                );
+              }
+              if (commentId === 'missing') {
+                return Promise.reject(
+                  new DomainError('COMMENT_NOT_FOUND', '评论不存在'),
+                );
+              }
+              if (commentId === 'forbidden') {
+                return Promise.reject(
+                  new DomainError('COMMENT_FORBIDDEN', '只能编辑自己的评论'),
+                );
+              }
+              if (id === 'task-conflict') {
+                return Promise.reject(
+                  new DomainError('COMMENT_CONFLICT', '评论内容没有变化'),
+                );
+              }
+              return Promise.resolve({
+                ...EDITED_TASK,
+                id,
+                timeline: EDITED_TASK.timeline.map((event) =>
+                  event.kind === 'comment' ? { ...event, content } : event,
+                ),
+              });
             },
           },
         },
@@ -514,6 +588,69 @@ describe('HTTP API contract', () => {
     expect(response.statusCode).toBe(200);
   });
 
+  /** Proves comment editing uses PATCH and returns the committed latest body. */
+  it('edits a task comment with status 200', async () => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/tasks/task-edit-response/comments/comment-http',
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
+      payload: { content: '  编辑后的进度  ', expectedVersion: 3 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      id: 'task-edit-response',
+      version: 4,
+      timeline: expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'comment',
+          content: '编辑后的进度',
+          edited: true,
+          deleted: false,
+        }),
+      ]),
+    });
+  });
+
+  /** Proves edit request validation rejects malformed content and optimistic versions. */
+  it.each([
+    [{ content: '   ', expectedVersion: 3 }],
+    [{ content: '前缀\0后缀', expectedVersion: 3 }],
+    [{ content: 'x'.repeat(1001), expectedVersion: 3 }],
+    [{ content: '有效正文', expectedVersion: '3' }],
+    [{ content: '有效正文', expectedVersion: 0 }],
+  ])('validates comment edit requests', async (payload) => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/tasks/task-edit-response/comments/comment-http',
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
+      payload,
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: { code: 'VALIDATION_FAILED' },
+    });
+  });
+
+  /** Proves stable edit failures map to their approved HTTP statuses. */
+  it.each([
+    ['task-missing', 'comment-http', 404, 'TASK_NOT_FOUND'],
+    ['task-comment', 'missing', 404, 'COMMENT_NOT_FOUND'],
+    ['task-comment', 'forbidden', 403, 'COMMENT_FORBIDDEN'],
+    ['task-conflict', 'comment-http', 409, 'COMMENT_CONFLICT'],
+  ])('maps comment edit failures', async (taskId, commentId, status, code) => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/tasks/${taskId}/comments/${commentId}`,
+      headers: { 'x-demo-user-id': 'noticeboard-master' },
+      payload: { content: '新的正文', expectedVersion: 3 },
+    });
+
+    expect(response.statusCode).toBe(status);
+    expect(response.json()).toMatchObject({ error: { code } });
+  });
+
   /** Proves comment deletion accepts an optimistic body and returns the latest complete task. */
   it('deletes a task comment with status 200', async () => {
     const response = await app.inject({
@@ -764,6 +901,7 @@ describe('HTTP API contract', () => {
             parameters?: Array<{ name?: string }>;
             responses: Record<string, unknown>;
           };
+          patch?: { responses: Record<string, unknown> };
           delete?: { responses: Record<string, unknown> };
         }
       >;
@@ -828,6 +966,17 @@ describe('HTTP API contract', () => {
       '409': expect.any(Object),
     });
     expect(
+      document.paths['/api/v1/tasks/{taskId}/comments/{commentId}']?.patch
+        ?.responses,
+    ).toMatchObject({
+      '200': expect.any(Object),
+      '400': expect.any(Object),
+      '401': expect.any(Object),
+      '403': expect.any(Object),
+      '404': expect.any(Object),
+      '409': expect.any(Object),
+    });
+    expect(
       document.paths['/api/v1/tasks/{taskId}/comments/{commentId}']?.delete
         ?.responses,
     ).toMatchObject({
@@ -860,6 +1009,9 @@ describe('HTTP API contract', () => {
       document.components.schemas.AddTaskCommentDto?.properties?.content,
     ).toMatchObject({ minLength: 1, maxLength: 1000 });
     expect(
+      document.components.schemas.EditTaskCommentDto?.properties?.content,
+    ).toMatchObject({ minLength: 1, maxLength: 1000 });
+    expect(
       document.components.schemas.TaskResponseDto?.properties?.timeline?.items,
     ).toMatchObject({
       oneOf: expect.arrayContaining([
@@ -887,6 +1039,9 @@ describe('HTTP API contract', () => {
     expect(
       document.components.schemas.TaskCommentResponseDto?.properties?.content,
     ).toMatchObject({ type: 'string', nullable: true, maxLength: 1000 });
+    expect(
+      document.components.schemas.TaskCommentResponseDto?.properties?.edited,
+    ).toMatchObject({ type: 'boolean' });
     expect(
       document.components.schemas.TaskCommentResponseDto?.properties?.deletedAt,
     ).toMatchObject({ type: 'string', nullable: true, format: 'date-time' });

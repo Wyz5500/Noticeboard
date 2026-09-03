@@ -131,6 +131,33 @@ describe('ApiClient', () => {
     ]);
   });
 
+  /** Proves comment editing sends the replacement content through the optimistic PATCH contract. */
+  it('edits a task comment with content and expected version', async () => {
+    const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> =
+      [];
+    const client = new ApiClient('/api/v1', (input, init) => {
+      requests.push({ input, ...(init ? { init } : {}) });
+      return Promise.resolve(jsonResponse({ id: 'task-1', timeline: [] }));
+    });
+    const body = { content: '更新后的评论', expectedVersion: 5 };
+
+    await client.editTaskComment('adventurer-a', 'task/1', 'comment/1', body);
+
+    expect(requests).toEqual([
+      {
+        input: '/api/v1/tasks/task%2F1/comments/comment%2F1',
+        init: {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            'x-demo-user-id': 'adventurer-a',
+          },
+          body: JSON.stringify(body),
+        },
+      },
+    ]);
+  });
+
   /** Proves comment deletion sends its optimistic version in a JSON DELETE body. */
   it('deletes a task comment with the expected version', async () => {
     const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> =

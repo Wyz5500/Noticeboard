@@ -22,3 +22,15 @@ export function createNode<K extends keyof HTMLElementTagNameMap>(
   if (text !== undefined) element.textContent = text;
   return element;
 }
+
+/** Creates one textarea whose user-controlled value remains inert form data. */
+export function createTextAreaNode(
+  document: Document,
+  className?: string,
+  value?: string,
+): HTMLTextAreaElement {
+  const element = document.createElement('textarea');
+  if (className) element.className = className;
+  if (value !== undefined) element.value = value;
+  return element;
+}

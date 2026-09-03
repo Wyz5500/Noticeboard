@@ -50,6 +50,14 @@ function toDomainEvent(event: TaskEventOrmEntity): TaskEvent {
       content: event.content ?? '',
     };
   }
+  if (event.action === 'comment_edited') {
+    return {
+      ...common,
+      action: 'comment_edited',
+      targetCommentId: event.targetCommentId ?? '',
+      content: event.content ?? '',
+    };
+  }
   if (event.action === 'comment_deleted') {
     return {
       ...common,

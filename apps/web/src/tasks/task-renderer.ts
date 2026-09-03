@@ -4,7 +4,7 @@ import type {
   TaskAction,
   TaskResource,
 } from '../core/api-types.js';
-import { createNode } from '../core/dom.js';
+import { createNode, createTextAreaNode } from '../core/dom.js';
 import { availableActions, canRenewExpiredTask } from './task-permissions.js';
 
 const ACTION_LABELS: Record<TaskAction, string> = {
@@ -14,6 +14,13 @@ const ACTION_LABELS: Record<TaskAction, string> = {
   reopen: '验收不通过，重新打开',
   close: '直接关闭任务',
 };
+
+export interface CommentEditorState {
+  actorId: string;
+  taskId: string;
+  commentId: string;
+  draft: string;
+}
 
 /** Formats an ISO timestamp using the same compact Chinese date language as the prototype. */
 function formatDate(value: string, includeTime: boolean): string {
@@ -209,19 +216,52 @@ function activityEntry(
   return item;
 }
 
-/** Creates one safe comment entry and its permission-aware delete control. */
+/** Creates the accessible inline form for one active comment edit. */
+function commentEditForm(
+  document: Document,
+  commentId: string,
+  draft: string,
+): HTMLFormElement {
+  const form = createNode(document, 'form', 'comment-edit-form');
+  form.dataset.editCommentForm = commentId;
+  const label = createNode(document, 'label', 'comment-field');
+  label.append(createNode(document, 'span', undefined, '编辑评论'));
+  const textarea = createTextAreaNode(document, 'comment-textarea', draft);
+  textarea.name = 'content';
+  textarea.dataset.editCommentInput = commentId;
+  textarea.required = true;
+  textarea.rows = 4;
+  label.append(textarea);
+  const actions = createNode(document, 'div', 'comment-edit-actions');
+  const save = createNode(document, 'button', 'primary-button', '保存');
+  save.type = 'submit';
+  const cancel = createNode(document, 'button', 'secondary-button', '取消');
+  cancel.type = 'button';
+  cancel.dataset.cancelCommentEdit = commentId;
+  actions.append(save, cancel);
+  form.append(label, actions);
+  return form;
+}
+
+/** Creates one safe comment entry and its ownership-aware controls. */
 function commentEntry(
   document: Document,
   event: Extract<TaskResource['timeline'][number], { kind: 'comment' }>,
+  task: TaskResource,
   actorId: string,
+  editor?: CommentEditorState,
   permissions?: readonly PermissionCode[],
 ): HTMLLIElement {
   const item = createNode(document, 'li', 'timeline-comment');
   const heading = createNode(document, 'div', 'comment-heading');
-  heading.append(
+  const metadata = createNode(document, 'div', 'comment-metadata');
+  metadata.append(
     createNode(document, 'span', 'timeline-action', `@${event.actor.username}`),
     createNode(document, 'span', 'timeline-meta', formatDate(event.at, true)),
   );
+  if (event.edited && !event.deleted)
+    metadata.append(createNode(document, 'span', 'comment-edited', '已编辑'));
+  heading.append(metadata);
   item.append(heading);
   if (event.deleted) {
     item.append(
@@ -234,20 +274,47 @@ function commentEntry(
     );
     return item;
   }
-  item.append(
-    createNode(document, 'p', 'comment-content', event.content ?? ''),
-  );
-  if (event.actor.id === actorId || permissions?.includes('system.manage')) {
-    const button = createNode(
+  const editing =
+    editor?.actorId === actorId &&
+    editor.taskId === task.id &&
+    editor.commentId === event.commentId;
+  if (editing)
+    item.append(commentEditForm(document, event.commentId, editor.draft));
+  else
+    item.append(
+      createNode(document, 'p', 'comment-content', event.content ?? ''),
+    );
+  const actions = createNode(document, 'div', 'comment-actions');
+  if (
+    !editing &&
+    task.workflowStatus !== 'closed' &&
+    event.actor.id === actorId
+  ) {
+    const edit = createNode(
+      document,
+      'button',
+      'comment-edit-button',
+      '编辑评论',
+    );
+    edit.type = 'button';
+    edit.dataset.editCommentId = event.commentId;
+    actions.append(edit);
+  }
+  if (
+    !editing &&
+    (event.actor.id === actorId || permissions?.includes('system.manage'))
+  ) {
+    const remove = createNode(
       document,
       'button',
       'comment-delete-button',
       '删除评论',
     );
-    button.type = 'button';
-    button.dataset.deleteCommentId = event.commentId;
-    item.append(button);
+    remove.type = 'button';
+    remove.dataset.deleteCommentId = event.commentId;
+    actions.append(remove);
   }
+  if (actions.children.length > 0) item.append(actions);
   return item;
 }
 
@@ -261,12 +328,11 @@ function commentForm(
   form.dataset.commentForm = task.id;
   const label = createNode(document, 'label', 'comment-field');
   label.append(createNode(document, 'span', undefined, '添加评论'));
-  const textarea = createNode(document, 'textarea', 'comment-textarea');
+  const textarea = createTextAreaNode(document, 'comment-textarea', draft);
   textarea.name = 'content';
   textarea.dataset.commentInput = task.id;
   textarea.required = true;
   textarea.rows = 4;
-  textarea.value = draft;
   label.append(textarea);
   const button = createNode(
     document,
@@ -286,6 +352,7 @@ function timeline(
   actorId: string,
   permissions: readonly PermissionCode[] | undefined,
   draft: string,
+  editor?: CommentEditorState,
 ): HTMLElement {
   const section = createNode(document, 'section', 'timeline-section');
   const title = createNode(document, 'div', 'timeline-title', '操作时间线 ');
@@ -295,7 +362,7 @@ function timeline(
     list.append(
       event.kind === 'activity'
         ? activityEntry(document, event)
-        : commentEntry(document, event, actorId, permissions),
+        : commentEntry(document, event, task, actorId, editor, permissions),
     );
   }
   section.append(title, list);
@@ -312,6 +379,7 @@ export function renderTaskDrawer(
   actorId: string,
   permissions?: readonly PermissionCode[],
   commentDraft = '',
+  commentEditor?: CommentEditorState,
 ): void {
   const header = createNode(document, 'div', 'drawer-header');
   const heading = createNode(document, 'div');
@@ -342,6 +410,6 @@ export function renderTaskDrawer(
     createNode(document, 'p', 'drawer-description', task.description),
     facts,
     actionControls(document, task, actorId, permissions),
-    timeline(document, task, actorId, permissions, commentDraft),
+    timeline(document, task, actorId, permissions, commentDraft, commentEditor),
   );
 }

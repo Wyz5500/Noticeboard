@@ -113,6 +113,9 @@ export class TaskCommentResponseDto {
   content!: string | null;
 
   @ApiProperty()
+  edited!: boolean;
+
+  @ApiProperty()
   deleted!: boolean;
 
   @ApiProperty({ type: String, format: 'date-time', nullable: true })

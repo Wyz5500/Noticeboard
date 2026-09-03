@@ -67,6 +67,19 @@ function isDateOnly(value: string): boolean {
   );
 }
 
+/** Normalizes one comment body while enforcing the shared public content contract. */
+function normalizeCommentContent(content: string): string {
+  const normalized = content.trim();
+  if (
+    !normalized ||
+    normalized.includes('\0') ||
+    Array.from(normalized).length > 1000
+  ) {
+    throw new DomainError('INVALID_COMMENT', '评论内容必须为 1 至 1000 个字符');
+  }
+  return normalized;
+}
+
 /** Rejects malformed task input at the domain boundary after DTO validation has run. */
 function validateCreation(
   values: CreateTaskValues,
@@ -227,17 +240,9 @@ export class Task {
     actor: Actor,
     at: string,
   ): void {
-    const normalized = content.trim();
-    if (
-      !commentId.trim() ||
-      !normalized ||
-      normalized.includes('\0') ||
-      Array.from(normalized).length > 1000
-    ) {
-      throw new DomainError(
-        'INVALID_COMMENT',
-        '评论内容必须为 1 至 1000 个字符',
-      );
+    const normalized = normalizeCommentContent(content);
+    if (!commentId.trim()) {
+      throw new DomainError('INVALID_COMMENT', '评论信息无效');
     }
     if (this.snapshot.status === 'closed') {
       throw new DomainError('COMMENT_CONFLICT', '已关闭任务不能新增评论');
@@ -259,6 +264,64 @@ export class Task {
       sequence: lastSequence + 1,
       action: 'comment_created',
       commentId: commentId.trim(),
+      content: normalized,
+      actor: copyActor(actor),
+      at,
+    });
+    this.snapshot.updatedAt = at;
+    this.snapshot.version += 1;
+  }
+
+  /** Appends a normalized revision when the original author edits an available comment. */
+  editComment(
+    commentId: string,
+    content: string,
+    actor: Actor,
+    at: string,
+  ): void {
+    const created = this.snapshot.timeline.find(
+      (event): event is Extract<TaskEvent, { action: 'comment_created' }> =>
+        event.action === 'comment_created' && event.commentId === commentId,
+    );
+    if (!created) {
+      throw new DomainError('COMMENT_NOT_FOUND', '评论不存在');
+    }
+    if (created.actor.id !== actor.id) {
+      throw new DomainError('COMMENT_FORBIDDEN', '只能编辑自己的评论');
+    }
+    if (
+      this.snapshot.timeline.some(
+        (event) =>
+          event.action === 'comment_deleted' &&
+          event.targetCommentId === commentId,
+      )
+    ) {
+      throw new DomainError('COMMENT_CONFLICT', '评论已被删除');
+    }
+    if (this.snapshot.status === 'closed') {
+      throw new DomainError('COMMENT_CONFLICT', '已关闭任务不能编辑评论');
+    }
+    const normalized = normalizeCommentContent(content);
+    let currentContent = created.content;
+    for (const event of this.snapshot.timeline) {
+      if (
+        event.action === 'comment_edited' &&
+        event.targetCommentId === commentId
+      ) {
+        currentContent = event.content;
+      }
+    }
+    if (normalized === currentContent) {
+      throw new DomainError('COMMENT_CONFLICT', '评论内容没有变化');
+    }
+    if (!actor.id || !actor.username || Number.isNaN(new Date(at).valueOf())) {
+      throw new DomainError('INVALID_COMMENT', '评论信息无效');
+    }
+    const lastSequence = this.snapshot.timeline.at(-1)?.sequence ?? 0;
+    this.snapshot.timeline.push({
+      sequence: lastSequence + 1,
+      action: 'comment_edited',
+      targetCommentId: commentId,
       content: normalized,
       actor: copyActor(actor),
       at,

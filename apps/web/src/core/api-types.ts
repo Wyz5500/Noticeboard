@@ -95,6 +95,7 @@ export interface TaskCommentResource {
   actor: ActorResource;
   at: string;
   content: string | null;
+  edited: boolean;
   deleted: boolean;
   deletedAt: string | null;
   deletedByUsername: string | null;
@@ -123,6 +124,11 @@ export interface TaskResource {
 }
 
 export interface CreateTaskCommentRequest {
+  content: string;
+  expectedVersion: number;
+}
+
+export interface EditTaskCommentRequest {
   content: string;
   expectedVersion: number;
 }

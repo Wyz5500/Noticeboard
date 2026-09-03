@@ -121,11 +121,42 @@ describeDatabase('application composition', () => {
       throw new Error('Expected comment identifier to be a string');
     }
 
+    const forbiddenEdit = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/tasks/${created.json().id as string}/comments/${commentId}`,
+      headers: { 'x-demo-user-id': 'noticeboard-admin' },
+      payload: { content: '管理员不能改写', expectedVersion: 3 },
+    });
+    expect(forbiddenEdit.statusCode).toBe(403);
+
+    const edited = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/tasks/${created.json().id as string}/comments/${commentId}`,
+      headers: { 'x-demo-user-id': 'adventurer-b' },
+      payload: { content: '  已抵达第二处检查点  ', expectedVersion: 3 },
+    });
+    expect(edited.statusCode).toBe(200);
+    expect(edited.json()).toMatchObject({ version: 4 });
+    expect(edited.json().timeline.at(-1)).toMatchObject({
+      kind: 'comment',
+      content: '已抵达第二处检查点',
+      edited: true,
+      actor: { id: 'adventurer-b', username: 'adventurer-b' },
+    });
+
+    const unchanged = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/tasks/${created.json().id as string}/comments/${commentId}`,
+      headers: { 'x-demo-user-id': 'adventurer-b' },
+      payload: { content: ' 已抵达第二处检查点 ', expectedVersion: 4 },
+    });
+    expect(unchanged.statusCode).toBe(409);
+
     const forbiddenDelete = await app.inject({
       method: 'DELETE',
       url: `/api/v1/tasks/${created.json().id as string}/comments/${commentId}`,
       headers: { 'x-demo-user-id': 'adventurer-a' },
-      payload: { expectedVersion: 3 },
+      payload: { expectedVersion: 4 },
     });
     expect(forbiddenDelete.statusCode).toBe(403);
 
@@ -133,17 +164,21 @@ describeDatabase('application composition', () => {
       method: 'DELETE',
       url: `/api/v1/tasks/${created.json().id as string}/comments/${commentId}`,
       headers: { 'x-demo-user-id': 'noticeboard-admin' },
-      payload: { expectedVersion: 3 },
+      payload: { expectedVersion: 4 },
     });
     expect(deleted.statusCode).toBe(200);
-    expect(deleted.json()).toMatchObject({ version: 4 });
+    expect(deleted.json()).toMatchObject({ version: 5 });
     expect(deleted.json().timeline.at(-1)).toMatchObject({
       kind: 'comment',
       content: null,
+      edited: false,
       deleted: true,
       deletedByUsername: 'noticeboard-admin',
     });
     expect(deleted.body).not.toContain('comment_deleted');
+    expect(deleted.body).not.toContain('comment_edited');
+    expect(deleted.body).not.toContain('已抵达第一处检查点');
+    expect(deleted.body).not.toContain('已抵达第二处检查点');
   });
 
   /** Proves the production readiness adapter performs a real database query. */

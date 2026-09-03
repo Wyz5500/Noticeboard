@@ -451,6 +451,199 @@ describe('Task aggregate', () => {
     ).toThrowError(expect.objectContaining({ code: 'COMMENT_CONFLICT' }));
   });
 
+  /** Proves editing appends normalized history without replacing the original comment event. */
+  it('lets only the author append an edited comment version', () => {
+    const task = createTask();
+    task.addComment(
+      'comment-1',
+      '原始正文',
+      ASSIGNEE,
+      '2026-08-29T13:00:00.000Z',
+    );
+
+    task.editComment(
+      'comment-1',
+      '  第一行\n第二行  ',
+      ASSIGNEE,
+      '2026-08-29T14:00:00.000Z',
+    );
+
+    expect(task.toSnapshot()).toMatchObject({
+      updatedAt: '2026-08-29T14:00:00.000Z',
+      version: 3,
+    });
+    expect(task.toSnapshot().timeline.slice(-2)).toEqual([
+      {
+        sequence: 2,
+        action: 'comment_created',
+        commentId: 'comment-1',
+        content: '原始正文',
+        actor: ASSIGNEE,
+        at: '2026-08-29T13:00:00.000Z',
+      },
+      {
+        sequence: 3,
+        action: 'comment_edited',
+        targetCommentId: 'comment-1',
+        content: '第一行\n第二行',
+        actor: ASSIGNEE,
+        at: '2026-08-29T14:00:00.000Z',
+      },
+    ]);
+    expect(task.latestActorId(new Set([PUBLISHER.id, ASSIGNEE.id]))).toBe(
+      PUBLISHER.id,
+    );
+  });
+
+  /** Proves comment edits reject actors who did not create the original comment. */
+  it('rejects editing another actor comment even when that actor is a manager', () => {
+    const task = createTask();
+    task.addComment(
+      'comment-1',
+      '原始正文',
+      ASSIGNEE,
+      '2026-08-29T13:00:00.000Z',
+    );
+    const before = task.toSnapshot();
+
+    expect(() =>
+      task.editComment(
+        'comment-1',
+        '越权修改',
+        REPLACEMENT,
+        '2026-08-29T14:00:00.000Z',
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'COMMENT_FORBIDDEN' }));
+    expect(task.toSnapshot()).toEqual(before);
+  });
+
+  /** Proves deleted-comment state is not disclosed before author authorization. */
+  it('rejects a non-author before revealing that a comment was deleted', () => {
+    const task = createTask();
+    task.addComment(
+      'comment-deleted-private',
+      '原始正文',
+      ASSIGNEE,
+      '2026-08-29T13:00:00.000Z',
+    );
+    task.deleteComment(
+      'comment-deleted-private',
+      ASSIGNEE,
+      false,
+      '2026-08-29T14:00:00.000Z',
+    );
+    const before = task.toSnapshot();
+
+    expect(() =>
+      task.editComment(
+        'comment-deleted-private',
+        '越权修改',
+        REPLACEMENT,
+        '2026-08-29T15:00:00.000Z',
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'COMMENT_FORBIDDEN' }));
+    expect(task.toSnapshot()).toEqual(before);
+  });
+
+  /** Proves closed, deleted, missing, and unchanged comments cannot gain edit history. */
+  it('rejects unavailable or unchanged comment edits without mutating the task', () => {
+    const missing = createTask();
+    expect(() =>
+      missing.editComment(
+        'missing',
+        '新正文',
+        ASSIGNEE,
+        '2026-08-29T14:00:00.000Z',
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'COMMENT_NOT_FOUND' }));
+
+    const deleted = createTask();
+    deleted.addComment(
+      'comment-deleted',
+      '原始正文',
+      ASSIGNEE,
+      '2026-08-29T13:00:00.000Z',
+    );
+    deleted.deleteComment(
+      'comment-deleted',
+      ASSIGNEE,
+      false,
+      '2026-08-29T14:00:00.000Z',
+    );
+    const deletedBefore = deleted.toSnapshot();
+    expect(() =>
+      deleted.editComment(
+        'comment-deleted',
+        '删除后修改',
+        ASSIGNEE,
+        '2026-08-29T15:00:00.000Z',
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'COMMENT_CONFLICT' }));
+    expect(deleted.toSnapshot()).toEqual(deletedBefore);
+
+    const unchanged = createTask();
+    unchanged.addComment(
+      'comment-unchanged',
+      '相同正文',
+      ASSIGNEE,
+      '2026-08-29T13:00:00.000Z',
+    );
+    const unchangedBefore = unchanged.toSnapshot();
+    expect(() =>
+      unchanged.editComment(
+        'comment-unchanged',
+        '  相同正文  ',
+        ASSIGNEE,
+        '2026-08-29T14:00:00.000Z',
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'COMMENT_CONFLICT' }));
+    expect(unchanged.toSnapshot()).toEqual(unchangedBefore);
+
+    const closed = completedTask();
+    closed.addComment(
+      'comment-closed',
+      '关闭前正文',
+      ASSIGNEE,
+      '2026-08-29T14:30:00.000Z',
+    );
+    closed.act('approve', PUBLISHER, '2026-08-29T15:00:00.000Z', CURRENT_DATE);
+    const closedBefore = closed.toSnapshot();
+    expect(() =>
+      closed.editComment(
+        'comment-closed',
+        '关闭后修改',
+        ASSIGNEE,
+        '2026-08-29T16:00:00.000Z',
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'COMMENT_CONFLICT' }));
+    expect(closed.toSnapshot()).toEqual(closedBefore);
+  });
+
+  /** Proves edited content follows the same Unicode and PostgreSQL-safe validation rules. */
+  it.each(['', '前缀\0后缀', '😀'.repeat(1001)])(
+    'rejects invalid edited comment content',
+    (content) => {
+      const task = createTask();
+      task.addComment(
+        'comment-invalid-edit',
+        '原始正文',
+        ASSIGNEE,
+        '2026-08-29T13:00:00.000Z',
+      );
+      const before = task.toSnapshot();
+
+      expect(() =>
+        task.editComment(
+          'comment-invalid-edit',
+          content,
+          ASSIGNEE,
+          '2026-08-29T14:00:00.000Z',
+        ),
+      ).toThrowError(expect.objectContaining({ code: 'INVALID_COMMENT' }));
+      expect(task.toSnapshot()).toEqual(before);
+    },
+  );
+
   /** Proves author deletion appends a marker while preserving raw created content. */
   it('lets the author delete a comment while retaining its original content in raw history', () => {
     const task = createTask();

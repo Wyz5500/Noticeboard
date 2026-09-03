@@ -162,6 +162,7 @@ function task(overrides: Partial<TaskResource> = {}): TaskResource {
         },
         at: '2026-09-01T09:00:00.000Z',
         content: '<img src=x onerror=alert(1)>\n第二行',
+        edited: true,
         deleted: false,
         deletedAt: null,
         deletedByUsername: null,
@@ -173,6 +174,7 @@ function task(overrides: Partial<TaskResource> = {}): TaskResource {
         actor: publisher,
         at: '2026-09-01T10:00:00.000Z',
         content: null,
+        edited: false,
         deleted: true,
         deletedAt: '2026-09-01T10:30:00.000Z',
         deletedByUsername: 'guild-admin',
@@ -188,6 +190,12 @@ function render(
   actorId: string,
   permissions: readonly PermissionCode[],
   draft = '',
+  editor?: {
+    actorId: string;
+    taskId: string;
+    commentId: string;
+    draft: string;
+  },
 ): FakeElement {
   const document = new FakeDocument();
   const container = new FakeElement('div');
@@ -198,6 +206,7 @@ function render(
     actorId,
     permissions,
     draft,
+    editor,
   );
   return container;
 }
@@ -238,6 +247,7 @@ describe('task detail renderer', () => {
           actor: task().publisher,
           at: '2026-09-01T09:00:00.000Z',
           content: '绝不能出现的原评论',
+          edited: false,
           deleted: true,
           deletedAt: '2026-09-01T10:00:00.000Z',
           deletedByUsername: 'moderator',
@@ -313,6 +323,96 @@ describe('task detail renderer', () => {
     },
   );
 
+  /** Proves edited comments expose a visible marker and only authors receive an edit control. */
+  it.each([
+    ['commenter', ['tasks.view'] as const, 1],
+    ['manager', ['tasks.view', 'system.manage'] as const, 0],
+    ['publisher', ['tasks.view'] as const, 0],
+  ])(
+    'renders the edited marker and author-only edit control',
+    (actorId, permissions, editCount) => {
+      const container = render(task(), actorId, permissions);
+
+      expect(container.textContent).toContain('已编辑');
+      expect(
+        findAll(container, (element) => Boolean(element.dataset.editCommentId)),
+      ).toHaveLength(editCount);
+    },
+  );
+
+  /** Proves closed tasks never expose comment editing even to the original author. */
+  it('hides comment editing after the task closes', () => {
+    const container = render(
+      task({
+        workflowStatus: 'closed',
+        workflowStatusLabel: '关闭',
+        status: 'closed',
+        statusLabel: '关闭',
+      }),
+      'commenter',
+      ['tasks.view'],
+    );
+
+    expect(
+      findAll(container, (element) => Boolean(element.dataset.editCommentId)),
+    ).toEqual([]);
+  });
+
+  /** Proves the active editor replaces only its comment body with an accessible inline form. */
+  it('renders the active comment editor with its preserved draft', () => {
+    const container = render(task(), 'commenter', ['tasks.view'], '', {
+      actorId: 'commenter',
+      taskId: 'task-comments',
+      commentId: 'comment-live',
+      draft: '尚未提交的修改',
+    });
+    const forms = findAll(
+      container,
+      (element) => element.dataset.editCommentForm === 'comment-live',
+    );
+    const inputs = findAll(
+      container,
+      (element) => element.dataset.editCommentInput === 'comment-live',
+    );
+    const cancelButtons = findAll(
+      container,
+      (element) => element.dataset.cancelCommentEdit === 'comment-live',
+    );
+
+    expect(forms).toHaveLength(1);
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]).toMatchObject({
+      tagName: 'textarea',
+      required: true,
+      maxLength: -1,
+      value: '尚未提交的修改',
+    });
+    expect(forms[0]?.textContent).toContain('编辑评论');
+    expect(forms[0]?.textContent).toContain('保存');
+    expect(cancelButtons).toHaveLength(1);
+    expect(container.textContent).not.toContain(
+      '<img src=x onerror=alert(1)>\n第二行',
+    );
+  });
+
+  /** Proves a defensive tombstone renderer never exposes whether revisions existed. */
+  it('hides the edited marker from deleted comments', () => {
+    const deletedComment = task().timeline.find(
+      (entry) => entry.kind === 'comment' && entry.deleted,
+    );
+    if (deletedComment?.kind !== 'comment')
+      throw new Error('Expected deleted comment fixture');
+
+    const container = render(
+      task({ timeline: [{ ...deletedComment, edited: true }] }),
+      'commenter',
+      ['tasks.view'],
+    );
+
+    expect(container.textContent).toContain('该评论已被@guild-admin删除');
+    expect(container.textContent).not.toContain('已编辑');
+  });
+
   /** Proves multiline user content wraps safely without introducing a new color literal. */
   it('uses the required safe wrapping rules for comment content', () => {
     const css = readFixture(new URL('../../../../styles.css', import.meta.url));
@@ -322,6 +422,24 @@ describe('task detail renderer', () => {
     expect(rule).toContain('white-space: pre-wrap');
     expect(rule).toContain('overflow-wrap: anywhere');
     expect(rule).not.toMatch(/#[0-9a-f]{3,8}|rgb\(|hsl\(/i);
+  });
+
+  /** Proves shared comment edit styles preserve readable metadata and wrapping controls. */
+  it('styles edited metadata and inline controls with existing tokens', () => {
+    const css = readFixture(new URL('../../../../styles.css', import.meta.url));
+    const editedRule = css.match(/\.comment-edited\s*\{(?<body>[^}]*)\}/)
+      ?.groups?.body;
+    const actionsRule = css.match(/\.comment-actions\s*\{(?<body>[^}]*)\}/)
+      ?.groups?.body;
+    const formRule = css.match(/\.comment-edit-form\s*\{(?<body>[^}]*)\}/)
+      ?.groups?.body;
+
+    expect(editedRule).toContain('color: var(--muted)');
+    expect(actionsRule).toContain('flex-wrap: wrap');
+    expect(formRule).toContain('display: grid');
+    expect(`${editedRule}${actionsRule}${formRule}`).not.toMatch(
+      /#[0-9a-f]{3,8}|rgb\(|hsl\(/i,
+    );
   });
 
   /** Proves renewal remains available only to the authorized publisher of an expired task. */

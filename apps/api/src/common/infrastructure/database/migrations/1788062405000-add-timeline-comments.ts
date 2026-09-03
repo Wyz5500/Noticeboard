@@ -21,7 +21,7 @@ export class AddTimelineComments1788062405000 implements MigrationInterface {
         'ALTER TABLE task_events DROP CONSTRAINT IF EXISTS task_events_action_check',
       );
       await queryRunner.query(
-        "ALTER TABLE task_events ADD CONSTRAINT task_events_action_check CHECK (action IN ('created', 'accepted', 'completed', 'approved', 'reopened', 'renewed', 'closed', 'comment_created', 'comment_deleted'))",
+        "ALTER TABLE task_events ADD CONSTRAINT task_events_action_check CHECK (action IN ('created', 'accepted', 'completed', 'approved', 'reopened', 'renewed', 'closed', 'comment_created', 'comment_edited', 'comment_deleted'))",
       );
       return;
     }

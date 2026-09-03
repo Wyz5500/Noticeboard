@@ -16,6 +16,7 @@ import { ActOnTask } from './use-cases/act-on-task.js';
 import { AddTaskComment } from './use-cases/add-task-comment.js';
 import { CreateTask } from './use-cases/create-task.js';
 import { DeleteTaskComment } from './use-cases/delete-task-comment.js';
+import { EditTaskComment } from './use-cases/edit-task-comment.js';
 import { GetTask } from './use-cases/get-task.js';
 import { ListTasks } from './use-cases/list-tasks.js';
 import { RenewExpiredTask } from './use-cases/renew-expired-task.js';
@@ -512,6 +513,97 @@ describe('task application use cases', () => {
     expect(
       (await repository.findById('task-created'))!.toSnapshot().version,
     ).toBe(4);
+  });
+
+  /** Proves comment editing uses the task transaction and returns its committed projection. */
+  it('edits an authored comment at the expected version', async () => {
+    const repository = new MemoryTaskRepository();
+    await publish(repository);
+    await new AddTaskComment(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      ALLOW_ALL_AUTHORIZATION,
+      clockAt('2026-08-30T10:00:00.000Z'),
+      () => 'comment-created',
+    ).execute(ACTORS[1]!.id, 'task-created', '原始正文', 1);
+    const useCase = new EditTaskComment(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      ALLOW_ALL_AUTHORIZATION,
+      clockAt('2026-08-30T11:00:00.000Z'),
+    );
+
+    const committed = await useCase.execute(
+      ACTORS[1]!.id,
+      'task-created',
+      'comment-created',
+      '  编辑正文  ',
+      2,
+    );
+
+    expect(committed).toMatchObject({ version: 3 });
+    expect(committed.timeline.at(-1)).toMatchObject({
+      kind: 'comment',
+      commentId: 'comment-created',
+      content: '编辑正文',
+      edited: true,
+      deleted: false,
+    });
+    expect(
+      (await repository.findById('task-created'))!.toSnapshot().timeline.at(-1),
+    ).toMatchObject({
+      action: 'comment_edited',
+      targetCommentId: 'comment-created',
+      content: '编辑正文',
+      actor: ACTORS[1],
+    });
+  });
+
+  /** Proves task-read permission and optimistic version are checked before comment editing. */
+  it('rejects unauthorized or stale comment editing without appending history', async () => {
+    const repository = new MemoryTaskRepository();
+    await publish(repository);
+    await new AddTaskComment(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      ALLOW_ALL_AUTHORIZATION,
+      clockAt('2026-08-30T10:00:00.000Z'),
+      () => 'comment-created',
+    ).execute(ACTORS[1]!.id, 'task-created', '原始正文', 1);
+    const denied = new EditTaskComment(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      { hasPermission: () => Promise.resolve(false) },
+      clockAt('2026-08-30T11:00:00.000Z'),
+    );
+    const allowed = new EditTaskComment(
+      new MemoryTransaction(repository),
+      new MemoryIdentityDirectory(),
+      ALLOW_ALL_AUTHORIZATION,
+      clockAt('2026-08-30T11:00:00.000Z'),
+    );
+
+    await expect(
+      denied.execute(
+        ACTORS[1]!.id,
+        'task-created',
+        'comment-created',
+        '不能写入',
+        2,
+      ),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(
+      allowed.execute(
+        ACTORS[1]!.id,
+        'task-created',
+        'comment-created',
+        '版本过期',
+        99,
+      ),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(
+      (await repository.findById('task-created'))!.toSnapshot().timeline,
+    ).toHaveLength(2);
   });
 
   /** Proves stable actor ownership is sufficient to append a deletion marker. */

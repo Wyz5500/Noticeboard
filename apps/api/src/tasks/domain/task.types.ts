@@ -80,13 +80,22 @@ export interface TaskCommentCreatedEvent extends TaskEventBase {
   content: string;
 }
 
+export interface TaskCommentEditedEvent extends TaskEventBase {
+  action: 'comment_edited';
+  targetCommentId: string;
+  content: string;
+}
+
 export interface TaskCommentDeletedEvent extends TaskEventBase {
   action: 'comment_deleted';
   targetCommentId: string;
 }
 
 export type TaskEvent =
-  TaskLifecycleEvent | TaskCommentCreatedEvent | TaskCommentDeletedEvent;
+  | TaskLifecycleEvent
+  | TaskCommentCreatedEvent
+  | TaskCommentEditedEvent
+  | TaskCommentDeletedEvent;
 
 export interface TaskSnapshot {
   id: string;

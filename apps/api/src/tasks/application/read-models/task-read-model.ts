@@ -23,6 +23,7 @@ export interface TaskCommentReadModel {
   actor: Actor;
   at: string;
   content: string | null;
+  edited: boolean;
   deleted: boolean;
   deletedAt: string | null;
   deletedByUsername: string | null;

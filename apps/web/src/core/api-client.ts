@@ -10,6 +10,7 @@ import type {
   CreateTaskCommentRequest,
   CreateTaskRequest,
   DeleteTaskCommentRequest,
+  EditTaskCommentRequest,
   RenewExpiredTaskRequest,
   UpdateAdminRoleRequest,
   UpdateAdminUserRequest,
@@ -176,6 +177,21 @@ export class ApiClient {
     return this.command(
       `/tasks/${encodeURIComponent(taskId)}/comments`,
       actorId,
+      body,
+    );
+  }
+
+  /** Replaces one optimistic task comment while preserving its event history. */
+  editTaskComment(
+    actorId: string,
+    taskId: string,
+    commentId: string,
+    body: EditTaskCommentRequest,
+  ): Promise<TaskResource> {
+    return this.modify(
+      `/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`,
+      actorId,
+      'PATCH',
       body,
     );
   }

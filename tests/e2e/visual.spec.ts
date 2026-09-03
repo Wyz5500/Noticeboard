@@ -333,22 +333,52 @@ test('comment timeline states @visual', async ({ page, request }) => {
   expect(secondCommentResponse.ok()).toBe(true);
   const secondCommentTask = (await secondCommentResponse.json()) as {
     version: number;
+    timeline: Array<{ kind: string; commentId?: string }>;
   };
+  const secondComment = secondCommentTask.timeline
+    .filter((entry) => entry.kind === 'comment')
+    .at(-1);
+  expect(secondComment?.commentId).toBeDefined();
+
+  const editedResponse = await request.patch(
+    `/api/v1/tasks/${task!.id}/comments/${secondComment!.commentId}`,
+    {
+      headers: { 'X-Demo-User-Id': 'adventurer-b' },
+      data: {
+        content: '材料清单已复核完成。\n等待下一步安排。',
+        expectedVersion: secondCommentTask.version,
+      },
+    },
+  );
+  expect(editedResponse.ok()).toBe(true);
+  const editedTask = (await editedResponse.json()) as { version: number };
 
   const deletedResponse = await request.delete(
     `/api/v1/tasks/${task!.id}/comments/${firstComment!.commentId}`,
     {
       headers: { 'X-Demo-User-Id': 'adventurer-a' },
-      data: { expectedVersion: secondCommentTask.version },
+      data: { expectedVersion: editedTask.version },
     },
   );
   expect(deletedResponse.ok()).toBe(true);
 
+  await page.evaluate(() =>
+    localStorage.setItem(
+      'noticeboard-user',
+      JSON.stringify({ currentUserId: 'adventurer-b' }),
+    ),
+  );
   await page.reload();
   await expect(page.locator('#taskGrid')).toBeAttached();
   await page.getByRole('link', { name: '任务页' }).click();
   await page.locator('.task-card').filter({ hasText: task!.title }).click();
   await expect(page.locator('.timeline-comment')).toHaveCount(2);
+  await page
+    .locator('.timeline-comment')
+    .first()
+    .getByRole('button', { name: '编辑评论' })
+    .click();
+  await expect(page.locator('[data-edit-comment-input]')).toBeFocused();
   await page
     .locator('.timeline-comment .timeline-meta')
     .evaluateAll((nodes) => {

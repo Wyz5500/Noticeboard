@@ -29,6 +29,7 @@ import { ActOnTask } from '../application/use-cases/act-on-task.js';
 import { AddTaskComment } from '../application/use-cases/add-task-comment.js';
 import { CreateTask } from '../application/use-cases/create-task.js';
 import { DeleteTaskComment } from '../application/use-cases/delete-task-comment.js';
+import { EditTaskComment } from '../application/use-cases/edit-task-comment.js';
 import { GetTask } from '../application/use-cases/get-task.js';
 import { ListTasks } from '../application/use-cases/list-tasks.js';
 import { RenewExpiredTask } from '../application/use-cases/renew-expired-task.js';
@@ -132,6 +133,16 @@ import { TasksController } from '../presentation/tasks.controller.js';
           clock,
           () => `comment-${randomUUID()}`,
         ),
+      inject: [TASK_TRANSACTION, IDENTITY_DIRECTORY, AUTHORIZATION, TASK_CLOCK],
+    },
+    {
+      provide: EditTaskComment,
+      useFactory: (
+        transaction: TaskTransactionPort,
+        identities: IdentityDirectoryPort,
+        authorization: AuthorizationPort,
+        clock: TaskClockPort,
+      ) => new EditTaskComment(transaction, identities, authorization, clock),
       inject: [TASK_TRANSACTION, IDENTITY_DIRECTORY, AUTHORIZATION, TASK_CLOCK],
     },
     {

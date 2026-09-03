@@ -298,6 +298,61 @@ describe('AppController expired task renewal', () => {
     expect(controller.render).toHaveBeenCalledOnce();
   });
 
+  /** Ensures an older resume response cannot replace a task projection installed while it was pending. */
+  it('discards a resume refresh after a newer task projection is installed', async () => {
+    let releaseTasks!: (tasks: TaskResource[]) => void;
+    const stale = { ...STALE_TASK, version: 4 };
+    const fresh = { ...STALE_TASK, version: 5 };
+    const controller = Object.create(AppController.prototype) as {
+      api: Pick<ApiClient, 'listTasks'>;
+      gate: { run: (_key: string, work: () => Promise<void>) => Promise<void> };
+      users: ActorResource[];
+      tasks: TaskResource[];
+      tasksLoaded: boolean;
+      currentUserId: string;
+      taskProjectionSequence: number;
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      render: ReturnType<typeof vi.fn>;
+      showToast: ReturnType<typeof vi.fn>;
+      replaceTask?: (task: TaskResource) => void;
+      refreshTasksAfterResume?: () => Promise<void>;
+    };
+    controller.api = {
+      listTasks: () =>
+        new Promise((resolve) => {
+          releaseTasks = resolve;
+        }),
+    };
+    controller.gate = { run: (_key, work) => work() };
+    controller.users = [TASK_VIEWER];
+    controller.tasks = [stale];
+    controller.tasksLoaded = true;
+    controller.currentUserId = TASK_VIEWER.id;
+    controller.taskProjectionSequence = 0;
+    controller.requestSnapshot = () => ({
+      actorId: TASK_VIEWER.id,
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+
+    const refresh = controller.refreshTasksAfterResume?.();
+    await Promise.resolve();
+    controller.replaceTask?.(fresh);
+    releaseTasks([stale]);
+    await refresh;
+
+    expect(controller.tasks).toEqual([fresh]);
+    expect(controller.render).not.toHaveBeenCalled();
+  });
+
   /** Ensures the renewal dialog explains the original workflow and assignee reset. */
   it('opens the renewal dialog with the selected task context', () => {
     const add = vi.fn();
@@ -1995,11 +2050,28 @@ describe('AppController task comments', () => {
       if (selector === '[data-comment-input]' && this.dataset.commentInput)
         return this;
       if (
+        selector === '[data-edit-comment-input]' &&
+        this.dataset.editCommentInput
+      )
+        return this;
+      if (selector === '[data-edit-comment-id]' && this.dataset.editCommentId)
+        return this;
+      if (
+        selector === '[data-cancel-comment-edit]' &&
+        this.dataset.cancelCommentEdit
+      )
+        return this;
+      if (
         selector === '[data-delete-comment-id]' &&
         this.dataset.deleteCommentId
       )
         return this;
       if (selector === '[data-comment-form]' && this.dataset.commentForm)
+        return this;
+      if (
+        selector === '[data-edit-comment-form]' &&
+        this.dataset.editCommentForm
+      )
         return this;
       return null;
     }
@@ -2015,13 +2087,24 @@ describe('AppController task comments', () => {
     }
   }
 
+  class CommentEditForm extends CommentElement {
+    /** Creates a delegated comment edit form carrying one replacement body. */
+    constructor(
+      commentId: string,
+      public readonly content: string,
+    ) {
+      super({ editCommentForm: commentId });
+    }
+  }
+
   /** Installs the minimal DOM and FormData shims required by comment delegation tests. */
   function installCommentDomShims(): void {
     (globalThis as { Element?: unknown }).Element = CommentElement;
-    (globalThis as { HTMLFormElement?: unknown }).HTMLFormElement = CommentForm;
+    (globalThis as { HTMLFormElement?: unknown }).HTMLFormElement =
+      CommentElement;
     (globalThis as { FormData?: unknown }).FormData = class {
-      /** Captures one fake comment form. */
-      constructor(private readonly form: CommentForm) {}
+      /** Captures one fake comment creation or editing form. */
+      constructor(private readonly form: CommentForm | CommentEditForm) {}
 
       /** Returns the fake multiline comment body. */
       get(name: string): string {
@@ -2056,6 +2139,18 @@ describe('AppController task comments', () => {
         actor: CURRENT_USER,
         at: '2026-09-01T08:00:00.000Z',
         detail: '任务已创建',
+      },
+      {
+        kind: 'comment',
+        sequence: 2,
+        commentId: 'comment-owned',
+        actor: CURRENT_USER,
+        at: '2026-09-01T09:00:00.000Z',
+        content: '原评论',
+        edited: false,
+        deleted: false,
+        deletedAt: null,
+        deletedByUsername: null,
       },
     ],
   };
@@ -2112,6 +2207,62 @@ describe('AppController task comments', () => {
     renderTaskDrawer.mockRestore();
   });
 
+  /** Ensures rendering an active editor focuses its textarea after safe node replacement. */
+  it('focuses the active comment editor after rendering the drawer', () => {
+    const renderTaskDrawer = vi
+      .spyOn(taskRenderer, 'renderTaskDrawer')
+      .mockImplementation(() => undefined);
+    const focus = vi.fn();
+    const controller = Object.create(AppController.prototype) as {
+      tasks: TaskResource[];
+      selectedTaskId: string;
+      currentUserId: string;
+      commentDrafts: Map<string, string>;
+      commentEditor: {
+        actorId: string;
+        taskId: string;
+        commentId: string;
+        draft: string;
+      };
+      currentUser: () => ActorResource;
+      elements: {
+        drawerInner: { querySelector: () => { focus: typeof focus } | null };
+        drawer: { classList: { add: () => void }; setAttribute: () => void };
+        drawerBackdrop: { classList: { add: () => void } };
+      };
+      document: Document;
+      renderDrawer: () => void;
+    };
+    controller.tasks = [COMMENT_TASK];
+    controller.selectedTaskId = COMMENT_TASK.id;
+    controller.currentUserId = CURRENT_USER.id;
+    controller.commentDrafts = new Map();
+    controller.commentEditor = {
+      actorId: CURRENT_USER.id,
+      taskId: COMMENT_TASK.id,
+      commentId: 'comment-owned',
+      draft: '修改中',
+    };
+    controller.currentUser = () => ({
+      ...CURRENT_USER,
+      permissions: ['tasks.view'],
+    });
+    controller.elements = {
+      drawerInner: { querySelector: () => ({ focus }) },
+      drawer: {
+        classList: { add: () => undefined },
+        setAttribute: () => undefined,
+      },
+      drawerBackdrop: { classList: { add: () => undefined } },
+    };
+    controller.document = {} as Document;
+
+    controller.renderDrawer();
+
+    expect(focus).toHaveBeenCalledOnce();
+    renderTaskDrawer.mockRestore();
+  });
+
   /** Ensures delegated input updates only the active actor-task draft. */
   it('captures multiline comment drafts through drawer input delegation', () => {
     installCommentDomShims();
@@ -2132,6 +2283,495 @@ describe('AppController task comments', () => {
     expect(controller.commentDrafts).toEqual(
       new Map([['actor-a\u0000task-comment', '第一行\n第二行']]),
     );
+  });
+
+  /** Ensures clicking an owned comment opens exactly that inline editor with the server body. */
+  it('opens an owned comment editor from the delegated edit control', async () => {
+    installCommentDomShims();
+    const controller = Object.create(AppController.prototype) as {
+      tasks: TaskResource[];
+      selectedTaskId: string;
+      currentUserId: string;
+      commentEditor: unknown;
+      renderDrawer: ReturnType<typeof vi.fn>;
+      handleDrawerClick: (event: Event) => Promise<void>;
+    };
+    controller.tasks = [COMMENT_TASK];
+    controller.selectedTaskId = COMMENT_TASK.id;
+    controller.currentUserId = CURRENT_USER.id;
+    controller.commentEditor = null;
+    controller.renderDrawer = vi.fn();
+
+    await controller.handleDrawerClick({
+      target: new CommentElement({ editCommentId: 'comment-owned' }),
+    } as unknown as Event);
+
+    expect(controller.commentEditor).toEqual({
+      actorId: CURRENT_USER.id,
+      taskId: COMMENT_TASK.id,
+      commentId: 'comment-owned',
+      draft: '原评论',
+      expectedVersion: COMMENT_TASK.version,
+    });
+    expect(controller.renderDrawer).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures closing the task drawer cannot leak one comment editor into a later task. */
+  it('clears the active comment editor when the drawer closes', () => {
+    const controller = Object.create(AppController.prototype) as {
+      commentEditor: {
+        actorId: string;
+        taskId: string;
+        commentId: string;
+        draft: string;
+      } | null;
+      selectedTaskId: string | null;
+      closeRenewalDialog: () => void;
+      elements: {
+        drawer: {
+          classList: { remove: () => void };
+          setAttribute: () => void;
+        };
+        drawerBackdrop: { classList: { remove: () => void } };
+      };
+      closeDrawer: () => void;
+    };
+    controller.commentEditor = {
+      actorId: CURRENT_USER.id,
+      taskId: COMMENT_TASK.id,
+      commentId: 'comment-owned',
+      draft: '不应泄漏',
+    };
+    controller.selectedTaskId = COMMENT_TASK.id;
+    controller.closeRenewalDialog = () => undefined;
+    controller.elements = {
+      drawer: {
+        classList: { remove: () => undefined },
+        setAttribute: () => undefined,
+      },
+      drawerBackdrop: { classList: { remove: () => undefined } },
+    };
+
+    controller.closeDrawer();
+
+    expect(controller.commentEditor).toBeNull();
+    expect(controller.selectedTaskId).toBeNull();
+  });
+
+  /** Ensures cancel exits editing without issuing a command. */
+  it('cancels the active comment editor from its delegated control', async () => {
+    installCommentDomShims();
+    const focus = vi.fn();
+    const controller = Object.create(AppController.prototype) as {
+      tasks: TaskResource[];
+      selectedTaskId: string;
+      commentEditor: {
+        actorId: string;
+        taskId: string;
+        commentId: string;
+        draft: string;
+      } | null;
+      elements: {
+        drawerInner: {
+          querySelectorAll: () => Array<{
+            dataset: Record<string, string>;
+            focus: typeof focus;
+          }>;
+        };
+      };
+      renderDrawer: ReturnType<typeof vi.fn>;
+      handleDrawerClick: (event: Event) => Promise<void>;
+    };
+    controller.tasks = [COMMENT_TASK];
+    controller.selectedTaskId = COMMENT_TASK.id;
+    controller.commentEditor = {
+      actorId: CURRENT_USER.id,
+      taskId: COMMENT_TASK.id,
+      commentId: 'comment-owned',
+      draft: '放弃的修改',
+    };
+    controller.elements = {
+      drawerInner: {
+        querySelectorAll: () => [
+          {
+            dataset: { editCommentId: 'comment-owned' },
+            focus,
+          },
+        ],
+      },
+    };
+    controller.renderDrawer = vi.fn();
+
+    await controller.handleDrawerClick({
+      target: new CommentElement({ cancelCommentEdit: 'comment-owned' }),
+    } as unknown as Event);
+
+    expect(controller.commentEditor).toBeNull();
+    expect(controller.renderDrawer).toHaveBeenCalledOnce();
+    expect(focus).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures Escape cancels editing before it can close the surrounding drawer. */
+  it('gives active comment editing priority over drawer close on Escape', () => {
+    const focus = vi.fn();
+    const controller = Object.create(AppController.prototype) as {
+      commentEditor: {
+        actorId: string;
+        taskId: string;
+        commentId: string;
+        draft: string;
+      } | null;
+      adminEditor: null;
+      elements: {
+        profileMenu: { classList: { contains: () => boolean } };
+        renewalModal: { classList: { contains: () => boolean } };
+        modal: { classList: { contains: () => boolean } };
+        drawer: { classList: { contains: () => boolean } };
+        drawerInner: {
+          querySelectorAll: () => Array<{
+            dataset: Record<string, string>;
+            focus: typeof focus;
+          }>;
+        };
+      };
+      renderDrawer: ReturnType<typeof vi.fn>;
+      closeDrawer: ReturnType<typeof vi.fn>;
+      handleEscape: (event: KeyboardEvent) => void;
+    };
+    controller.commentEditor = {
+      actorId: CURRENT_USER.id,
+      taskId: COMMENT_TASK.id,
+      commentId: 'comment-owned',
+      draft: '放弃的修改',
+    };
+    controller.adminEditor = null;
+    controller.elements = {
+      profileMenu: { classList: { contains: () => false } },
+      renewalModal: { classList: { contains: () => false } },
+      modal: { classList: { contains: () => false } },
+      drawer: { classList: { contains: () => true } },
+      drawerInner: {
+        querySelectorAll: () => [
+          {
+            dataset: { editCommentId: 'comment-owned' },
+            focus,
+          },
+        ],
+      },
+    };
+    controller.renderDrawer = vi.fn();
+    controller.closeDrawer = vi.fn();
+
+    controller.handleEscape({ key: 'Escape' } as KeyboardEvent);
+
+    expect(controller.commentEditor).toBeNull();
+    expect(controller.renderDrawer).toHaveBeenCalledOnce();
+    expect(controller.closeDrawer).not.toHaveBeenCalled();
+    expect(focus).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures delegated edit input updates only the active comment editor draft. */
+  it('captures the active comment edit draft in page memory', () => {
+    installCommentDomShims();
+    const controller = Object.create(AppController.prototype) as {
+      commentEditor: {
+        actorId: string;
+        taskId: string;
+        commentId: string;
+        draft: string;
+      } | null;
+      handleDrawerInput: (event: Event) => void;
+    };
+    controller.commentEditor = {
+      actorId: CURRENT_USER.id,
+      taskId: COMMENT_TASK.id,
+      commentId: 'comment-owned',
+      draft: '原评论',
+    };
+
+    controller.handleDrawerInput({
+      target: new CommentElement(
+        { editCommentInput: 'comment-owned' },
+        '修改中的正文',
+      ),
+    } as unknown as Event);
+
+    expect(controller.commentEditor?.draft).toBe('修改中的正文');
+  });
+
+  /** Ensures saving uses the editor's opening version even after the task snapshot advances. */
+  it('edits a comment through the shared gate with its opening version', async () => {
+    installCommentDomShims();
+    const updated = { ...COMMENT_TASK, version: 5 };
+    const editTaskComment = vi.fn(() => Promise.resolve(updated));
+    const gateKeys: string[] = [];
+    const controller = Object.create(AppController.prototype) as {
+      tasks: TaskResource[];
+      selectedTaskId: string;
+      currentUserId: string;
+      commentEditor: {
+        actorId: string;
+        taskId: string;
+        commentId: string;
+        draft: string;
+        expectedVersion: number;
+      } | null;
+      api: { editTaskComment: typeof editTaskComment };
+      gate: {
+        run: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
+      };
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      replaceTask: ReturnType<typeof vi.fn>;
+      render: ReturnType<typeof vi.fn>;
+      showToast: ReturnType<typeof vi.fn>;
+      handleDrawerSubmit: (event: SubmitEvent) => Promise<void>;
+    };
+    controller.tasks = [COMMENT_TASK];
+    controller.selectedTaskId = COMMENT_TASK.id;
+    controller.currentUserId = CURRENT_USER.id;
+    controller.commentEditor = {
+      actorId: CURRENT_USER.id,
+      taskId: COMMENT_TASK.id,
+      commentId: 'comment-owned',
+      draft: '修改后的正文',
+      expectedVersion: 3,
+    };
+    controller.api = { editTaskComment };
+    controller.gate = {
+      run: (key, operation) => {
+        gateKeys.push(key);
+        return operation();
+      },
+    };
+    controller.requestSnapshot = () => ({
+      actorId: CURRENT_USER.id,
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.replaceTask = vi.fn();
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+
+    await controller.handleDrawerSubmit({
+      preventDefault: () => undefined,
+      target: new CommentEditForm('comment-owned', '修改后的正文'),
+    } as unknown as SubmitEvent);
+
+    expect(gateKeys).toEqual(['task:task-comment']);
+    expect(editTaskComment).toHaveBeenCalledWith(
+      CURRENT_USER.id,
+      COMMENT_TASK.id,
+      'comment-owned',
+      { content: '修改后的正文', expectedVersion: 3 },
+    );
+    expect(controller.commentEditor).toBeNull();
+    expect(controller.replaceTask).toHaveBeenCalledWith(updated);
+    expect(controller.render).toHaveBeenCalledOnce();
+    expect(controller.showToast).toHaveBeenCalledWith('评论已更新');
+  });
+
+  /** Ensures a completed request cannot clear a newer draft created while it was pending. */
+  it('preserves a newer comment edit session after an earlier request succeeds', async () => {
+    installCommentDomShims();
+    let releaseEdit!: (task: TaskResource) => void;
+    const editTaskComment = vi.fn(
+      () => new Promise<TaskResource>((resolve) => (releaseEdit = resolve)),
+    );
+    const controller = Object.create(AppController.prototype) as {
+      tasks: TaskResource[];
+      selectedTaskId: string;
+      currentUserId: string;
+      commentEditor: {
+        actorId: string;
+        taskId: string;
+        commentId: string;
+        draft: string;
+        expectedVersion: number;
+      } | null;
+      api: { editTaskComment: typeof editTaskComment };
+      gate: {
+        run: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
+      };
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      replaceTask: ReturnType<typeof vi.fn>;
+      render: ReturnType<typeof vi.fn>;
+      showToast: ReturnType<typeof vi.fn>;
+      handleDrawerSubmit: (event: SubmitEvent) => Promise<void>;
+    };
+    controller.tasks = [COMMENT_TASK];
+    controller.selectedTaskId = COMMENT_TASK.id;
+    controller.currentUserId = CURRENT_USER.id;
+    controller.commentEditor = {
+      actorId: CURRENT_USER.id,
+      taskId: COMMENT_TASK.id,
+      commentId: 'comment-owned',
+      draft: '准备提交',
+      expectedVersion: COMMENT_TASK.version,
+    };
+    controller.api = { editTaskComment };
+    controller.gate = { run: (_key, operation) => operation() };
+    controller.requestSnapshot = () => ({
+      actorId: CURRENT_USER.id,
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.replaceTask = vi.fn();
+    controller.render = vi.fn();
+    controller.showToast = vi.fn();
+
+    const pending = controller.handleDrawerSubmit({
+      preventDefault: () => undefined,
+      target: new CommentEditForm('comment-owned', '已提交正文'),
+    } as unknown as SubmitEvent);
+    await Promise.resolve();
+    const newerEditor = {
+      actorId: CURRENT_USER.id,
+      taskId: COMMENT_TASK.id,
+      commentId: 'comment-owned',
+      draft: '请求期间继续修改',
+      expectedVersion: COMMENT_TASK.version,
+    };
+    controller.commentEditor = newerEditor;
+    releaseEdit({ ...COMMENT_TASK, version: 5 });
+    await pending;
+
+    expect(controller.commentEditor).toEqual(newerEditor);
+    expect(controller.replaceTask).toHaveBeenCalledOnce();
+    expect(controller.render).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures an edit failure resynchronizes without discarding the submitted draft. */
+  it('preserves the active comment edit draft after failure', async () => {
+    installCommentDomShims();
+    const controller = Object.create(AppController.prototype) as {
+      tasks: TaskResource[];
+      selectedTaskId: string;
+      currentUserId: string;
+      commentEditor: {
+        actorId: string;
+        taskId: string;
+        commentId: string;
+        draft: string;
+      } | null;
+      api: { editTaskComment: () => Promise<never> };
+      gate: {
+        run: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
+      };
+      requestSnapshot: () => {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      };
+      isCurrentRequest: () => boolean;
+      resynchronizeTasks: ReturnType<typeof vi.fn>;
+      showToast: ReturnType<typeof vi.fn>;
+      handleDrawerSubmit: (event: SubmitEvent) => Promise<void>;
+    };
+    controller.tasks = [COMMENT_TASK];
+    controller.selectedTaskId = COMMENT_TASK.id;
+    controller.currentUserId = CURRENT_USER.id;
+    controller.commentEditor = {
+      actorId: CURRENT_USER.id,
+      taskId: COMMENT_TASK.id,
+      commentId: 'comment-owned',
+      draft: '提交前',
+    };
+    controller.api = {
+      editTaskComment: () => Promise.reject(new Error('failed')),
+    };
+    controller.gate = { run: (_key, operation) => operation() };
+    controller.requestSnapshot = () => ({
+      actorId: CURRENT_USER.id,
+      sequence: 0,
+      routeSequence: 0,
+    });
+    controller.isCurrentRequest = () => true;
+    controller.resynchronizeTasks = vi.fn(() => Promise.resolve());
+    controller.showToast = vi.fn();
+
+    await controller.handleDrawerSubmit({
+      preventDefault: () => undefined,
+      target: new CommentEditForm('comment-owned', '失败后保留'),
+    } as unknown as SubmitEvent);
+
+    expect(controller.commentEditor?.draft).toBe('失败后保留');
+    expect(controller.resynchronizeTasks).toHaveBeenCalledOnce();
+    expect(controller.showToast).toHaveBeenCalledOnce();
+  });
+
+  /** Ensures a refresh drops an editor whose comment became a tombstone. */
+  it('clears an invalid comment editor after server resynchronization', async () => {
+    const deletedTask: TaskResource = {
+      ...COMMENT_TASK,
+      workflowStatus: 'closed',
+      workflowStatusLabel: '关闭',
+      status: 'closed',
+      statusLabel: '关闭',
+      timeline: COMMENT_TASK.timeline.map((entry) =>
+        entry.kind === 'comment'
+          ? {
+              ...entry,
+              content: null,
+              deleted: true,
+              deletedAt: '2026-09-01T10:00:00.000Z',
+              deletedByUsername: 'moderator',
+            }
+          : entry,
+      ),
+    };
+    const controller = Object.create(AppController.prototype) as {
+      tasks: TaskResource[];
+      tasksLoaded: boolean;
+      currentUserId: string;
+      commentEditor: {
+        actorId: string;
+        taskId: string;
+        commentId: string;
+        draft: string;
+      } | null;
+      api: { listTasks: () => Promise<TaskResource[]> };
+      isCurrentRequest: () => boolean;
+      render: ReturnType<typeof vi.fn>;
+      resynchronizeTasks: (request: {
+        actorId: string;
+        sequence: number;
+        routeSequence: number;
+      }) => Promise<void>;
+    };
+    controller.tasks = [COMMENT_TASK];
+    controller.tasksLoaded = true;
+    controller.currentUserId = CURRENT_USER.id;
+    controller.commentEditor = {
+      actorId: CURRENT_USER.id,
+      taskId: COMMENT_TASK.id,
+      commentId: 'comment-owned',
+      draft: '不能恢复到墓碑上的正文',
+    };
+    controller.api = { listTasks: () => Promise.resolve([deletedTask]) };
+    controller.isCurrentRequest = () => true;
+    controller.render = vi.fn();
+
+    await controller.resynchronizeTasks({
+      actorId: CURRENT_USER.id,
+      sequence: 0,
+      routeSequence: 0,
+    });
+
+    expect(controller.commentEditor).toBeNull();
+    expect(controller.tasks).toEqual([deletedTask]);
+    expect(controller.render).toHaveBeenCalledOnce();
   });
 
   /** Ensures successful comment creation shares the task gate, replaces the task, and clears its draft. */

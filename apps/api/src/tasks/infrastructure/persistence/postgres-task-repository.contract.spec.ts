@@ -6,6 +6,7 @@ import type { DataSource, QueryRunner } from 'typeorm';
 import { PostgresAuthorization } from '../../../authorization/infrastructure/postgres-authorization.js';
 import { AddTaskRenewedEvent1788062404000 } from '../../../common/infrastructure/database/migrations/1788062404000-add-task-renewed-event.js';
 import { AddTimelineComments1788062405000 } from '../../../common/infrastructure/database/migrations/1788062405000-add-timeline-comments.js';
+import { AddCommentEdits1788062406000 } from '../../../common/infrastructure/database/migrations/1788062406000-add-comment-edits.js';
 import { createPostgresDataSource } from '../../../database.js';
 import { PostgresAccountPersistence } from '../../../identity/infrastructure/persistence/postgres-account-persistence.js';
 import { seedDemoAccounts } from '../../../identity/infrastructure/persistence/seed-demo-accounts.js';
@@ -198,14 +199,46 @@ describeDatabase('PostgreSQL task repository contract', () => {
       DEMO_ACTORS[1]!,
       '2026-08-30T10:00:00.000Z',
     );
-    task.deleteComment(
+    await transaction.run(async (repository) => repository.insert(task));
+
+    const secondVersion = await transaction.run(async (repository) =>
+      repository.findById('task-comment-contract'),
+    );
+    secondVersion!.editComment(
+      'comment-contract',
+      '数据库必须保留第二版',
+      DEMO_ACTORS[1]!,
+      '2026-08-30T10:30:00.000Z',
+    );
+    await transaction.run(async (repository) =>
+      repository.save(secondVersion!, 2),
+    );
+
+    const thirdVersion = await transaction.run(async (repository) =>
+      repository.findById('task-comment-contract'),
+    );
+    thirdVersion!.editComment(
+      'comment-contract',
+      '数据库必须保留第三版',
+      DEMO_ACTORS[1]!,
+      '2026-08-30T10:45:00.000Z',
+    );
+    await transaction.run(async (repository) =>
+      repository.save(thirdVersion!, 3),
+    );
+
+    const deletedVersion = await transaction.run(async (repository) =>
+      repository.findById('task-comment-contract'),
+    );
+    deletedVersion!.deleteComment(
       'comment-contract',
       DEMO_ACTORS[1]!,
       false,
       '2026-08-30T11:00:00.000Z',
     );
-
-    await transaction.run(async (repository) => repository.insert(task));
+    await transaction.run(async (repository) =>
+      repository.save(deletedVersion!, 4),
+    );
 
     expect(
       (
@@ -213,13 +246,14 @@ describeDatabase('PostgreSQL task repository contract', () => {
           repository.findById('task-comment-contract'),
         )
       )?.toSnapshot(),
-    ).toEqual(task.toSnapshot());
+    ).toEqual(deletedVersion!.toSnapshot());
     expect((await query.getById('task-comment-contract'))?.timeline).toEqual([
       expect.objectContaining({ kind: 'activity', action: 'created' }),
       expect.objectContaining({
         kind: 'comment',
         commentId: 'comment-contract',
         content: null,
+        edited: false,
         deleted: true,
         deletedAt: '2026-08-30T11:00:00.000Z',
         deletedByUsername: 'adventurer-a',
@@ -231,6 +265,8 @@ describeDatabase('PostgreSQL task repository contract', () => {
     expect(raw).toEqual([
       { action: 'created', content: null },
       { action: 'comment_created', content: '数据库必须保留正文' },
+      { action: 'comment_edited', content: '数据库必须保留第二版' },
+      { action: 'comment_edited', content: '数据库必须保留第三版' },
       { action: 'comment_deleted', content: null },
     ]);
   });
@@ -459,6 +495,7 @@ describeDatabase('PostgreSQL task repository contract', () => {
       expect(normalized).toContain("'renewed'::character varying");
       expect(normalized).toContain("'comment_created'::character varying");
       expect(normalized).toContain("'comment_deleted'::character varying");
+      expect(normalized).toContain("'comment_edited'::character varying");
     } finally {
       await runner.rollbackTransaction();
       await runner.release();
@@ -490,6 +527,89 @@ describeDatabase('PostgreSQL task repository contract', () => {
       expect(normalized).toContain('char_length((content)::text) <= 1000');
     } finally {
       await runner.rollbackTransaction();
+      await runner.release();
+    }
+  });
+
+  /** Proves the edit migration permits repeated valid revisions and rejects malformed payloads. */
+  it('installs the append-only comment edit event constraints', async () => {
+    const runner = dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+
+    try {
+      const migration = new AddCommentEdits1788062406000();
+      await migration.down(runner);
+      await migration.up(runner);
+      const [{ definition }] = await runner.query(`
+        SELECT pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint
+        WHERE conname = 'task_events_comment_payload_check'
+      `);
+      const normalized = String(definition).toLowerCase();
+
+      expect(normalized).toContain("'comment_edited'::text");
+      expect(normalized).toContain('char_length((content)::text) <= 1000');
+    } finally {
+      await runner.rollbackTransaction();
+      await runner.release();
+    }
+  });
+
+  /** Proves rollback refuses to erase edit history or leave task metadata without its command event. */
+  it('rejects comment edit rollback when revision events exist', async () => {
+    const task = Task.create(
+      {
+        id: 'task-comment-edit-revert',
+        title: '编辑迁移回滚',
+        type: 'exploration',
+        description: '验证编辑历史阻止破坏性回滚',
+        reward: '12 金币',
+        dueDate: '2026-09-10',
+      },
+      DEMO_ACTORS[0]!,
+      '2026-08-30T09:00:00.000Z',
+    );
+    task.addComment(
+      'comment-edit-revert',
+      '回滚前正文',
+      DEMO_ACTORS[1]!,
+      '2026-08-30T10:00:00.000Z',
+    );
+    task.editComment(
+      'comment-edit-revert',
+      '必须保留的编辑正文',
+      DEMO_ACTORS[1]!,
+      '2026-08-30T11:00:00.000Z',
+    );
+    await transaction.run(async (repository) => repository.insert(task));
+    const runner = dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+
+    try {
+      await expect(
+        new AddCommentEdits1788062406000().down(runner),
+      ).rejects.toThrow(/comment_edited/);
+      await runner.rollbackTransaction();
+
+      const events = await dataSource.query(
+        "SELECT action, content FROM task_events WHERE task_id = 'task-comment-edit-revert' ORDER BY sequence",
+      );
+      expect(events).toEqual([
+        { action: 'created', content: null },
+        { action: 'comment_created', content: '回滚前正文' },
+        { action: 'comment_edited', content: '必须保留的编辑正文' },
+      ]);
+      const [metadata] = await dataSource.query(
+        'SELECT version, updated_at AS "updatedAt" FROM tasks WHERE id = \'task-comment-edit-revert\'',
+      );
+      expect(metadata).toEqual({
+        version: 3,
+        updatedAt: new Date('2026-08-30T11:00:00.000Z'),
+      });
+    } finally {
+      if (runner.isTransactionActive) await runner.rollbackTransaction();
       await runner.release();
     }
   });

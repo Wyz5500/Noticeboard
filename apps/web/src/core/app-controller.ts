@@ -32,7 +32,11 @@ import {
   saveCurrentUserId,
 } from '../profile/identity-preference.js';
 import { filterTasks, taskCounts } from '../tasks/task-filter.js';
-import { renderTaskDrawer, renderTaskGrid } from '../tasks/task-renderer.js';
+import {
+  type CommentEditorState,
+  renderTaskDrawer,
+  renderTaskGrid,
+} from '../tasks/task-renderer.js';
 import { renderAdminView } from '../admin/admin-renderer.js';
 import { THEMES } from '../styles/configs/index.js';
 import {
@@ -136,6 +140,10 @@ interface RequestSnapshot extends IdentitySnapshot {
   routeSequence: number;
 }
 
+interface CommentEditSession extends CommentEditorState {
+  expectedVersion: number;
+}
+
 interface ViewScrollState {
   windowY: number;
 }
@@ -205,6 +213,7 @@ export class AppController {
   private readonly styles = new StyleRegistry(THEMES);
   private readonly gate = new RequestGate();
   private readonly commentDrafts = new Map<string, string>();
+  private commentEditor: CommentEditSession | null = null;
   private readonly compactTaskQuery: MediaQueryList;
   private users: ActorResource[] = [];
   private tasks: TaskResource[] = [];
@@ -218,6 +227,7 @@ export class AppController {
   private identityChangeSequence = 0;
   private routeChangeSequence = 0;
   private adminRefreshSequence = 0;
+  private taskProjectionSequence = 0;
   private currentStyleId = '';
   private route: RouteState;
   private selectedTaskId: string | null = null;
@@ -534,9 +544,14 @@ export class AppController {
     if (!this.currentUserId) return;
     await this.gate.run('tasks:resume', async () => {
       const request = this.requestSnapshot();
+      const taskProjectionSequence = this.taskProjectionSequence ?? 0;
       try {
         const tasks = await this.loadTasksForCurrentUser(request.actorId);
-        if (!this.isCurrentRequest(request)) return;
+        if (
+          !this.isCurrentRequest(request) ||
+          taskProjectionSequence !== (this.taskProjectionSequence ?? 0)
+        )
+          return;
         this.tasks = tasks;
         this.tasksLoaded = true;
         this.render();
@@ -811,8 +826,44 @@ export class AppController {
     );
   }
 
+  /** Drops an edit state that no longer matches an editable server comment. */
+  private reconcileCommentEditor(): void {
+    if (!this.commentEditor) return;
+    const task = this.tasks.find(
+      (candidate) => candidate.id === this.commentEditor?.taskId,
+    );
+    const comment = task?.timeline.find(
+      (entry) =>
+        entry.kind === 'comment' &&
+        entry.commentId === this.commentEditor?.commentId,
+    );
+    if (
+      this.commentEditor.actorId !== this.currentUserId ||
+      !task ||
+      task.workflowStatus === 'closed' ||
+      comment?.kind !== 'comment' ||
+      comment.deleted ||
+      comment.content === null ||
+      comment.actor.id !== this.currentUserId
+    )
+      this.commentEditor = null;
+  }
+
+  /** Restores keyboard focus to one comment's edit trigger after cancellation. */
+  private focusCommentEditButton(commentId: string): void {
+    for (const button of this.elements.drawerInner.querySelectorAll<HTMLButtonElement>(
+      '[data-edit-comment-id]',
+    )) {
+      if (button.dataset.editCommentId === commentId) {
+        button.focus();
+        return;
+      }
+    }
+  }
+
   /** Re-renders the selected drawer or closes it if a refresh removed the task. */
   private renderDrawer(): void {
+    this.reconcileCommentEditor();
     const task = this.tasks.find(
       (candidate) => candidate.id === this.selectedTaskId,
     );
@@ -827,10 +878,15 @@ export class AppController {
       this.currentUserId,
       this.currentUser()?.permissions,
       this.commentDraft(task.id),
+      this.commentEditor ?? undefined,
     );
     this.elements.drawer.classList.add('is-open');
     this.elements.drawerBackdrop.classList.add('is-open');
     this.elements.drawer.setAttribute('aria-hidden', 'false');
+    if (this.commentEditor)
+      this.elements.drawerInner
+        .querySelector<HTMLTextAreaElement>('[data-edit-comment-input]')
+        ?.focus();
   }
 
   /** Loads the current server projection before opening one task drawer by ID. */
@@ -856,6 +912,7 @@ export class AppController {
   /** Closes the drawer and clears its selection. */
   private closeDrawer(): void {
     this.closeRenewalDialog();
+    this.commentEditor = null;
     this.selectedTaskId = null;
     this.elements.drawer.classList.remove('is-open');
     this.elements.drawerBackdrop.classList.remove('is-open');
@@ -1065,6 +1122,16 @@ export class AppController {
   /** Stores delegated textarea input in the active identity's task-scoped memory draft. */
   private handleDrawerInput(event: Event): void {
     if (!(event.target instanceof Element)) return;
+    const editInput = event.target.closest<HTMLTextAreaElement>(
+      '[data-edit-comment-input]',
+    );
+    if (
+      editInput?.dataset.editCommentInput &&
+      this.commentEditor?.commentId === editInput.dataset.editCommentInput
+    ) {
+      this.commentEditor = { ...this.commentEditor, draft: editInput.value };
+      return;
+    }
     const input = event.target.closest<HTMLTextAreaElement>(
       '[data-comment-input]',
     );
@@ -1080,7 +1147,48 @@ export class AppController {
   private async handleDrawerSubmit(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     const form = event.target;
-    if (!(form instanceof HTMLFormElement) || !form.dataset.commentForm) return;
+    if (!(form instanceof HTMLFormElement)) return;
+    const editCommentId = form.dataset.editCommentForm;
+    if (editCommentId) {
+      const task = this.tasks.find(
+        (candidate) => candidate.id === this.selectedTaskId,
+      );
+      if (
+        !task ||
+        !this.commentEditor ||
+        this.commentEditor.actorId !== this.currentUserId ||
+        this.commentEditor.taskId !== task.id ||
+        this.commentEditor.commentId !== editCommentId
+      )
+        return;
+      const content = formText(new FormData(form), 'content');
+      const expectedVersion = this.commentEditor.expectedVersion;
+      const submittedEditor = { ...this.commentEditor, draft: content };
+      this.commentEditor = submittedEditor;
+      await this.gate.run(`task:${task.id}`, async () => {
+        const request = this.requestSnapshot();
+        try {
+          const updated = await this.api.editTaskComment(
+            request.actorId,
+            task.id,
+            editCommentId,
+            { content, expectedVersion },
+          );
+          if (!this.isCurrentRequest(request)) return;
+          if (this.commentEditor === submittedEditor) this.commentEditor = null;
+          this.replaceTask(updated);
+          this.render();
+          this.showToast('评论已更新');
+        } catch (error) {
+          if (!this.isCurrentRequest(request)) return;
+          await this.resynchronizeTasks(request);
+          if (!this.isCurrentRequest(request)) return;
+          this.showToast(this.errorMessage(error));
+        }
+      });
+      return;
+    }
+    if (!form.dataset.commentForm) return;
     const task = this.tasks.find(
       (candidate) =>
         candidate.id === form.dataset.commentForm &&
@@ -1132,6 +1240,46 @@ export class AppController {
       (candidate) => candidate.id === this.selectedTaskId,
     );
     if (!task) return;
+    const cancelEdit = event.target.closest<HTMLElement>(
+      '[data-cancel-comment-edit]',
+    );
+    if (
+      cancelEdit?.dataset.cancelCommentEdit &&
+      this.commentEditor?.commentId === cancelEdit.dataset.cancelCommentEdit
+    ) {
+      const commentId = cancelEdit.dataset.cancelCommentEdit;
+      this.commentEditor = null;
+      this.renderDrawer();
+      this.focusCommentEditButton(commentId);
+      return;
+    }
+    const editButton = event.target.closest<HTMLElement>(
+      '[data-edit-comment-id]',
+    );
+    if (editButton?.dataset.editCommentId) {
+      const comment = task.timeline.find(
+        (entry) =>
+          entry.kind === 'comment' &&
+          entry.commentId === editButton.dataset.editCommentId,
+      );
+      if (
+        comment?.kind !== 'comment' ||
+        comment.deleted ||
+        task.workflowStatus === 'closed' ||
+        comment.actor.id !== this.currentUserId ||
+        comment.content === null
+      )
+        return;
+      this.commentEditor = {
+        actorId: this.currentUserId,
+        taskId: task.id,
+        commentId: comment.commentId,
+        draft: comment.content,
+        expectedVersion: task.version,
+      };
+      this.renderDrawer();
+      return;
+    }
     const deleteButton = event.target.closest<HTMLElement>(
       '[data-delete-comment-id]',
     );
@@ -1226,6 +1374,7 @@ export class AppController {
 
   /** Replaces one projection after a successful command. */
   private replaceTask(updated: TaskResource): void {
+    this.taskProjectionSequence = (this.taskProjectionSequence ?? 0) + 1;
     const index = this.tasks.findIndex((task) => task.id === updated.id);
     if (index === -1) this.tasks = [updated, ...this.tasks];
     else
@@ -1749,6 +1898,11 @@ export class AppController {
     else if (this.adminEditor) {
       this.adminEditor = null;
       this.render();
+    } else if (this.commentEditor) {
+      const commentId = this.commentEditor.commentId;
+      this.commentEditor = null;
+      this.renderDrawer();
+      this.focusCommentEditButton(commentId);
     } else if (this.elements.modal.classList.contains('is-open'))
       this.closeModal();
     else if (this.elements.drawer.classList.contains('is-open'))
@@ -1765,6 +1919,8 @@ export class AppController {
       if (!this.isCurrentRequest(request)) return;
       this.tasks = tasks;
       this.tasksLoaded = true;
+      this.taskProjectionSequence = (this.taskProjectionSequence ?? 0) + 1;
+      this.reconcileCommentEditor();
       this.render();
     } catch {
       // The original command error remains the most useful message when refresh also fails.

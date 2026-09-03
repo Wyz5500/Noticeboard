@@ -5,6 +5,7 @@ import { authorizationPersistenceEntities } from './authorization/public/composi
 import { AddAdminUpdatedAt1788062403000 } from './common/infrastructure/database/migrations/1788062403000-add-admin-updated-at.js';
 import { AddTaskRenewedEvent1788062404000 } from './common/infrastructure/database/migrations/1788062404000-add-task-renewed-event.js';
 import { AddTimelineComments1788062405000 } from './common/infrastructure/database/migrations/1788062405000-add-timeline-comments.js';
+import { AddCommentEdits1788062406000 } from './common/infrastructure/database/migrations/1788062406000-add-comment-edits.js';
 import { AddAuthorizationSchema1788062402000 } from './common/infrastructure/database/migrations/1788062402000-add-authorization-schema.js';
 import { CreateNoticeboardSchema1788062400000 } from './common/infrastructure/database/migrations/1788062400000-create-noticeboard-schema.js';
 import { AddEventActorSnapshot1788062401000 } from './common/infrastructure/database/migrations/1788062401000-add-event-actor-snapshot.js';
@@ -38,6 +39,7 @@ export function postgresDataSourceOptions(
       AddAdminUpdatedAt1788062403000,
       AddTaskRenewedEvent1788062404000,
       AddTimelineComments1788062405000,
+      AddCommentEdits1788062406000,
     ],
     migrationsTableName: 'schema_migrations',
   };

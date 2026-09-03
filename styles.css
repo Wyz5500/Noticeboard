@@ -1047,6 +1047,16 @@ h1 em {
 .comment-heading .timeline-meta {
   margin-top: 0;
 }
+.comment-metadata {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+.comment-edited {
+  color: var(--muted);
+  font-size: 10px;
+}
 .comment-content {
   margin: 10px 0 0;
   color: var(--ink);
@@ -1061,16 +1071,36 @@ h1 em {
   color: var(--muted);
   font-size: 11px;
 }
-.comment-delete-button {
+.comment-actions {
   margin-top: 9px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.comment-edit-button,
+.comment-delete-button {
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--muted);
   font-size: 10px;
 }
-.comment-delete-button:hover {
+.comment-edit-button:hover,
+.comment-edit-button:focus-visible,
+.comment-delete-button:hover,
+.comment-delete-button:focus-visible {
   color: var(--accent);
+}
+.comment-edit-form {
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+}
+.comment-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .comment-form {
   margin-top: 24px;

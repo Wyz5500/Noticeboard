@@ -7,6 +7,7 @@ import {
   Headers,
   HttpCode,
   Param,
+  Patch,
   Post,
 } from '@nestjs/common';
 import {
@@ -29,6 +30,7 @@ import { ActOnTask } from '../application/use-cases/act-on-task.js';
 import { AddTaskComment } from '../application/use-cases/add-task-comment.js';
 import { CreateTask } from '../application/use-cases/create-task.js';
 import { DeleteTaskComment } from '../application/use-cases/delete-task-comment.js';
+import { EditTaskComment } from '../application/use-cases/edit-task-comment.js';
 import { GetTask } from '../application/use-cases/get-task.js';
 import { ListTasks } from '../application/use-cases/list-tasks.js';
 import { RenewExpiredTask } from '../application/use-cases/renew-expired-task.js';
@@ -36,6 +38,7 @@ import { ActTaskDto } from './dto/act-task.dto.js';
 import {
   AddTaskCommentDto,
   DeleteTaskCommentDto,
+  EditTaskCommentDto,
 } from './dto/comment-task.dto.js';
 import { CreateTaskDto } from './dto/create-task.dto.js';
 import { RenewExpiredTaskDto } from './dto/renew-expired-task.dto.js';
@@ -51,6 +54,7 @@ export class TasksController {
     private readonly createTask: CreateTask,
     private readonly actOnTask: ActOnTask,
     private readonly addTaskComment: AddTaskComment,
+    private readonly editTaskComment: EditTaskComment,
     private readonly deleteTaskComment: DeleteTaskComment,
     private readonly renewExpiredTask: RenewExpiredTask,
   ) {}
@@ -122,6 +126,35 @@ export class TasksController {
       await this.addTaskComment.execute(
         actorId,
         taskId,
+        body.content,
+        body.expectedVersion,
+      ),
+    );
+  }
+
+  /** Appends one optimistic comment revision and returns the latest projection. */
+  @Patch(':taskId/comments/:commentId')
+  @HttpCode(200)
+  @RequirePermission('tasks.view')
+  @ApiSecurity('demo-user')
+  @ApiHeader({ name: 'X-Demo-User-Id', required: true })
+  @ApiOkResponse({ type: TaskResponseDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiNotFoundResponse({ type: ApiErrorResponseDto })
+  @ApiConflictResponse({ type: ApiErrorResponseDto })
+  async editComment(
+    @Headers('x-demo-user-id') actorId: string,
+    @Param('taskId') taskId: string,
+    @Param('commentId') commentId: string,
+    @Body() body: EditTaskCommentDto,
+  ): Promise<TaskResponseDto> {
+    return toTaskResponse(
+      await this.editTaskComment.execute(
+        actorId,
+        taskId,
+        commentId,
         body.content,
         body.expectedVersion,
       ),

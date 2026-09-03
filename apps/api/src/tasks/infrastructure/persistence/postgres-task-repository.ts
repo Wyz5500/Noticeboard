@@ -52,6 +52,9 @@ function eventRows(
     if (event.action === 'comment_created') {
       row.commentId = event.commentId;
       row.content = event.content;
+    } else if (event.action === 'comment_edited') {
+      row.targetCommentId = event.targetCommentId;
+      row.content = event.content;
     } else if (event.action === 'comment_deleted') {
       row.targetCommentId = event.targetCommentId;
     } else {
