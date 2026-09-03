@@ -1,5 +1,6 @@
 # Local Codex hooks and runtime configuration
 /.codex/
+/.claude/worktrees/
 /.worktrees/
 /coverage/
 /dist/

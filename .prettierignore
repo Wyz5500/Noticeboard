@@ -5,6 +5,7 @@ playwright-report/
 test-results/
 .agents/
 .claude/skills/
+.claude/worktrees/
 .worktrees/
 package-lock.json
 tests/e2e/__snapshots__/

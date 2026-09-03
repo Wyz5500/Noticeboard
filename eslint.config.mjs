@@ -13,6 +13,7 @@ export default tseslint.config(
       'test-results/**',
       '.agents/**',
       '.claude/skills/**',
+      '.claude/worktrees/**',
       '.worktrees/**',
     ],
   },
