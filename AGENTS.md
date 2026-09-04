@@ -13,11 +13,22 @@
 - 需求若改变既有架构决策，必须同步更新 `docs/architecture.md` 和相应验证，不得静默改变架构。
 - `npm run architecture` 是架构边界的可执行门禁；不得削弱、绕过或针对性规避检查器来容纳违规实现。
 
+## 产品与客户端方向
+
+- 项目采用 API 核心、CLI-first、Web maintenance-only 的长期方向。CLI 将成为主要交互入口；未来 TUI 与可能独立发布的 SDK 复用同一 HTTP SDK。尚未实现的 CLI、SDK、静态 OpenAPI artifact、generated transport 和 TUI 必须在文档中明确标为目标状态，不得写成当前可运行能力。
+- CLI、TUI 与 SDK 只能通过版本化 HTTP/OpenAPI 使用业务能力，不得导入 API 的 Domain、Application、Nest Module、DTO、ORM、数据库代码或 Feature `public/`。Feature `public/` 只属于服务端模块化单体内部合同，不是客户端公共 API。
+- 目标客户端依赖方向固定为 OpenAPI artifact → internal generated transport → handwritten HTTP SDK → CLI / TUI。CLI 与 TUI 只能导入 SDK public 入口，禁止直接导入 generated/internal 子路径；Web 继续使用现有手写 `ApiClient`，不得导入 SDK。
+- 第一阶段不引入 npm workspaces，只交付一个内部/私有 CLI npm 包；SDK 先形成严格逻辑边界并 bundle 到 CLI。只有 SDK 需要独立发布或 CLI/TUI 成为两个真实消费者时，才重新评估 workspace 化。
+- Web 冻结后只接受安全、浏览器兼容、无障碍、受支持 HTTP API 主版本的兼容与迁移、依赖/构建维护和明确生产故障修复。API major 迁移只能进行保持 Web 继续受支持所需的最小修改，不得借机新增 Web 产品功能；不得为 CLI 新功能同步新增 Web 功能，也不得仅为代码复用迁移现有 Web ApiClient、HTTP 类型、状态层、DOM 或视觉系统。
+- CLI profile 配置必须始终保持 `currentProfile` 指向现存 profile；禁止直接删除当前激活 profile，用户必须先显式切换到另一个 profile。所有 profile 配置变更必须通过一次原子替换维持该不变量，不得留下悬空引用或隐式切换当前 profile。
+- Generated transport 只能从 tracked OpenAPI artifact 生成，不得手改。格式、注释和架构门禁应显式识别生成物，而不是向生成代码添加人工补丁或通过 re-export 暴露内部符号。
+- npm package publish、包版本、包名、registry 和 provenance 属于独立外部发布动作，必须获得当前任务中的明确授权。现有 `npm run release` 永远表示服务器候选合并与永久部署，不得复用为 npm publish。
+
 ## 数据与安全硬约束
 
 - 除非任务明确改变架构范围，不得擅自引入 SQLite、Redis、CQRS、Outbox、Event Sourcing、Helm 或正式认证等重大技术。
 - `X-Demo-User-Id`、demo 路由、seed/reset 均为 demo-only，不得视为正式认证或生产安全机制。浏览器只保存当前演示身份和视觉偏好，不保存任务或秘密。
-- OpenAPI 是唯一 HTTP 字段契约；改变字段、枚举或状态码时，必须先更新失败测试和 OpenAPI 描述。
+- OpenAPI 是唯一 HTTP 字段契约；改变字段、枚举、状态码、错误语义、默认排序或身份头行为时，必须先更新失败测试和 OpenAPI 描述。静态 v1 artifact 建立后，还必须同步重新生成 artifact 与 generated transport，并通过漂移和兼容检查；不得手工修改生成结果。
 
 ## 环境与验证前置条件
 
@@ -47,6 +58,7 @@
 
 - Git 提交日志必须使用中文书写。
 - 领域/前端规则进单元测试；PostgreSQL 语义进仓储契约；HTTP/DTO/guard/OpenAPI/健康进 API 测试；跨页面交互进 Playwright 行为测试；外观进零像素视觉测试。
+- 客户端边界落地后，SDK transport/façade、错误映射和 public exports 进 SDK 单元/契约测试；CLI 参数、profile 优先级、stdout/stderr、JSON 信封、退出码、TTY 确认和乐观并发进 CLI 测试，并使用真实宿主机 API 做最小 HTTP smoke。npm 包必须验证 `files` 白名单、安装后的 `bin --help` 和不包含服务器/Web 源码或测试 fixture。
 - 视觉验证只检查“瑞士国际”主题；其桌面端与移动端截图作为唯一视觉基准。其他主题按类似于 Mod 的定位处理，不纳入视觉回归截图检查，但仍须通过主题注册、令牌、类型与行为质量检查。
-- 主题契约见 `style-configs/README.md`，架构决策见 `docs/architecture.md`，运行方式见 `README.md`。
+- 主题契约见 `style-configs/README.md`，架构决策见 `docs/architecture.md`，CLI 目标合同见 `docs/cli.md`，HTTP 兼容政策见 `docs/api-compatibility.md`，当前运行方式见 `README.md`。
 - 项目完整验证命令为 `npm run verify`，并执行 `git diff --check`。最终候选额外使用 `npm run verify -- --final`；永久部署验证只能在候选合并回 primary `main` 后由 release 流程立即执行。

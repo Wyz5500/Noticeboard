@@ -1,6 +1,14 @@
 # 告示牌 Noticeboard
 
-告示牌（Noticeboard）是一个由 NestJS + Fastify 提供 API 和静态页面、以 PostgreSQL 为任务权威数据源的模块化单体。原生 TypeScript 前端保留原型的中文文案、hash 路由、无障碍契约和十套视觉主题。
+告示牌（Noticeboard）当前是一个由 NestJS + Fastify 提供 API 和静态页面、以 PostgreSQL 为任务权威数据源的模块化单体。原生 TypeScript Web 保留中文文案、hash 路由、无障碍契约和十套视觉主题。
+
+## 产品方向与当前状态
+
+项目后续采用 **API 核心、CLI-first、Web maintenance-only** 的方向：CLI 将成为主要交互入口，未来 TUI 与可能独立发布的 SDK 通过同一版本化 HTTP SDK 使用 `/api/v1`；现有 Web 继续运行和维护，但不再承接常规产品功能开发。
+
+CLI、SDK、提交到 Git 的静态 OpenAPI artifact、generated transport 和 TUI 目前尚未实现。本 README 中的命令仍只描述当前可运行的 API/Web、数据库、测试和部署入口；目标 CLI 合同见 [`docs/cli.md`](docs/cli.md)，API v1 兼容政策见 [`docs/api-compatibility.md`](docs/api-compatibility.md)，完整依赖边界见 [`docs/architecture.md`](docs/architecture.md)。
+
+第一阶段计划只交付一个内部/私有 CLI npm 包，SDK 先作为 CLI 内部的严格逻辑边界，不引入 npm workspaces，也不单独发布 SDK。npm 包名在发布前另行确定，可执行文件暂定为 `noticeboard`。
 
 ## 快速开始
 
@@ -98,6 +106,8 @@ release 会执行以下步骤：
 
 release 不会自动 fetch、push、reset、force push、删除分支或执行数据库 migration revert。补偿部署仍失败时会停止自动操作并保留现场。数据库 migration 必须兼容上一应用版本；破坏性 migration 需要单独发布方案。发布成功后，只有获得明确授权才另行 push `main`。
 
+这里的 `npm run release` 只表示服务器候选合并、永久部署与失败补偿，不执行 npm version、tag、changelog、CLI/SDK publish 或 registry 登录。未来客户端 npm publish 必须使用独立入口、独立验证，并再次获得明确授权。
+
 linked worktree 中禁止 `deploy`、`release` 及其 `--dry-run`。这些 Git 和部署行为也必须获得当前任务中的明确授权。
 
 ## 演示行为与数据
@@ -129,7 +139,7 @@ npm run test:visual                   # 宿主机桌面/移动零像素视觉测
 npm run verify                        # 宿主机完整交付门禁
 npm run verify -- --final             # 为 clean 候选提交记录 verified ref
 npm run deploy                        # 仅从 primary clean main 部署当前版本
-npm run release -- ...                # 合并候选、部署、失败 revert 与补偿部署
+npm run release -- ...                # 合并候选、部署、失败 revert 与补偿部署；不发布 npm 包
 ```
 
 ## 项目结构
@@ -142,8 +152,20 @@ npm run release -- ...                # 合并候选、部署、失败 revert �
 - `scripts/local-app.mjs`、`scripts/run-local.mjs`：宿主机应用进程与开发入口。
 - `scripts/verify.mjs`、`scripts/run-playwright.mjs`：宿主机验证与浏览器编排。
 - `scripts/deploy.mjs`、`scripts/release.mjs`：main-only 永久部署和 release 事务。
-- `docs/architecture.md`：架构决策、边界和事务设计。
+- `docs/architecture.md`：当前架构、CLI-first 目标、依赖边界和事务设计。
+- `docs/cli.md`：尚未实现的 CLI v1 命令、配置、输出、退出码和并发目标合同。
+- `docs/api-compatibility.md`：API v1、OpenAPI artifact、SemVer、兼容变化与迁移政策。
 - `Dockerfile`、`compose.deploy.yaml`：永久部署；`compose.yaml`：仅本地隔离 PostgreSQL。
+
+目标客户端结构尚未创建；后续将依次建立 `openapi/v1`、SDK 逻辑边界和 `apps/cli`。这些路径当前只是架构目标，不是可用源码入口。首个 CLI 版本稳定后，只有在 SDK 需要独立发布或 TUI 成为第二个真实消费者时才评估 npm workspaces。
+
+## 后续客户端阶段
+
+1. 先把管理员 restore 的运行时、OpenAPI 与测试统一为 HTTP 200，再建立确定性生成的 OpenAPI v1 artifact、稳定 operationId 和漂移/兼容门禁。
+2. 从 tracked artifact 生成 internal transport，并由手写 HTTP SDK 隔离生成器实现、错误映射和认证注入。
+3. 交付 profile、demo identity、`task list/get` 和稳定 `--json`/退出码的只读 CLI。
+4. 加入任务创建、动作、续期和评论写入；未显式提供 expected version 时只预读一次，409 后不自动重放。
+5. SDK 与 CLI 合同稳定后再评估管理资源、独立 SDK 发布、workspaces 和 TUI。
 
 ## 健康与关闭
 
