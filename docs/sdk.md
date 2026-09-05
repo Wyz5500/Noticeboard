@@ -1,6 +1,6 @@
 # HTTP SDK
 
-当前 SDK 支持 Node 24.x，位于 `apps/cli/src/sdk`，没有独立 npm 包。唯一源码入口是 `index.ts`，独立构建入口为 `dist/sdk/index.js`。CLI 与 profile 已实现并通过该入口访问 HTTP；SDK/CLI 支持任务读取、创建、生命周期、续期、评论增改删和管理资源读取。registry 发布仍未实现。
+当前 SDK 支持 Node 24.x，位于 `apps/cli/src/sdk`，没有独立 npm 包。唯一源码入口是 `index.ts`，独立构建入口为 `dist/sdk/index.js`。CLI 与 profile 已实现并通过该入口访问 HTTP；SDK/CLI 支持任务读取、创建、生命周期、续期、评论增改删和管理资源读写。registry 发布仍未实现。
 
 ## 构建与使用
 
@@ -55,7 +55,7 @@ console.log(overview.users, overview.roles, overview.permissions);
 
 SDK 根入口新增手写 `AdminOverview`、`AdminUser`、`AdminRole` 和 `AdminPermission` 类型，字段对应 tracked OpenAPI 的管理响应，权限码复用现有 `Permission`。全部数组保持服务器顺序，包含已逻辑删除的用户和角色；`active`、`builtin`、`deletedAt` 和 `updatedAt` 原样保留，日期为字符串。校验完整 overview 的所有已知字段及嵌套成员，忽略新增未知字段。取消、401/403、网络和协议错误沿用公共请求合同；不缓存或重试。
 
-### 写操作
+### 任务与评论写操作
 
 全部方法返回 `Promise<Task>`，最后一个 `options?: RequestOptions` 与读取共享身份和取消规则。
 
@@ -70,9 +70,24 @@ SDK 根入口新增手写 `AdminOverview`、`AdminUser`、`AdminRole` 和 `Admin
 
 `TaskAction` 为 `accept | complete | approve | reopen | close`；`TaskRecoveryStrategy` 为 `preserve_status | reopened`。这些类型均从 SDK 根入口导出，字段与 tracked OpenAPI 对齐；不继承或引用 generated 声明。
 
-SDK 要求调用者显式提供 `expectedVersion`，不预读、不重试、不隐藏冲突；业务输入校验与权限仍由服务器负责。任务创建只接受 HTTP 201，其余写操作只接受 200，全部复用任务响应校验。评论删除按既有 HTTP 契约发送包含版本的 JSON 请求体，并返回完整任务及已脱敏的 tombstone。
+SDK 要求调用者显式提供 `expectedVersion`，不预读、不重试、不隐藏冲突；业务输入校验与权限仍由服务器负责。任务创建只接受 HTTP 201，其余任务/评论写操作只接受 200，全部复用任务响应校验。评论删除按既有 HTTP 契约发送包含版本的 JSON 请求体，并返回完整任务及已脱敏的 tombstone。
 
 写入发生 network 或 protocol 失败时可能已经提交，调用者应重新读取服务器状态核对；不要直接重复任务创建、动作或评论操作。
+
+### 管理写入
+
+`admin.users` 与 `admin.roles` 分别提供 `create(input, options?)`、`update(id, input, options?)`、`delete(id, options?)`、`restore(id, options?)`。用户方法返回 `Promise<AdminUser>`，角色方法返回 `Promise<AdminRole>`；两类删除均返回 `Promise<void>`。最后一个参数为 `RequestOptions`，复用身份注入与取消合同。
+
+| 手写输入类型           | 字段                                           |
+| ---------------------- | ---------------------------------------------- |
+| `CreateAdminUserInput` | 必填 `name`、`roleId`                          |
+| `UpdateAdminUserInput` | 可选 `name`、`roleId`，省略字段不提交          |
+| `CreateAdminRoleInput` | 必填 `name`，可选 `permissions: Permission[]`  |
+| `UpdateAdminRoleInput` | 必填 `name` 与完整 `permissions: Permission[]` |
+
+四种输入类型从 SDK 根入口导出。创建接受 HTTP 201，更新和恢复接受 200，完整校验对应管理资源并忽略新增字段；删除接受 204 空响应，不解析资源。删除与恢复没有请求体。管理 API 没有 `expectedVersion`，SDK 不添加版本、不预读、不重试；并发编辑可能覆盖其他调用方的修改。角色更新是完整权限替换，空数组表示清空；创建省略权限使用服务器的空权限默认值。
+
+全部管理写入要求 `system.manage`，不自动选择管理员或在客户端预检业务约束。网络或协议失败可能已经提交，应通过 overview 核对用户/角色后再决定操作。
 
 ### 请求配置
 
@@ -99,7 +114,7 @@ SDK 完整校验读取及全部写操作响应的已知结构：字段类型、�
 | `NoticeboardNetworkError`  | `network`  | `reason: 'network' \| 'aborted'`、原始 `cause`                              |
 | `NoticeboardProtocolError` | `protocol` | 可取得的 HTTP `status`、诊断 `message`、可选 `cause`                        |
 
-合法 HTTP 4xx/5xx 错误信封按 API 错误处理，包括 generated 状态联合未声明的 429/5xx 和未知服务器错误码。非法 JSON、空成功正文、结构错误、非法错误信封和意外成功/重定向状态属于协议错误；例如 HTML 503 是带 `status: 503` 的协议错误。连接和响应体读取失败属于网络错误；取消时保留调用方取消 reason 为 cause。SDK 不定义 CLI 退出码。
+合法 HTTP 4xx/5xx 错误信封按 API 错误处理，包括 generated 状态联合未声明的 429/5xx 和未知服务器错误码。非法 JSON、需要资源时的空成功正文、结构错误、非法错误信封和意外成功/重定向状态属于协议错误；例如 HTML 503 是带 `status: 503` 的协议错误。连接和响应体读取失败属于网络错误；取消时保留调用方取消 reason 为 cause。SDK 不定义 CLI 退出码。
 
 无效 base URL 在构造时抛出 `TypeError`。请求头提供者或无效请求头参数的异常属于调用方配置问题，不伪装成远端 API 或网络错误。协议错误消息不包含原始响应正文。
 
@@ -107,4 +122,4 @@ SDK 完整校验读取及全部写操作响应的已知结构：字段类型、�
 
 `sdk:build` 通过现有 TypeScript 编译 ESM 与 `.d.ts`，不引入 runtime 依赖、workspace 或发布 manifest。generated transport 仍只允许从 tracked artifact 生成。SDK 构建包含内部 transport，但服务器生产镜像只复制 `dist/api` 和 `dist/web`。
 
-CLI 已基于该入口实现 profile、demo identity、任务读取与全部任务/评论写命令、管理总览及用户/角色/权限列表、JSON 输出与退出码；配置、筛选、文件/stdin、删除确认、版本预读、30 秒超时和终端输出均由 CLI 负责。管理写入、管理详情与筛选、reset、独立 SDK 发布与 TUI 仍未实现。
+CLI 已基于该入口实现 profile、demo identity、任务读取与全部任务/评论写命令、管理总览及用户/角色/权限列表、JSON 输出与退出码；配置、筛选、文件/stdin、删除确认、版本预读、30 秒超时和终端输出均由 CLI 负责。管理详情、筛选与写入均已实现；demo reset、独立 SDK 发布与 TUI 仍未实现。

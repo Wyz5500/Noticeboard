@@ -34,7 +34,8 @@ const permission = enumeration([
   'demo.reset',
 ]);
 
-const adminUser = object<AdminUser>({
+/** Validates the complete user resource for overview and write responses. */
+export const decodeAdminUser = object<AdminUser>({
   id: string,
   username: string,
   name: string,
@@ -46,7 +47,8 @@ const adminUser = object<AdminUser>({
   updatedAt: string,
 });
 
-const adminRole = object<AdminRole>({
+/** Validates the complete role resource, including closed permission codes. */
+export const decodeAdminRole = object<AdminRole>({
   id: string,
   code: string,
   name: string,
@@ -66,8 +68,8 @@ const adminPermission = object<AdminPermission>({
 /** Validates all management collections without inferring permissions or filtering deleted entries. */
 export const decodeAdminOverview: Decoder<AdminOverview> =
   object<AdminOverview>({
-    users: array(adminUser),
-    roles: array(adminRole),
+    users: array(decodeAdminUser),
+    roles: array(decodeAdminRole),
     permissions: array(adminPermission),
   });
 

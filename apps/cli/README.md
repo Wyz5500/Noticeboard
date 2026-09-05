@@ -35,7 +35,21 @@ JSON `data` 为完整 `{users, roles, permissions}`、对应数组或单个完�
 `user get <user-id>`、`role get <role-id>` 和 `permission get <permission-code>` 按 ID/code 区分大小写精确匹配，支持已删除记录，找不到返回本地 usage/66。
 三类列表支持 `--search <text>`，用户和角色另支持 `--active true|false|all` 与 `--deleted true|false|all`，默认均为 `all`，条件按 AND 组合；停用与删除分别判断。
 搜索词去除首尾空白并以 zh-CN 小写化包含匹配，全空白不筛选。用户搜索 ID、用户名、姓名及角色 ID/code/名称；角色搜索 ID、code、名称及权限码；权限搜索 code、名称、描述。空列表返回成功 `[]`，详情不接受筛选参数。
-管理写入尚未实现。
+管理写入已实现，要求 `system.manage`：
+
+```text
+noticeboard user create --name <text> --role-id <id>
+noticeboard user update <id> [--name <text>] [--role-id <id>]
+noticeboard user delete <id> [--yes]
+noticeboard user restore <id>
+noticeboard role create --name <text> [--permissions <code,code>]
+noticeboard role update <id> --name <text> (--permissions <code,code> | --clear-permissions)
+noticeboard role delete <id> [--yes]
+noticeboard role restore <id>
+```
+
+用户更新至少提供一个字段；角色更新必须显式提交名称和完整权限，创建省略权限为空。权限按逗号分隔并逐项去除首尾空白，拒绝空项、重复项和未知码，清空只用 `--clear-permissions`。管理写入仅请求一次，不预读、不重试，不接受版本参数。删除为软删除，在非 TTY 或 JSON 模式必须提供 `--yes`；TTY 请求确认。其余操作直接执行。
+成功 JSON data 为完整用户/角色，删除为 `{ok:true,id}`，无成功 meta。409 保留业务错误并提示对应 get；网络/协议失败可能已提交，创建通过 list/get 核对，其余通过 get 核对。demo reset 仍未实现。
 
 `X-Demo-User-Id` 仅用于 demo 身份选择。正式认证及 TUI 尚未实现。
 

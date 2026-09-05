@@ -7,6 +7,10 @@ export {
 } from './errors.js';
 export type { ApiErrorMetadata } from './errors.js';
 export type {
+  CreateAdminUserInput,
+  UpdateAdminUserInput,
+  CreateAdminRoleInput,
+  UpdateAdminRoleInput,
   CreateTaskInput,
   ActTaskInput,
   RenewTaskInput,

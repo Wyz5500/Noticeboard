@@ -18,6 +18,10 @@ import { humanResult, safeText } from './output.js';
 import { createNoticeboardClient } from './sdk/index.js';
 import { filterTasks } from './tasks.js';
 import { isManagementCommand, selectManagementResult } from './management.js';
+import {
+  isManagementWriteCommand,
+  managementWriteCommand,
+} from './management-writes.js';
 import { isWriteCommand, writeCommand } from './write-commands.js';
 export interface CliContext {
   env: NodeJS.ProcessEnv;
@@ -46,13 +50,15 @@ export async function runCli(
     }
     const path = configPath(context.env);
     const config = await readConfig(path);
-    const result = isWriteCommand(command.name)
-      ? await writeCommand(command, config, context)
-      : {
-          data: command.name.startsWith('profile ')
-            ? await profileCommand(command, config, path, context)
-            : await remoteCommand(command, config, path, context),
-        };
+    const result = isManagementWriteCommand(command.name)
+      ? await managementWriteCommand(command, config, context)
+      : isWriteCommand(command.name)
+        ? await writeCommand(command, config, context)
+        : {
+            data: command.name.startsWith('profile ')
+              ? await profileCommand(command, config, path, context)
+              : await remoteCommand(command, config, path, context),
+          };
     context.stdout(
       json
         ? `${JSON.stringify(result)}\n`

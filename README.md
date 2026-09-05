@@ -215,11 +215,13 @@ Generated operations 接收 `RequestInit` 与可选的 `fetchFn`；当前手写 
 
 ## 后续客户端阶段
 
-当前已完成管理员 restore HTTP 200 对齐、确定性 OpenAPI v1 artifact、稳定 operationId、各项漂移/兼容门禁，以及 HTTP SDK 和 CLI（profile、demo identity、任务读取、创建、动作、续期、评论增改删、JSON 与退出码）。写操作未显式提供 expected version 时 CLI 只预读一次，409 后不自动重放；正文可由文件/stdin 输入，评论删除需要确认，结果不确定时提示核对服务器状态。
+当前已完成管理员 restore HTTP 200 对齐、确定性 OpenAPI v1 artifact、稳定 operationId、各项漂移/兼容门禁，以及 HTTP SDK 和 CLI（profile、demo identity、任务读取、创建、动作、续期、评论增改删、JSON 与退出码）。任务/评论写操作未显式提供 expected version 时 CLI 只预读一次，409 后不自动重放；正文可由文件/stdin 输入，评论删除需要确认，结果不确定时提示核对服务器状态。
 
 管理资源读取也已实现：SDK `admin.overview` 与 CLI `admin overview`、`user list/get`、`role list/get`、`permission list/get` 均复用现有管理 overview API。每条命令请求一次，完整保留服务器顺序及已逻辑删除记录；服务器要求 `system.manage`，可显式使用 `--user noticeboard-admin`。只读命令不修改 profile，JSON 返回完整总览、对应数组或单个详情。列表支持 `--search`，用户/角色另支持 `--active true|false|all` 和 `--deleted true|false|all`，默认均为 `all`；筛选按 AND 组合。详情按 ID 或权限 code 精确匹配，找不到返回 66。
 
-下一阶段在 SDK 与 CLI 合同稳定后再评估管理写入、独立 SDK 发布、workspaces 和 TUI；registry 发布仍需独立授权。
+管理写入已实现：`user` 与 `role` 均支持 `create/update/delete/restore`，通过 SDK 调用已有管理 API。角色更新显式提供名称与完整权限，清空使用 `--clear-permissions`；删除在非 TTY 或 JSON 模式必须提供 `--yes`。每条命令仅写一次，不预读、不重试，不提供版本参数；管理写入成功无 meta，删除返回 `{data:{ok:true,id}}`。精确参数见 `docs/cli.md`，业务权限仍由服务器判定。demo reset 仍未实现。
+
+下一阶段在 SDK 与 CLI 合同稳定后再评估独立 SDK 发布、workspaces 和 TUI；registry 发布仍需独立授权。
 
 ## 健康与关闭
 

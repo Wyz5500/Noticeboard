@@ -4,6 +4,10 @@ import { CliError } from './errors.js';
 import { createNoticeboardClient, type TaskStatus } from './sdk/index.js';
 
 const OPTIONS = {
+  name: { type: 'string' },
+  'role-id': { type: 'string' },
+  permissions: { type: 'string' },
+  'clear-permissions': { type: 'boolean' },
   profile: { type: 'string' },
   'base-url': { type: 'string' },
   user: { type: 'string' },
@@ -30,6 +34,18 @@ const COMMANDS: Record<
   string,
   { min: number; max: number; options?: string[] }
 > = {
+  'user create': { min: 0, max: 0, options: ['name', 'role-id'] },
+  'user update': { min: 1, max: 1, options: ['name', 'role-id'] },
+  'user delete': { min: 1, max: 1, options: ['yes'] },
+  'user restore': { min: 1, max: 1 },
+  'role create': { min: 0, max: 0, options: ['name', 'permissions'] },
+  'role update': {
+    min: 1,
+    max: 1,
+    options: ['name', 'permissions', 'clear-permissions'],
+  },
+  'role delete': { min: 1, max: 1, options: ['yes'] },
+  'role restore': { min: 1, max: 1 },
   'admin overview': { min: 0, max: 0 },
   'user list': { min: 0, max: 0, options: ['search', 'active', 'deleted'] },
   'role list': { min: 0, max: 0, options: ['search', 'active', 'deleted'] },
@@ -218,6 +234,14 @@ export function parseCommand(args: string[]): Command {
 export function helpText(name: string): string {
   const resource = name.split(' ')[0];
   const lines = [
+    'user create --name <text> --role-id <id>',
+    'user update <id> [--name <text>] [--role-id <id>]',
+    'user delete <id> [--yes]',
+    'user restore <id>',
+    'role create --name <text> [--permissions <code,code>]',
+    'role update <id> --name <text> (--permissions <code,code> | --clear-permissions)',
+    'role delete <id> [--yes]',
+    'role restore <id>',
     'admin overview',
     'user list [--search <text>] [--active true|false|all] [--deleted true|false|all]',
     'user get <user-id>',
@@ -242,5 +266,5 @@ export function helpText(name: string): string {
     'comment edit <task-id> <comment-id> (--content <text> | --content-file <path|->) [--expected-version <number>]',
     'comment delete <task-id> <comment-id> [--expected-version <number>] [--yes]',
   ].filter((line) => !resource || line.startsWith(`${resource} `));
-  return `用法：noticeboard <资源> <命令> [选项]\n\n${lines.map((line) => `  noticeboard ${line}`).join('\n')}\n\n公共选项：--profile <name> --base-url <url> --user <user-id> --json --help\n状态：${STATUSES.join(', ')}\n类型：exploration, collection, escort, bounty, building\n动作：accept, complete, approve, reopen, close\n续期策略：preserve_status, reopened\n写操作不重试；省略版本时只预读一次。评论删除在非 TTY 或 JSON 模式必须提供 --yes。\n管理筛选默认保留全部记录，条件按 AND 组合；详情按 ID 或权限代码精确匹配。\nHTTP 客户端；身份为 demo-only。\n`;
+  return `用法：noticeboard <资源> <命令> [选项]\n\n${lines.map((line) => `  noticeboard ${line}`).join('\n')}\n\n公共选项：--profile <name> --base-url <url> --user <user-id> --json --help\n状态：${STATUSES.join(', ')}\n类型：exploration, collection, escort, bounty, building\n动作：accept, complete, approve, reopen, close\n续期策略：preserve_status, reopened\n写操作不重试；任务与评论省略版本时只预读一次。评论及管理删除在非 TTY 或 JSON 模式必须提供 --yes。\n管理写入无版本参数且不预读；角色更新必须显式提交名称与完整权限，清空使用 --clear-permissions。用户更新至少提供一个字段。\n管理筛选默认保留全部记录，条件按 AND 组合；详情按 ID 或权限代码精确匹配。\nHTTP 客户端；身份为 demo-only。\n`;
 }
