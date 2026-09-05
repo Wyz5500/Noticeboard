@@ -2,9 +2,9 @@
 
 ## 产品方向与实施状态
 
-告示牌采用 **API 核心、CLI-first、Web maintenance-only** 的长期方向：版本化 HTTP API 是跨进程业务能力边界；CLI 将成为主要交互入口；未来 TUI 与可能独立发布的 SDK 复用同一 HTTP SDK。现有 Web 保留运行和维护，但不再承接常规产品功能开发。
+告示牌采用 **API 核心、CLI-first、Web maintenance-only** 的长期方向：版本化 HTTP API 是跨进程业务能力边界；近期开发重心是 CLI，TUI 暂缓；CLI 与未来 TUI 复用同一 HTTP SDK，独立 SDK 本地 npm 包已交付。服务端必须同时支持两类客户端所依赖的统一版本化 HTTP 合同，不按客户端种类分叉业务能力。现有 Web 保留运行和维护，但不再承接常规产品功能开发。
 
-本文同时描述当前架构与目标架构。tracked OpenAPI v1 artifact、稳定 operationId、服务端漂移检查、显式受支持基线兼容门禁、internal generated Fetch transport / artifact → generated 漂移门禁和手写 HTTP SDK 的读取与任务/评论及管理写操作已经实现。读写 CLI 与本地私有安装包也已实现。npm registry 发布和 TUI 仍属于尚未实现的目标合同，不能据此假定仓库中已经存在对应命令或发布包。
+本文同时描述当前架构与目标架构。tracked OpenAPI v1 artifact、稳定 operationId、服务端漂移检查、显式受支持基线兼容门禁、internal generated Fetch transport / artifact → generated 漂移门禁和手写 HTTP SDK 的读取与任务/评论及管理写操作已经实现。读写 CLI、独立 SDK 本地私有安装包及固定 Node 24 的用户目录 CLI 安装也已实现。npm registry 发布和 TUI 仍属于尚未实现的目标合同，不能据此假定仓库中已经存在对应命令或发布包。
 
 当前仍是模块化单体：唯一的 NestJS + Fastify 进程同时提供版本化 API、健康检查、运行时 OpenAPI 和编译后的静态页面。应用实例无状态，PostgreSQL 是服务器任务与时间线的权威数据源。现有架构不包含 SQLite、Redis、CQRS、Outbox、Event Sourcing、Helm 或正式认证。
 
@@ -132,9 +132,11 @@ v1 通常允许新增 endpoint、可选响应字段以及具有旧行为默认�
 
 ## SDK 当前能力与目标边界
 
-SDK 是传输客户端，不是服务器应用层的进程外镜像。第一阶段不独立发布 SDK，而是在仓库内形成可单独 typecheck、build 和 test 的逻辑边界，并 bundle 到唯一发布的 CLI npm 包；当 SDK 需要独立发布或 CLI/TUI 成为两个真实消费者时，再引入 npm workspaces。
+SDK 是传输客户端，不是服务器应用层的进程外镜像。当前分别交付 CLI 与独立 SDK 的本地 npm 包，均为 private: true 且无运行时 npm 依赖。评估后保留 SDK 源码布局与独立 typecheck/build/test 边界，CLI 继续 bundle SDK，不引入 workspaces；独立 registry 发布或 TUI 成为第二个真实应用消费者时再评估。
 
-当前 SDK 提供 `createNoticeboardClient`、`tasks.list/get/create/act/renew`、`comments.create/edit/delete`、`identities.list`、`admin.overview`、`admin.users` / `admin.roles` 管理写入和 `demo.reset`。唯一入口为 `apps/cli/src/sdk/index.ts`；通过 `sdk:typecheck`、`sdk:build` 和 `test:sdk` 独立检查、构建和测试，输出 `dist/sdk` ESM 与声明，尚无独立 npm 包。根 build 包含 SDK，verify 包含独立 SDK 类型检查，SDK 单元/构建合同与真实宿主机 HTTP smoke 分别进入 unit / API 门禁。服务器镜像仅复制 `dist/api` 与 `dist/web`。
+当前 SDK 提供 `createNoticeboardClient`、`tasks.list/get/create/act/renew`、`comments.create/edit/delete`、`identities.list`、`admin.overview`、`admin.users` / `admin.roles` 管理写入和 `demo.reset`。唯一入口为 `apps/cli/src/sdk/index.ts`；通过 `sdk:typecheck`、`sdk:build` 和 `test:sdk` 独立检查、构建和测试，输出 `dist/sdk` ESM、声明、独立 README 与 manifest。`noticeboard-sdk-local@0.0.0` 仅开放根 exports（types/import），internal/generated 子路径封闭；files 白名单仅包含编译后的 JS、声明和 README，npm 自动包含 manifest。根 build 包含 SDK，verify 包含独立 SDK 类型检查，SDK 单元/构建合同与真实宿主机 HTTP smoke 分别进入 unit / API 门禁。服务器镜像仅复制 `dist/api` 与 `dist/web`。
+
+SDK 构建由 `scripts/build-sdk.mjs` 在临时目录编译并补充包元数据，成功后替换输出，消除陈旧文件。`sdk:pack` / `cli:pack` 分别从独立临时构建生成 `dist/packages` 下的本地 tarball，不依赖共享 dist 的旧产物，不访问 registry。SDK 安装后的按包名导入、严格类型消费、子路径封闭及公共声明传递边界进入 unit 门禁；两个独立 SDK 实例和安装后的 CLI 对同一宿主机 API 验证共享状态、身份隔离及过期版本 409 不重放。该验证不等于真实 TUI 验收，TUI 与共享 profile 公共合同仍暂缓。
 
 SDK 依赖和行为：
 
@@ -161,7 +163,7 @@ CLI 是远程服务端客户端，只调用 HTTP SDK，不直接访问 PostgreSQ
 
 CLI 命令语法与逐命令帮助共用客户端命令目录；所有命令支持 `--help` / `-h`。内置 `man [资源 [命令]]` 从同一目录构建离线中文使用手册，随 CLI bundle 安装；在配置加载和业务分发之前返回，不读取配置、正文或 stdin，不调用 HTTP、系统 man 或分页器。帮助 JSON 为 `{data:{help:string}}`，手册为 `{data:{manual:string}}`。
 
-用户与角色创建、更新、软删除和恢复已实现；demo reset 已实现；TUI 尚未实现。`task list` 可基于现有完整任务列表在客户端实现 `--mine`、`--status` 和 `--search`，不得因此复制或改变 `/api/v1/tasks` 的 wire contract。
+用户与角色创建、更新、软删除和恢复已实现；demo reset 已实现；TUI 尚未实现。`task list` 已基于现有完整任务列表在客户端实现 `--mine`、`--status` 和 `--search`，不得因此复制或改变 `/api/v1/tasks` 的 wire contract。
 
 管理读取只通过 SDK public `admin.overview(options?: RequestOptions): Promise<AdminOverview>` 调用已有 generated `getAdminOverview`，HTTP 200 返回完整用户、角色和权限目录。手写 `AdminOverview`、`AdminUser`、`AdminRole`、`AdminPermission` 从 SDK 根入口导出，权限码复用 `Permission`；字段、nullable、闭合枚举和嵌套数组按 tracked OpenAPI 校验，忽略新增未知字段。保留服务器顺序、逻辑删除记录和字符串日期，不重算状态或权限。
 
@@ -190,6 +192,8 @@ CLI 进程入口处理异步输出流错误：stdout 的 EPIPE 视为下游主�
 全部操作必须可由参数或 stdin 非交互执行。只有危险操作可在 TTY 中请求确认并接受 `--yes` 跳过；非 TTY 环境缺少 `--yes` 时必须拒绝执行，不能因无法确认而默认继续。默认格式不能因为 stdout 被管道连接而自动切换为 JSON。
 
 CLI npm 包名在公开发布前另行确定；可执行文件为 `noticeboard`。首版只通过内部或私有方式发布。包内容必须使用白名单，不能携带 API/Web 源码、数据库代码、测试 fixture 或仓库配置。
+
+`cli:install:local` 在 macOS/Linux 以当前 Node 24 的配套 npm 将本地 tarball 安装至用户专用 prefix，默认 `~/.local/share/noticeboard`，并创建 `~/.local/bin/noticeboard`。POSIX exec 启动入口固定 Node 绝对路径，使终端默认 Node 版本不影响 CLI；它不依赖源码或构建目录，不改变 profile，也不启动服务器。升级只替换自身安装与入口，拒绝覆盖无关内容；本地安装及卸载方式见 `docs/cli.md`。
 
 任务写操作与评论增改删均只调用 SDK public 入口。任务创建接受 201，其余任务/评论写操作接受 200，全部返回并校验完整 Task；DELETE 评论发送带 expectedVersion 的 JSON 请求体。写入输入类型独立手写并通过 generated 结构一致性及公共声明边界验证。
 
@@ -232,7 +236,7 @@ API major 迁移不得借机新增 Web 产品功能、迁移 generated transport
 
 标准 `npm run release` 在 primary `main` 校验候选 verified ref 后创建 no-ff merge commit，并立即执行永久服务器部署验证。失败补偿只允许对本次 release 创建且仍位于 HEAD 的 merge commit追加 revert commit，再从 revert 后源码尝试一次部署；不得改写 Git 历史、自动 push 或自动执行 migration revert。常规 migration 必须与上一应用版本向后兼容；破坏性或不可逆 migration 需要独立发布方案。
 
-未来 npm package publish 是与服务器 release 完全独立的外部发布动作，必须使用独立命令、版本、验证和授权，不得复用 `npm run release`。第一阶段只发布内部/私有 CLI 包，SDK 不独立发布。CLI 加入构建后，服务器镜像只能使用 server-only 产物，不得把客户端包、SDK generated 源码或 npm 发布资产无意复制到生产镜像。
+未来 npm package publish 是与服务器 release 完全独立的外部发布动作，必须使用独立命令、版本、验证和授权，不得复用 `npm run release`。当前仅交付 CLI 与独立 SDK 本地私有 tarball，均未发布 registry。CLI 加入构建后，服务器镜像只能使用 server-only 产物，不得把客户端包、SDK generated 源码或 npm 发布资产无意复制到生产镜像。
 
 ## 架构变更判定
 

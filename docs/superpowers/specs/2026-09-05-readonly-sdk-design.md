@@ -1,5 +1,7 @@
 # 只读 HTTP SDK 设计
 
+> 历史阶段设计：下文保留当时只读范围，后续 CLI、写操作和独立 SDK 本地包均已实现。当前能力以 `../../sdk.md`、`../../cli.md` 和 `../../architecture.md` 为准。
+
 用户已确认按 README 路线图先交付只读 SDK，并选择完整只读结构校验。实现沿现有 OpenAPI artifact → generated transport → handwritten SDK 方向推进；HTTP 字段、数据库、Web 和生成模板均无需改变。
 
 ## 已确认决策

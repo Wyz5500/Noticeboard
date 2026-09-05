@@ -1,6 +1,10 @@
 # Noticeboard CLI
 
-需要 Node 24.x。此包仅用于内部本地安装，尚未发布 registry。
+需要 Node 24.x。此包仅用于内部本地安装，尚未发布 registry，SDK 已 bundle 在内，无需额外安装。近期开发聚焦 CLI，TUI 暂缓；业务命令连接已有 API，帮助与手册可离线运行。
+
+可用 npm 11.x 执行 `npm install --global /绝对路径/noticeboard-cli-local-0.0.0.tgz` 后在任意目录运行 `noticeboard`。如果默认 Node 不是 24，请使用仓库的 `npm run cli:install:local` 创建固定 Node 24 的用户目录入口，完整安装、升级、卸载说明见仓库 `docs/cli.md`。
+
+更新源码后可在仓库执行 `sh scripts/update-cli.sh` 一键打包并更新，支持 macOS/Linux POSIX sh；自动查找 Node 24、验证 npm 11，保留 profile。构建依赖须事先准备，脚本不拉取源码或部署服务。
 
 ```bash
 noticeboard --help

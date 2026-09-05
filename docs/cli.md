@@ -1,6 +1,6 @@
 # CLI 当前能力与目标合同
 
-> **实施状态：任务、评论及管理资源读写 CLI 已实现。** 当前支持 profile、demo identity、任务读取、创建、生命周期、续期、评论增改删和管理总览、三类列表筛选与详情、用户和角色写入，保留 JSON 信封与稳定退出码，并提供可本地打包安装的私有 CLI。registry 发布和 TUI 仍为目标状态。
+> **实施状态：任务、评论及管理资源读写 CLI 已实现。** 当前支持 profile、demo identity、任务读取、创建、生命周期、续期、评论增改删和管理总览、三类列表筛选与详情、用户和角色写入，保留 JSON 信封与稳定退出码，并提供可本地打包安装的私有 CLI。registry 发布尚未实现，TUI 暂缓；近期开发重心为 CLI，服务端保持与未来 TUI 共用的版本化 HTTP 合同。
 
 CLI 只消费手写 SDK 公共入口的 `tasks`、`comments`、`identities`、`admin` 与 `demo`，使用合同见 [`sdk.md`](sdk.md)。`npm run cli:build` 生成 `dist/cli`，`npm run test:cli` 验证命令和本地安装包；真实宿主机 HTTP smoke 随完整 verify 运行。
 
@@ -8,11 +8,11 @@ CLI 只消费手写 SDK 公共入口的 `tasks`、`comments`、`identities`、`a
 
 CLI 是告示牌的主要目标交互入口，也是远程 HTTP 客户端。它只能通过手写 SDK 调用 `/api/v1`，不得直接访问 PostgreSQL、migration、Nest Module、服务器 Application/Domain、Feature `public/` 或 generated transport。
 
-第一阶段：
+当前交付：
 
 - 仅以内部或私有 npm 包交付，包名在发布前另行确认。
 - 可执行文件为 `noticeboard`；本地占位包名为 `noticeboard-cli-local`、版本为 `0.0.0`，标记 `private: true`，不代表 registry 发布版本。
-- SDK bundle 在 CLI 包内，不单独发布。
+- SDK 继续 bundle 在 CLI 包内，同时提供独立本地 SDK tarball；两者均未发布 registry。
 - 支持 Node.js 24.x。
 - 当前覆盖 profile、demo identity、任务读取及任务和评论写入，以及管理总览、用户、角色和权限的列表筛选与详情。用户与角色创建、更新、软删除、恢复及 demo reset 已实现；TUI 尚未实现。
 
@@ -247,6 +247,53 @@ API v1 当前一次返回完整任务数组，不提供分页、mine、状态或
 
 来自参数、环境变量和保存配置的有效请求身份统一通过 `Headers` 规范化；例如 `user-1` 在请求头、`identity current` 和 `task list --mine` 中均按 `user-1` 使用。读取时不改写保存的身份值；空白身份和控制字符仍按本地输入规则拒绝。
 
+## 本机独立安装与升级
+
+更新源码后，可用仓库内的一键脚本打包并更新 CLI：
+
+```bash
+sh scripts/update-cli.sh
+```
+
+脚本使用 POSIX sh，支持 macOS/Linux；也可以从任意目录用脚本的绝对路径调用。它自动选择 Node 24（依次为 `NOTICEBOARD_NODE` 绝对路径、PATH、`NVM_DIR`，后者默认 `~/.nvm`），验证 npm 11，打包当前源码后调用既有本机安装器。不会加载 nvm shell 脚本、修改 PATH 或默认 Node。默认查找所选 Node 的配套 npm，缺失时查找 PATH 中 npm 的真实路径；特殊布局可用 `NOTICEBOARD_NPM_CLI` 指定 npm-cli.js 绝对路径。运行时和安装路径均不绑定特定用户或 Node 小版本。
+
+支持 `--help`、`--prefix <专用目录>` 和 `--bin-dir <入口目录>`，相对目录按调用时的工作目录解析。构建失败立即停止，不安装旧 tarball；同版本号重新打包也会更新安装内容，profile 保持不变。脚本不拉取 Git、不安装仓库依赖、不发布 registry 或部署服务器；首次使用或依赖锁文件变化时，先在 Node 24/npm 11 环境运行 `npm ci`。Windows 用户可在 WSL 中使用此脚本，原生 Windows 请使用 npm 打包和全局安装方式。
+
+macOS/Linux 可使用固定 Node 24 的用户目录安装方式，不改变其他项目的默认 Node。构建与安装命令需要 Node 24.x、npm 11.x；先检查 `node --version` 和 `npm --version`，未加载正确运行时时可直接用已定位的 Node 24 绝对路径执行脚本。
+
+在仓库内准备本地包并安装：
+
+```bash
+npm run cli:pack
+npm run cli:install:local
+```
+
+`cli:pack` 从独立临时构建生成 `dist/packages/noticeboard-cli-local-0.0.0.tgz`，不发布 registry。安装脚本调用当前 Node 同目录配套 npm，以 `--offline --ignore-scripts` 安装至 `~/.local/share/noticeboard` 的专用全局 prefix，并创建 `~/.local/bin/noticeboard`。启动入口通过 POSIX `exec` 固定使用安装时 Node 24 的绝对路径，转发参数、信号和退出码，不依赖默认 `node`、源码仓库、构建目录或额外 SDK 安装。
+
+确保 `~/.local/bin` 位于终端 PATH；当前本机登录 shell 已配置该目录。新开终端后可以在任意目录使用：
+
+```bash
+noticeboard --help
+noticeboard man task create
+noticeboard profile set local --base-url http://127.0.0.1:3000
+noticeboard task list --json
+```
+
+上例地址指向已经运行的本机服务；连接开发实例时替换为宿主机应用公布的动态端口，连接远端时使用实际 URL。已有配置用户可创建新的 named profile，再显式 `profile use <名称>`；安装本身不修改任何 profile。帮助与手册可离线读取，业务命令需要可连接的 API；此安装不启动或管理服务器、PostgreSQL。
+
+可用 `npm run cli:install:local -- --tarball <本地tgz路径> --prefix <专用目录> --bin-dir <启动入口目录>` 自定义位置。安装器拒绝覆盖无关同名入口或非 Noticeboard 专用目录；不要把 prefix 指向现有通用 npm 全局目录。
+
+升级时重新执行打包和安装命令；安装器替换包及受管理入口，保留配置。tarball 可以另行复制归档，`npm run build` 会清理 `dist`，但不会影响已经安装的 CLI。若 Node 24 被升级或移除，使用新 Node 24 的绝对路径重新运行 `scripts/install-cli-local.mjs`，更新启动入口中的运行时路径。
+
+卸载（在 Node 24/npm 11 环境执行）：
+
+```bash
+npm uninstall --global --prefix "$HOME/.local/share/noticeboard" noticeboard-cli-local
+rm "$HOME/.local/bin/noticeboard"
+```
+
+仅删除自己安装的入口；使用自定义路径时替换上述路径。卸载保留 profile 配置以及 npm prefix 的空目录，不影响服务器数据。
+
 ## Demo 身份与未来认证
 
 当前 API 使用 `X-Demo-User-Id`，它只是身份选择，不是正式认证。SDK 负责把 CLI 解析出的 demo user ID 注入请求，服务器仍是身份与权限的权威判断者。
@@ -380,7 +427,7 @@ API 错误应尽量保留 status、path、timestamp 和 details，但未知字�
 
 ## 包与版本
 
-CLI package version 独立于 API v1、OpenAPI `info.version` 和未来 SDK version。以下变更通常需要 CLI major 或迁移窗口：
+CLI package version 独立于 API v1、OpenAPI `info.version` 和 SDK package version。以下变更通常需要 CLI major 或迁移窗口：
 
 - 删除或重命名命令、参数、环境变量或配置字段。
 - 改变默认 profile/身份解析优先级。
