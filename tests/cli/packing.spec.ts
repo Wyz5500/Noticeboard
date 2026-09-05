@@ -54,6 +54,21 @@ it('packs SDK and CLI and installs a CLI independent of the default Node and rep
     ];
     run(installArgs);
     run(installArgs);
+    const managedLauncher = readFileSync(join(bin, 'noticeboard'), 'utf8');
+    writeFileSync(
+      join(bin, 'noticeboard'),
+      '#!/bin/sh\n# unrelated user command\nexit 0\n',
+    );
+    const refused = spawnSync(process.execPath, installArgs, {
+      encoding: 'utf8',
+      env,
+    });
+    expect(refused.status).not.toBe(0);
+    expect(readFileSync(join(bin, 'noticeboard'), 'utf8')).toContain(
+      'unrelated user command',
+    );
+    expect(refused.stderr).toContain('拒绝覆盖已有非 Noticeboard 启动入口');
+    writeFileSync(join(bin, 'noticeboard'), managedLauncher);
     rmSync(artifacts, { recursive: true });
     const fakeRuntime = join(directory, 'old-node');
     mkdirSync(fakeRuntime);
@@ -80,18 +95,6 @@ it('packs SDK and CLI and installs a CLI independent of the default Node and rep
       else expect(JSON.parse(result.stderr).error.kind).toBe('usage');
     }
     expect(existsSync(join(directory, 'unused.json'))).toBe(false);
-    writeFileSync(
-      join(bin, 'noticeboard'),
-      '#!/bin/sh\n# unrelated user command\nexit 0\n',
-    );
-    const refused = spawnSync(process.execPath, installArgs, {
-      encoding: 'utf8',
-      env,
-    });
-    expect(refused.status).not.toBe(0);
-    expect(readFileSync(join(bin, 'noticeboard'), 'utf8')).toContain(
-      'unrelated user command',
-    );
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
