@@ -25,6 +25,176 @@ const runCompatibilityCommandForTest =
   runOpenApiCompatibilityCommand as CompatibilityCommandForTest;
 
 describe('OpenAPI compatibility', () => {
+  /** Rejects restricting a previously unrestricted request title to an enum. */
+  it('rejects new enum constraints on existing fields', () => {
+    const baseline = {
+      components: {
+        schemas: {
+          CreateTaskDto: {
+            properties: { title: { type: 'string' } },
+          },
+        },
+      },
+    };
+    const candidate = structuredClone(baseline);
+    Object.assign(candidate.components.schemas.CreateTaskDto.properties.title, {
+      enum: ['Only accepted title'],
+    });
+
+    expect(findOpenApiCompatibilityErrors(baseline, candidate)).toEqual([
+      'components.schemas.CreateTaskDto.properties.title.enum: 已改变既有枚举成员',
+    ]);
+  });
+
+  /** Compares numeric endpoints together with OpenAPI 3.0 boolean exclusivity. */
+  it.each([
+    [
+      'minimum',
+      'exclusiveMinimum',
+      {},
+      { minimum: 1, exclusiveMinimum: true },
+      true,
+    ],
+    [
+      'minimum',
+      'exclusiveMinimum',
+      { minimum: 1 },
+      { minimum: 1, exclusiveMinimum: true },
+      true,
+    ],
+    [
+      'minimum',
+      'exclusiveMinimum',
+      { minimum: 1, exclusiveMinimum: false },
+      { minimum: 1, exclusiveMinimum: true },
+      true,
+    ],
+    [
+      'maximum',
+      'exclusiveMaximum',
+      {},
+      { maximum: 10, exclusiveMaximum: true },
+      true,
+    ],
+    [
+      'maximum',
+      'exclusiveMaximum',
+      { maximum: 10 },
+      { maximum: 10, exclusiveMaximum: true },
+      true,
+    ],
+    [
+      'maximum',
+      'exclusiveMaximum',
+      { maximum: 10, exclusiveMaximum: false },
+      { maximum: 10, exclusiveMaximum: true },
+      true,
+    ],
+    [
+      'minimum',
+      'exclusiveMinimum',
+      { minimum: 1 },
+      { minimum: 0, exclusiveMinimum: true },
+      false,
+    ],
+    [
+      'maximum',
+      'exclusiveMaximum',
+      { maximum: 10 },
+      { maximum: 11, exclusiveMaximum: true },
+      false,
+    ],
+    [
+      'minimum',
+      'exclusiveMinimum',
+      { minimum: 1, exclusiveMinimum: true },
+      { minimum: 1 },
+      false,
+    ],
+    [
+      'maximum',
+      'exclusiveMaximum',
+      { maximum: 10, exclusiveMaximum: true },
+      { maximum: 10, exclusiveMaximum: false },
+      false,
+    ],
+    [
+      'minimum',
+      'exclusiveMinimum',
+      { minimum: 1, exclusiveMinimum: true },
+      { minimum: 2, exclusiveMinimum: false },
+      true,
+    ],
+    [
+      'maximum',
+      'exclusiveMaximum',
+      { maximum: 10, exclusiveMaximum: true },
+      { maximum: 9, exclusiveMaximum: false },
+      true,
+    ],
+    [
+      'minimum',
+      'exclusiveMinimum',
+      { minimum: 1 },
+      { minimum: 1, exclusiveMinimum: false },
+      false,
+    ],
+    [
+      'maximum',
+      'exclusiveMaximum',
+      { maximum: 10 },
+      { maximum: 10, exclusiveMaximum: false },
+      false,
+    ],
+    [
+      'minimum',
+      'exclusiveMinimum',
+      { minimum: 1, exclusiveMinimum: true },
+      { minimum: 1, exclusiveMinimum: true },
+      false,
+    ],
+    [
+      'maximum',
+      'exclusiveMaximum',
+      { maximum: 10, exclusiveMaximum: true },
+      { maximum: 10, exclusiveMaximum: true },
+      false,
+    ],
+  ])(
+    'checks %s / %s: %j → %j (breaking: %s)',
+    (bound, exclusive, before, after, breaking) => {
+      const baseline = {
+        openapi: '3.0.0',
+        components: {
+          schemas: {
+            AddTaskCommentDto: {
+              properties: { expectedVersion: { type: 'integer', ...before } },
+            },
+          },
+        },
+      };
+      const candidate = structuredClone(baseline);
+      candidate.components.schemas.AddTaskCommentDto.properties.expectedVersion =
+        {
+          type: 'integer',
+          ...after,
+        };
+      const errors = findOpenApiCompatibilityErrors(baseline, candidate);
+
+      if (breaking) {
+        expect(errors).toEqual([
+          expect.stringMatching(
+            new RegExp(
+              `^components\\.schemas\\.AddTaskCommentDto\\.properties\\.expectedVersion\\.(${bound}|${exclusive}):`,
+            ),
+          ),
+        ]);
+      } else {
+        expect(errors).toEqual([]);
+      }
+    },
+  );
+
   /** Rejects removing an existing operation that previously served clients. */
   it('rejects removed operations', () => {
     const baseline = {

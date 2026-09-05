@@ -150,10 +150,26 @@ function schemaErrors(
     }
   }
   if (
-    Array.isArray(baselineSchema.enum) &&
+    (Array.isArray(baselineSchema.enum) ||
+      Array.isArray(candidateSchema.enum)) &&
     !jsonEquals(baselineSchema.enum, candidateSchema.enum)
   ) {
     errors.push(`${location}.enum: 已改变既有枚举成员`);
+  }
+  // OpenAPI 3.0 exclusivity modifies its numeric endpoint; a wider endpoint
+  // remains compatible even when the candidate excludes that new endpoint.
+  for (const [bound, exclusive] of [
+    ['minimum', 'exclusiveMinimum'],
+    ['maximum', 'exclusiveMaximum'],
+  ] as const) {
+    if (
+      typeof candidateSchema[bound] === 'number' &&
+      candidateSchema[bound] === baselineSchema[bound] &&
+      candidateSchema[exclusive] === true &&
+      baselineSchema[exclusive] !== true
+    ) {
+      errors.push(`${location}.${exclusive}: 已将既有 ${bound} 边界改为排他`);
+    }
   }
   for (const keyword of MINIMUM_SCHEMA_KEYS) {
     if (
