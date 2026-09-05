@@ -1,9 +1,10 @@
 /** Exercises real executable output pipes so asynchronous stream failures cannot leak Node exceptions. */
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
-import { openSync, closeSync } from 'node:fs';
+import { openSync, closeSync, constants, readSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout } from 'node:timers/promises';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 
 let directory: string;
@@ -37,27 +38,43 @@ afterAll(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-/** Closing the consumer after its first chunk must end quietly in both text and JSON modes. */
+/** Polls a nonblocking FIFO so an output regression cannot block the test runner's timeout. */
+async function readFirstByte(descriptor: number): Promise<number> {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    try {
+      const received = readSync(descriptor, Buffer.alloc(1), 0, 1, null);
+      if (received) return received;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EAGAIN') throw error;
+    }
+    await setTimeout(10);
+  }
+  throw new Error('CLI did not produce output before the FIFO deadline');
+}
+
+/** Uses a real FIFO: child-process socket pairs can report ENOTCONN instead of the contracted EPIPE. */
 it.each([false, true])(
   'handles an early stdout reader close with JSON=%s',
   async (json) => {
+    const fifo = join(directory, `stdout-${json}.fifo`);
+    execFileSync('mkfifo', [fifo]);
+    const reader = openSync(fifo, constants.O_RDONLY | constants.O_NONBLOCK);
+    const writer = openSync(fifo, constants.O_WRONLY);
     const child = spawn(
       process.execPath,
       [executable, 'profile', 'list', ...(json ? ['--json'] : [])],
       {
         env: { ...process.env, NOTICEBOARD_CONFIG_FILE: configFile },
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['ignore', writer, 'pipe'],
         timeout: 5000,
       },
     );
+    closeSync(writer);
     let stderr = '';
-    let received = 0;
-    child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+    let readerClosed = false;
+    child.stderr!.setEncoding('utf8').on('data', (chunk: string) => {
       stderr += chunk;
-    });
-    child.stdout.once('data', (chunk: Buffer) => {
-      received += chunk.length;
-      child.stdout.destroy();
     });
     const closed = new Promise<{
       code: number | null;
@@ -67,11 +84,15 @@ it.each([false, true])(
       child.once('close', (code, signal) => resolve({ code, signal }));
     });
     try {
+      const received = await readFirstByte(reader);
+      closeSync(reader);
+      readerClosed = true;
       const result = await closed;
       expect(received).toBeGreaterThan(0);
       expect(result, stderr).toEqual({ code: 0, signal: null });
       expect(stderr).toBe('');
     } finally {
+      if (!readerClosed) closeSync(reader);
       if (child.exitCode === null) child.kill();
     }
   },
