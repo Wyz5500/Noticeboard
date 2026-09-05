@@ -249,6 +249,16 @@ API v1 当前一次返回完整任务数组，不提供分页、mine、状态或
 
 ## 本机独立安装与升级
 
+更新源码后，可用仓库内的一键脚本打包并更新 CLI：
+
+```bash
+sh scripts/update-cli.sh
+```
+
+脚本使用 POSIX sh，支持 macOS/Linux；也可以从任意目录用脚本的绝对路径调用。它自动选择 Node 24（依次为 `NOTICEBOARD_NODE` 绝对路径、PATH、`NVM_DIR`，后者默认 `~/.nvm`），验证 npm 11，打包当前源码后调用既有本机安装器。不会加载 nvm shell 脚本、修改 PATH 或默认 Node。默认查找所选 Node 的配套 npm，缺失时查找 PATH 中 npm 的真实路径；特殊布局可用 `NOTICEBOARD_NPM_CLI` 指定 npm-cli.js 绝对路径。运行时和安装路径均不绑定特定用户或 Node 小版本。
+
+支持 `--help`、`--prefix <专用目录>` 和 `--bin-dir <入口目录>`，相对目录按调用时的工作目录解析。构建失败立即停止，不安装旧 tarball；同版本号重新打包也会更新安装内容，profile 保持不变。脚本不拉取 Git、不安装仓库依赖、不发布 registry 或部署服务器；首次使用或依赖锁文件变化时，先在 Node 24/npm 11 环境运行 `npm ci`。Windows 用户可在 WSL 中使用此脚本，原生 Windows 请使用 npm 打包和全局安装方式。
+
 macOS/Linux 可使用固定 Node 24 的用户目录安装方式，不改变其他项目的默认 Node。构建与安装命令需要 Node 24.x、npm 11.x；先检查 `node --version` 和 `npm --version`，未加载正确运行时时可直接用已定位的 Node 24 绝对路径执行脚本。
 
 在仓库内准备本地包并安装：

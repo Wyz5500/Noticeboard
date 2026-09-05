@@ -186,6 +186,8 @@ npm run release -- ...                # 合并候选、部署、失败 revert �
 
 ## CLI 使用
 
+更新当前源码对应的本机 CLI：`sh scripts/update-cli.sh`。脚本兼容 macOS/Linux POSIX sh，自动查找 Node 24 并验证 npm 11，依次打包、安装，保留 profile。首次使用或依赖变化时需先准备仓库依赖；完整参数与运行时选择见 [`docs/cli.md`](docs/cli.md#本机独立安装与升级)。
+
 ```bash
 npm run cli:build
 node dist/cli/bin/noticeboard.js --help

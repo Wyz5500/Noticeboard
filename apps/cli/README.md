@@ -4,6 +4,8 @@
 
 可用 npm 11.x 执行 `npm install --global /绝对路径/noticeboard-cli-local-0.0.0.tgz` 后在任意目录运行 `noticeboard`。如果默认 Node 不是 24，请使用仓库的 `npm run cli:install:local` 创建固定 Node 24 的用户目录入口，完整安装、升级、卸载说明见仓库 `docs/cli.md`。
 
+更新源码后可在仓库执行 `sh scripts/update-cli.sh` 一键打包并更新，支持 macOS/Linux POSIX sh；自动查找 Node 24、验证 npm 11，保留 profile。构建依赖须事先准备，脚本不拉取源码或部署服务。
+
 ```bash
 noticeboard --help
 noticeboard profile set dev --base-url "http://127.0.0.1:<宿主机动态端口>"

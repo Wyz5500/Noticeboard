@@ -14,10 +14,9 @@ import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { assertSupportedRuntimeVersions } from './runtime-version.mjs';
 
-const npm = resolve(
-  dirname(process.execPath),
-  '../lib/node_modules/npm/bin/npm-cli.js',
-);
+const npm =
+  process.env.npm_execpath ??
+  resolve(dirname(process.execPath), '../lib/node_modules/npm/bin/npm-cli.js');
 assertSupportedRuntimeVersions({
   npmVersion: execFileSync(process.execPath, [npm, '--version'], {
     encoding: 'utf8',
