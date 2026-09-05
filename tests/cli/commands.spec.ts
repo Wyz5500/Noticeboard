@@ -942,7 +942,7 @@ it.each(['user', 'role', 'permission'])(
     expect(JSON.parse(result.stdout).data.help).toContain(
       `noticeboard ${resource} get`,
     );
-    expect(JSON.parse(result.stdout).data.help).toContain('--search');
+    expect(JSON.parse(result.stdout).data.help).not.toContain('--search');
     expect(requests).toEqual([]);
   },
 );

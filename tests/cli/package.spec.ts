@@ -101,6 +101,29 @@ it('packs only runnable client assets and installs an offline bin', () => {
     expect(help.stdout).toContain('permission get');
     expect(help.stdout).toContain('--active true|false|all');
     expect(help.stdout).toContain('--deleted true|false|all');
+    for (const args of [
+      ['task', 'create', '--help'],
+      ['man'],
+      ['man', 'task'],
+      ['man', 'task', 'create', '--json'],
+    ]) {
+      const documentation = spawnSync(process.execPath, [bin, ...args], {
+        cwd: directory,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          NOTICEBOARD_CONFIG_FILE: 'invalid-relative-config',
+        },
+      });
+      expect(documentation.status, documentation.stderr).toBe(0);
+      expect(documentation.stderr).toBe('');
+      expect(documentation.stdout).toContain('--description-file');
+      expect(documentation.stdout).toContain('示例：');
+      if (args.includes('--json'))
+        expect(JSON.parse(documentation.stdout).data.manual).toContain(
+          'noticeboard task create',
+        );
+    }
     const invalid = spawnSync(
       process.execPath,
       [bin, 'task', 'create', '--json'],

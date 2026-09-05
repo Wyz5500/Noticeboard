@@ -69,3 +69,18 @@ noticeboard demo reset --user noticeboard-admin --yes --json
 评论删除在非 TTY 或 JSON 模式必须带 `--yes`；普通 TTY 请求确认。任务动作直接执行。
 写入 JSON 的 `data` 为完整任务；除任务创建外，`meta.expectedVersion` 记录提交版本。
 网络或协议失败可能已经提交，应先读取服务器状态核对，不要直接重复写入。
+
+## 离线帮助与使用手册
+
+所有命令支持 `--help` / `-h`。根级帮助展示索引，资源级展示子命令，具体命令说明用途、参数、必填项、默认值、约束及示例：
+
+```bash
+noticeboard --help
+noticeboard task --help
+noticeboard task create --help
+noticeboard man
+noticeboard man task
+noticeboard man task create --json
+```
+
+`noticeboard man [资源 [命令]]` 提供随 CLI 安装的完整中文手册，涵盖配置、身份、正文输入、并发、确认、JSON 和退出码。直接输出纯文本，无需系统 man、分页器、网络或仓库文件。帮助与手册不读取配置、正文文件或 stdin，不执行业务操作；配置损坏时仍可使用。帮助 JSON 为 `{data:{help:string}}`，手册 JSON 为 `{data:{manual:string}}`，成功退出 0；未知主题或非法参数退出 64。
