@@ -219,7 +219,7 @@ Generated operations 接收 `RequestInit` 与可选的 `fetchFn`；当前手写 
 
 管理资源读取也已实现：SDK `admin.overview` 与 CLI `admin overview`、`user list/get`、`role list/get`、`permission list/get` 均复用现有管理 overview API。每条命令请求一次，完整保留服务器顺序及已逻辑删除记录；服务器要求 `system.manage`，可显式使用 `--user noticeboard-admin`。只读命令不修改 profile，JSON 返回完整总览、对应数组或单个详情。列表支持 `--search`，用户/角色另支持 `--active true|false|all` 和 `--deleted true|false|all`，默认均为 `all`；筛选按 AND 组合。详情按 ID 或权限 code 精确匹配，找不到返回 66。
 
-管理写入已实现：`user` 与 `role` 均支持 `create/update/delete/restore`，通过 SDK 调用已有管理 API。角色更新显式提供名称与完整权限，清空使用 `--clear-permissions`；删除在非 TTY 或 JSON 模式必须提供 `--yes`。每条命令仅写一次，不预读、不重试，不提供版本参数；管理写入成功无 meta，删除返回 `{data:{ok:true,id}}`。精确参数见 `docs/cli.md`，业务权限仍由服务器判定。demo reset 仍未实现。
+管理写入已实现：`user` 与 `role` 均支持 `create/update/delete/restore`，通过 SDK 调用已有管理 API。角色更新显式提供名称与完整权限，清空使用 `--clear-permissions`；删除在非 TTY 或 JSON 模式必须提供 `--yes`。每条命令仅写一次，不预读、不重试，不提供版本参数；管理写入成功无 meta，删除返回 `{data:{ok:true,id}}`。精确参数见 `docs/cli.md`，业务权限仍由服务器判定。demo reset 已实现：`noticeboard demo reset [--yes]` 通过既有 HTTP API 替换全部任务及时间线，保留用户和角色。非 TTY 或 JSON 模式必须提供 `--yes`；普通 TTY 确认目标服务后执行。重置只提交一次，结果不确定时通过 `task list` / `task get` 核对。
 
 下一阶段在 SDK 与 CLI 合同稳定后再评估独立 SDK 发布、workspaces 和 TUI；registry 发布仍需独立授权。
 

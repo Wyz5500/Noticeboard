@@ -1,5 +1,6 @@
 /** Public construction and cancellation contracts; SDK configuration is supplied entirely by callers. */
 import type {
+  DemoResetResult,
   AdminOverview,
   AdminUser,
   AdminRole,
@@ -34,6 +35,10 @@ export interface RequestOptions {
 }
 
 export interface NoticeboardClient {
+  demo: {
+    /** Replaces all demo tasks once; callers own confirmation and uncertain-outcome reconciliation. */
+    reset(options?: RequestOptions): Promise<DemoResetResult>;
+  };
   admin: {
     /** Reads the complete protected overview, retaining deleted records and server order. */
     overview(options?: RequestOptions): Promise<AdminOverview>;

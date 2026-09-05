@@ -1,4 +1,8 @@
 /** Stable handwritten SDK resource contracts matching the versioned HTTP read surface. */
+export interface DemoResetResult {
+  reset: boolean;
+}
+
 export type Permission =
   | 'system.manage'
   | 'tasks.view'

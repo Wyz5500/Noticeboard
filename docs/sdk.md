@@ -89,6 +89,12 @@ SDK 要求调用者显式提供 `expectedVersion`，不预读、不重试、不�
 
 全部管理写入要求 `system.manage`，不自动选择管理员或在客户端预检业务约束。网络或协议失败可能已经提交，应通过 overview 核对用户/角色后再决定操作。
 
+### 演示任务重置
+
+`client.demo.reset(options?: RequestOptions): Promise<DemoResetResult>` 调用已有 `POST /api/v1/demo/reset`，无请求体且只接受 HTTP 200。根入口导出手写 `DemoResetResult`，其必填字段为 `reset: boolean`；按 tracked OpenAPI 接受 true 和 false，忽略新增字段，不将服务器当前的 `{reset:true}` 示例当作字面量约束。
+
+服务器要求 `demo.reset` 权限，在事务中替换全部任务及时间线为演示数据，保留用户和角色。SDK 不做权限预检、不选择身份、不确认、不预读、不重试；调用方负责确认。身份提供者与取消信号沿用公共请求合同。网络或协议失败可能已提交，调用方应读取任务列表及详情核对，不能直接重放。此能力仅用于演示环境。
+
 ### 请求配置
 
 构造参数 `NoticeboardClientOptions`：
@@ -122,4 +128,4 @@ SDK 完整校验读取及全部写操作响应的已知结构：字段类型、�
 
 `sdk:build` 通过现有 TypeScript 编译 ESM 与 `.d.ts`，不引入 runtime 依赖、workspace 或发布 manifest。generated transport 仍只允许从 tracked artifact 生成。SDK 构建包含内部 transport，但服务器生产镜像只复制 `dist/api` 和 `dist/web`。
 
-CLI 已基于该入口实现 profile、demo identity、任务读取与全部任务/评论写命令、管理总览及用户/角色/权限列表、JSON 输出与退出码；配置、筛选、文件/stdin、删除确认、版本预读、30 秒超时和终端输出均由 CLI 负责。管理详情、筛选与写入均已实现；demo reset、独立 SDK 发布与 TUI 仍未实现。
+CLI 已基于该入口实现 profile、demo identity、任务读取与全部任务/评论写命令、管理总览及用户/角色/权限列表、JSON 输出与退出码；配置、筛选、文件/stdin、删除确认、版本预读、30 秒超时和终端输出均由 CLI 负责。管理详情、筛选、写入及 demo reset 均已实现；独立 SDK 发布与 TUI 仍未实现。

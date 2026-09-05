@@ -10,6 +10,7 @@ import type {
   RequestOptions,
 } from '../options.js';
 import {
+  resetDemoTasks,
   createAdminUser,
   updateAdminUser,
   deleteAdminUser,
@@ -29,7 +30,8 @@ import {
   editTaskComment,
   deleteTaskComment,
 } from './generated/transport.js';
-import { array } from './decoders.js';
+import { array, boolean, object } from './decoders.js';
+import type { DemoResetResult } from '../models.js';
 import type { Decoder } from './decoders.js';
 import {
   decodeAdminUser,
@@ -165,6 +167,15 @@ export function createNoticeboardClient(
   }
 
   return {
+    demo: {
+      /** Retains the artifact's boolean result without assuming its example is a literal contract. */
+      reset: (request) =>
+        requestResource(
+          resetDemoTasks,
+          object<DemoResetResult>({ reset: boolean }),
+          request,
+        ),
+    },
     admin: {
       users: {
         /** Creates a managed resource using its HTTP 201 contract. */

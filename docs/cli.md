@@ -2,7 +2,7 @@
 
 > **实施状态：任务、评论及管理资源读写 CLI 已实现。** 当前支持 profile、demo identity、任务读取、创建、生命周期、续期、评论增改删和管理总览、三类列表筛选与详情、用户和角色写入，保留 JSON 信封与稳定退出码，并提供可本地打包安装的私有 CLI。registry 发布和 TUI 仍为目标状态。
 
-CLI 只消费手写 SDK 公共入口的 `tasks`、`comments`、`identities` 与 `admin`，使用合同见 [`sdk.md`](sdk.md)。`npm run cli:build` 生成 `dist/cli`，`npm run test:cli` 验证命令和本地安装包；真实宿主机 HTTP smoke 随完整 verify 运行。
+CLI 只消费手写 SDK 公共入口的 `tasks`、`comments`、`identities`、`admin` 与 `demo`，使用合同见 [`sdk.md`](sdk.md)。`npm run cli:build` 生成 `dist/cli`，`npm run test:cli` 验证命令和本地安装包；真实宿主机 HTTP smoke 随完整 verify 运行。
 
 ## 定位与边界
 
@@ -14,7 +14,7 @@ CLI 是告示牌的主要目标交互入口，也是远程 HTTP 客户端。它�
 - 可执行文件为 `noticeboard`；本地占位包名为 `noticeboard-cli-local`、版本为 `0.0.0`，标记 `private: true`，不代表 registry 发布版本。
 - SDK bundle 在 CLI 包内，不单独发布。
 - 支持 Node.js 24.x。
-- 当前覆盖 profile、demo identity、任务读取及任务和评论写入，以及管理总览、用户、角色和权限的列表筛选与详情。用户与角色创建、更新、软删除及恢复已实现；demo reset 与 TUI 尚未实现。
+- 当前覆盖 profile、demo identity、任务读取及任务和评论写入，以及管理总览、用户、角色和权限的列表筛选与详情。用户与角色创建、更新、软删除、恢复及 demo reset 已实现；TUI 尚未实现。
 
 CLI 默认服务人工终端使用，同时必须提供稳定、无交互的脚本接口。
 
@@ -34,6 +34,8 @@ noticeboard identity use <user-id>
 noticeboard task list [--mine] [--status <status>] [--search <text>]
 noticeboard task get <task-id>
 
+noticeboard demo reset [--yes]
+
 noticeboard admin overview
 noticeboard user list [--search <text>] [--active true|false|all] [--deleted true|false|all]
 noticeboard user get <user-id>
@@ -42,6 +44,14 @@ noticeboard role get <role-id>
 noticeboard permission list [--search <text>]
 noticeboard permission get <permission-code>
 ```
+
+### 演示任务重置
+
+`noticeboard demo reset [--yes]` 只调用 SDK public `demo.reset`，使用既有 `POST /api/v1/demo/reset`。支持公共 profile、base URL、身份、JSON 与 help 参数，无位置参数和 expectedVersion。普通 TTY 确认时展示经过终端安全转义的有效服务地址，并说明替换全部任务及时间线；仅 `y` / `yes` 同意。拒绝、EOF 或中断返回 64，不发 HTTP。非 TTY 或 JSON 模式必须提供 `--yes`，即使 JSON 模式运行于 TTY 也不提示确认。
+
+确认后才启动 30 秒取消窗口；只提交一次，无请求体、不预读、不重试、不切换身份或写入 profile。服务器检查 `demo.reset` 权限并在事务中重建任务及时间线，保留用户和角色。demo 身份与 reset 不是正式认证或生产运维机制。
+
+成功 JSON 为 `{data:{reset:boolean}}`，无 meta；字段按 HTTP 合同原样保留。人类输出在 true 时说明已重置，在 false 时说明服务器返回未重置，两者均返回 0。错误沿用稳定信封与退出码；409 提示 `task list`，必要时通过 `task get` 核对，不附加版本。网络和协议失败保持 69/65，提示重置可能已提交并要求读取核对，不自动重放。
 
 ### 管理读取
 
@@ -233,7 +243,7 @@ API v1 当前一次返回完整任务数组，不提供分页、mine、状态或
 
 ## 输入与交互原则
 
-当前 `profile delete` 和 `comment delete` 在非 TTY 或 `--json` 模式下必须提供 `--yes`。普通 TTY 仅输入 `y` 或 `yes` 才执行；拒绝、EOF 或中断均不修改配置并返回 64。文件/stdin 输入已用于任务创建和评论创建、编辑。
+当前 `profile delete`、`comment delete`、`user delete`、`role delete` 和 `demo reset` 在非 TTY 或 `--json` 模式下必须提供 `--yes`。普通 TTY 仅输入 `y` 或 `yes` 才执行；拒绝、EOF 或中断均不修改配置并返回 64。文件/stdin 输入已用于任务创建和评论创建、编辑。
 
 所有操作都必须能通过参数、文件或 stdin 非交互完成。`--description-file -` 与 `--content-file -` 表示从 stdin 读取；同一字段的直接参数和文件参数必须二选一。文件与 stdin 按 UTF-8 严格解码，允许多行并保留原文交给服务器规范化；读取失败、非法 UTF-8、全空白或含 NUL 的正文返回 64。缺少必填参数、非法机器枚举、非 `yyyy-mm-dd` 日期格式及非法版本参数也返回 64；版本只接受十进制正安全整数。业务日期、字段长度和状态权限由服务器判断。
 
@@ -244,7 +254,7 @@ CLI 不提供默认交互向导。缺少必填输入时返回 usage 错误，不
 - TTY：默认请求确认，可用 `--yes` 明确跳过。
 - 非 TTY：必须显式传入 `--yes`；缺少时拒绝执行。
 
-评论、profile、用户和角色删除视为危险操作；任务动作（包括 close）直接执行，不接受 `--yes`。删除确认在任何 HTTP 请求前完成。不能因为 stdin 不可交互而默认执行。
+评论、profile、用户和角色删除以及 demo reset 视为危险操作；任务动作（包括 close）直接执行，不接受 `--yes`。删除和重置确认在任何 HTTP 请求前完成。不能因为 stdin 不可交互而默认执行。
 
 ## 乐观并发与重试
 

@@ -88,6 +88,7 @@ it('packs only runnable client assets and installs an offline bin', () => {
     });
     expect(help.status, help.stderr).toBe(0);
     expect(help.stdout).toContain('task list');
+    expect(help.stdout).toContain('demo reset [--yes]');
     expect(help.stdout).toContain('task create');
     expect(help.stdout).toContain('comment edit');
     expect(help.stdout).toContain('comment delete');

@@ -23,6 +23,7 @@ import {
   managementWriteCommand,
 } from './management-writes.js';
 import { isWriteCommand, writeCommand } from './write-commands.js';
+import { demoResetCommand } from './demo.js';
 export interface CliContext {
   env: NodeJS.ProcessEnv;
   stdout: (text: string) => void;
@@ -50,15 +51,18 @@ export async function runCli(
     }
     const path = configPath(context.env);
     const config = await readConfig(path);
-    const result = isManagementWriteCommand(command.name)
-      ? await managementWriteCommand(command, config, context)
-      : isWriteCommand(command.name)
-        ? await writeCommand(command, config, context)
-        : {
-            data: command.name.startsWith('profile ')
-              ? await profileCommand(command, config, path, context)
-              : await remoteCommand(command, config, path, context),
-          };
+    const result =
+      command.name === 'demo reset'
+        ? await demoResetCommand(command, config, context)
+        : isManagementWriteCommand(command.name)
+          ? await managementWriteCommand(command, config, context)
+          : isWriteCommand(command.name)
+            ? await writeCommand(command, config, context)
+            : {
+                data: command.name.startsWith('profile ')
+                  ? await profileCommand(command, config, path, context)
+                  : await remoteCommand(command, config, path, context),
+              };
     context.stdout(
       json
         ? `${JSON.stringify(result)}\n`

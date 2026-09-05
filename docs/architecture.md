@@ -24,7 +24,7 @@
                                              │
                   apps/cli/src/sdk/internal/generated/transport.ts
                                              │
-                            handwritten SDK（tasks / comments / identities / admin）
+                            handwritten SDK（tasks / comments / identities / admin / demo）
                                              │
                           CLI（profile / identity / task 读写 / comment 写入 / 管理读写）
 
@@ -134,7 +134,7 @@ v1 通常允许新增 endpoint、可选响应字段以及具有旧行为默认�
 
 SDK 是传输客户端，不是服务器应用层的进程外镜像。第一阶段不独立发布 SDK，而是在仓库内形成可单独 typecheck、build 和 test 的逻辑边界，并 bundle 到唯一发布的 CLI npm 包；当 SDK 需要独立发布或 CLI/TUI 成为两个真实消费者时，再引入 npm workspaces。
 
-当前 SDK 提供 `createNoticeboardClient`、`tasks.list/get/create/act/renew`、`comments.create/edit/delete`、`identities.list`、`admin.overview` 和 `admin.users` / `admin.roles` 管理写入。唯一入口为 `apps/cli/src/sdk/index.ts`；通过 `sdk:typecheck`、`sdk:build` 和 `test:sdk` 独立检查、构建和测试，输出 `dist/sdk` ESM 与声明，尚无独立 npm 包。根 build 包含 SDK，verify 包含独立 SDK 类型检查，SDK 单元/构建合同与真实宿主机 HTTP smoke 分别进入 unit / API 门禁。服务器镜像仅复制 `dist/api` 与 `dist/web`。
+当前 SDK 提供 `createNoticeboardClient`、`tasks.list/get/create/act/renew`、`comments.create/edit/delete`、`identities.list`、`admin.overview`、`admin.users` / `admin.roles` 管理写入和 `demo.reset`。唯一入口为 `apps/cli/src/sdk/index.ts`；通过 `sdk:typecheck`、`sdk:build` 和 `test:sdk` 独立检查、构建和测试，输出 `dist/sdk` ESM 与声明，尚无独立 npm 包。根 build 包含 SDK，verify 包含独立 SDK 类型检查，SDK 单元/构建合同与真实宿主机 HTTP smoke 分别进入 unit / API 门禁。服务器镜像仅复制 `dist/api` 与 `dist/web`。
 
 SDK 依赖和行为：
 
@@ -159,7 +159,7 @@ CLI 是远程服务端客户端，只调用 HTTP SDK，不直接访问 PostgreSQ
 - `comment`：创建、编辑和删除。
 - `admin overview`、`user list/get`、`role list/get`、`permission list/get`：管理总览、三类列表筛选与详情，以及用户/角色创建、更新、软删除与恢复。
 
-用户与角色创建、更新、软删除和恢复已实现；demo reset 和 TUI 尚未实现。`task list` 可基于现有完整任务列表在客户端实现 `--mine`、`--status` 和 `--search`，不得因此复制或改变 `/api/v1/tasks` 的 wire contract。
+用户与角色创建、更新、软删除和恢复已实现；demo reset 已实现；TUI 尚未实现。`task list` 可基于现有完整任务列表在客户端实现 `--mine`、`--status` 和 `--search`，不得因此复制或改变 `/api/v1/tasks` 的 wire contract。
 
 管理读取只通过 SDK public `admin.overview(options?: RequestOptions): Promise<AdminOverview>` 调用已有 generated `getAdminOverview`，HTTP 200 返回完整用户、角色和权限目录。手写 `AdminOverview`、`AdminUser`、`AdminRole`、`AdminPermission` 从 SDK 根入口导出，权限码复用 `Permission`；字段、nullable、闭合枚举和嵌套数组按 tracked OpenAPI 校验，忽略新增未知字段。保留服务器顺序、逻辑删除记录和字符串日期，不重算状态或权限。
 
@@ -168,6 +168,10 @@ CLI 是远程服务端客户端，只调用 HTTP SDK，不直接访问 PostgreSQ
 管理写入经 SDK public `admin.users` / `admin.roles` 的 `create/update/delete/restore` 使用已有 8 个 HTTP endpoint。SDK 独立声明并导出四种管理输入类型，复用完整用户/角色响应校验；创建接受 201，更新/恢复接受 200，删除接受 204 并返回 void。Generated transport 和 HTTP 合同保持不变。
 
 CLI 新增 `user` / `role` 的 `create/update/delete/restore`。用户更新至少提供一个字段；角色更新必须显式提供名称与完整权限，`--permissions` 逗号分隔且拒绝空项/重复项/未知码，`--clear-permissions` 显式清空。管理写入无 expectedVersion，不预读、不重试；权限及业务保护由服务器判定。删除沿用 TTY/JSON/--yes 确认规则，在请求前确认；其余管理写操作直接执行。管理写入成功 JSON data 为完整 AdminUser/AdminRole，删除为 `{ok:true,id}`，无成功 meta。409 提示对应资源 get；网络/协议失败提示可能已提交，创建通过 list/get 核对，其他操作通过 get 核对。精确参数与输出合同见 `docs/cli.md`。
+
+演示重置通过 SDK public `demo.reset(options?: RequestOptions): Promise<DemoResetResult>` 和 CLI `demo reset [--yes]` 使用已有 `POST /api/v1/demo/reset`。手写 `DemoResetResult` 从 SDK 根入口导出，必填 `reset: boolean` 与 tracked OpenAPI 一致，完整校验后忽略未知字段；无请求体，仅接受 200。服务器按 `demo.reset` 权限在事务中替换全部任务及时间线，保留用户和角色。
+
+CLI 在任何请求前确认目标服务及替换范围；非 TTY 或 JSON 必须使用 `--yes`，拒绝、EOF 或中断返回 64。确认后启动 30 秒窗口，只提交一次，不预读、不重试、不选择默认管理员、不改配置。成功 JSON data 为 `{reset:boolean}`，无 meta；人类输出区分已重置和返回未重置。错误复用现有退出码，409 提示 task list / task get 核对，网络或协议失败另提示重置可能已提交，不添加 expectedVersion。SDK 不负责确认，此能力始终为 demo-only。
 
 CLI 配置使用版本化 JSON schema 和 XDG/平台系统配置目录。一个配置文件可包含多个 named profile；每个 profile 第一阶段只保存 base URL 和当前 demo user ID，不保存任务、响应缓存或秘密。配置解析优先级固定为：
 
