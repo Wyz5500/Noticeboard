@@ -6,12 +6,20 @@ import {
   NoticeboardProtocolError,
 } from '../../apps/cli/src/sdk/index.js';
 import type {
+  AdminOverview,
+  AdminUser,
+  AdminRole,
+  AdminPermission,
   Identity,
   Task,
   TaskActivity,
   TaskComment,
 } from '../../apps/cli/src/sdk/index.js';
 import type {
+  AdminOverviewResponseDto,
+  AdminUserResponseDto,
+  AdminRoleResponseDto,
+  PermissionResponseDto,
   ActorResponseDto,
   TaskResponseDto,
   TaskActivityResponseDto,
@@ -41,6 +49,10 @@ function readTask(body: unknown) {
 
 /** Makes the hand-maintained public field contracts drift visibly when the generated wire contract changes. */
 it('preserves the structural wire types without exporting generated symbols', () => {
+  expectTypeOf<AdminOverview>().toEqualTypeOf<AdminOverviewResponseDto>();
+  expectTypeOf<AdminUser>().toEqualTypeOf<AdminUserResponseDto>();
+  expectTypeOf<AdminRole>().toEqualTypeOf<AdminRoleResponseDto>();
+  expectTypeOf<AdminPermission>().toEqualTypeOf<PermissionResponseDto>();
   expectTypeOf<Task>().toEqualTypeOf<TaskResponseDto>();
   expectTypeOf<Identity>().toEqualTypeOf<ActorResponseDto>();
   expectTypeOf<TaskActivity>().toEqualTypeOf<TaskActivityResponseDto>();

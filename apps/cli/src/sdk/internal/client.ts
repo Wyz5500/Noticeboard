@@ -11,6 +11,7 @@ import type {
 } from '../options.js';
 import {
   getTask,
+  getAdminOverview,
   listDemoUsers,
   listTasks,
   createTask,
@@ -22,7 +23,12 @@ import {
 } from './generated/transport.js';
 import { array } from './decoders.js';
 import type { Decoder } from './decoders.js';
-import { decodeError, decodeIdentity, decodeTask } from './read-contracts.js';
+import {
+  decodeAdminOverview,
+  decodeError,
+  decodeIdentity,
+  decodeTask,
+} from './read-contracts.js';
 
 type Operation = (
   options: RequestInit,
@@ -144,6 +150,11 @@ export function createNoticeboardClient(
   }
 
   return {
+    admin: {
+      /** Uses the existing protected overview operation with the shared read error contract. */
+      overview: (request) =>
+        requestResource(getAdminOverview, decodeAdminOverview, request),
+    },
     tasks: {
       /** Creation alone uses the existing HTTP 201 contract. */
       create: (input, request) =>

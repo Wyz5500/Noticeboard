@@ -81,6 +81,54 @@ async function cli(args: string[], stdin?: string) {
   }
 }
 
+/** Installed-style commands must project real management data and retain server permission failures. */
+it('reads management collections and rejects non-management identities', async () => {
+  const result = await cli([
+    'admin',
+    'overview',
+    '--user',
+    'noticeboard-admin',
+  ]);
+  expect(result.exitCode, result.stderr).toBe(0);
+  const overview = JSON.parse(result.stdout).data as {
+    users: unknown[];
+    roles: unknown[];
+    permissions: unknown[];
+  };
+  expect(overview.users).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: 'noticeboard-admin' }),
+    ]),
+  );
+  expect(overview.permissions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: 'system.manage' }),
+    ]),
+  );
+  for (const [resource, expected] of [
+    ['user', overview.users],
+    ['role', overview.roles],
+    ['permission', overview.permissions],
+  ] as const) {
+    const list = await cli([resource, 'list', '--user', 'noticeboard-admin']);
+    expect(list.exitCode, list.stderr).toBe(0);
+    expect(list.stderr).toBe('');
+    expect(JSON.parse(list.stdout)).toEqual({ data: expected });
+  }
+  for (const [user, status] of [
+    ['noticeboard-master', 403],
+    ['cli-missing-admin', 401],
+  ] as const) {
+    const denied = await cli(['user', 'list', '--user', user]);
+    expect(denied.exitCode).toBe(77);
+    expect(denied.stdout).toBe('');
+    expect(JSON.parse(denied.stderr)).toMatchObject({
+      error: { kind: 'api', status, path: '/api/v1/admin/overview' },
+      meta: { exitCode: 77 },
+    });
+  }
+});
+
 /** Verifies all read resources and configuration identity selection through the bundled public client. */
 it('reads real identities, task lists and details', async () => {
   const identities = await cli(['identity', 'list']);

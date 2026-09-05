@@ -10,6 +10,10 @@ noticeboard identity list
 noticeboard identity use noticeboard-master
 noticeboard task list --mine --json
 noticeboard task get <task-id> --json
+noticeboard admin overview --user noticeboard-admin --json
+noticeboard user list --user noticeboard-admin
+noticeboard role list --user noticeboard-admin
+noticeboard permission list --user noticeboard-admin
 ```
 
 公共参数：`--profile`、`--base-url`、`--user`、`--json`、`--help`。
@@ -24,6 +28,11 @@ JSON 成功只在 stdout 输出 `{ "data": ... }`；错误只在 stderr 输出
 `{ "error": { "kind": ..., "message": ... }, "meta": { "exitCode": ... } }`。
 退出码：0 成功、1 内部/未分类、64 输入/配置、65 协议、66 不存在、69 网络/服务不可用、75 冲突/限流、77 身份/权限。
 HTTP 请求不重试，单次命令请求窗口为 30 秒。
+
+管理总览及三类列表要求服务器授予 `system.manage`，默认普通身份会返回 403/退出码 77。
+每条命令只读取一次完整 overview，列表保留服务器顺序和已逻辑删除记录，不自动切换身份或改写配置。
+JSON `data` 为完整 `{users, roles, permissions}` 或对应数组，无成功 meta；人类输出为中文表格。
+管理写入、详情及筛选尚未实现。
 
 `X-Demo-User-Id` 仅用于 demo 身份选择。正式认证及 TUI 尚未实现。
 

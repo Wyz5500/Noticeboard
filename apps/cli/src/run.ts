@@ -155,6 +155,23 @@ async function remoteCommand(
     getHeaders: () => ({ 'X-Demo-User-Id': profile.demoUserId }),
   });
   const options = { signal: AbortSignal.timeout(30_000) };
+  if (
+    ['admin overview', 'user list', 'role list', 'permission list'].includes(
+      command.name,
+    )
+  ) {
+    const overview = await client.admin.overview(options);
+    switch (command.name) {
+      case 'user list':
+        return overview.users;
+      case 'role list':
+        return overview.roles;
+      case 'permission list':
+        return overview.permissions;
+      default:
+        return overview;
+    }
+  }
   if (command.name === 'task get')
     return client.tasks.get(command.operands[0]!, options);
   if (command.name === 'task list') {

@@ -1,6 +1,6 @@
 # HTTP SDK
 
-当前 SDK 支持 Node 24.x，位于 `apps/cli/src/sdk`，没有独立 npm 包。唯一源码入口是 `index.ts`，独立构建入口为 `dist/sdk/index.js`。CLI 与 profile 已实现并通过该入口访问 HTTP；SDK/CLI 支持任务读取、创建、生命周期、续期和评论增改删。registry 发布仍未实现。
+当前 SDK 支持 Node 24.x，位于 `apps/cli/src/sdk`，没有独立 npm 包。唯一源码入口是 `index.ts`，独立构建入口为 `dist/sdk/index.js`。CLI 与 profile 已实现并通过该入口访问 HTTP；SDK/CLI 支持任务读取、创建、生命周期、续期、评论增改删和管理资源读取。registry 发布仍未实现。
 
 ## 构建与使用
 
@@ -32,12 +32,28 @@ console.log({ identities, tasks, detail });
 
 ## 公共接口
 
-| 入口                                 | 返回值 / 参数         |
-| ------------------------------------ | --------------------- |
-| `createNoticeboardClient(options)`   | `NoticeboardClient`   |
-| `client.tasks.list(options?)`        | `Promise<Task[]>`     |
-| `client.tasks.get(taskId, options?)` | `Promise<Task>`       |
-| `client.identities.list(options?)`   | `Promise<Identity[]>` |
+| 入口                                 | 返回值 / 参数            |
+| ------------------------------------ | ------------------------ |
+| `createNoticeboardClient(options)`   | `NoticeboardClient`      |
+| `client.tasks.list(options?)`        | `Promise<Task[]>`        |
+| `client.tasks.get(taskId, options?)` | `Promise<Task>`          |
+| `client.identities.list(options?)`   | `Promise<Identity[]>`    |
+| `client.admin.overview(options?)`    | `Promise<AdminOverview>` |
+
+### 管理读取
+
+`admin.overview` 通过一次 `GET /api/v1/admin/overview` 读取完整 `{users, roles, permissions}`，只接受 HTTP 200。服务器要求当前身份具有 `system.manage`；SDK 不默认选择管理员，不通过 demo 身份列表推导或预检权限。
+
+```js
+const adminClient = createNoticeboardClient({
+  baseUrl: process.env.NOTICEBOARD_BASE_URL,
+  getHeaders: () => ({ 'X-Demo-User-Id': 'noticeboard-admin' }),
+});
+const overview = await adminClient.admin.overview();
+console.log(overview.users, overview.roles, overview.permissions);
+```
+
+SDK 根入口新增手写 `AdminOverview`、`AdminUser`、`AdminRole` 和 `AdminPermission` 类型，字段对应 tracked OpenAPI 的管理响应，权限码复用现有 `Permission`。全部数组保持服务器顺序，包含已逻辑删除的用户和角色；`active`、`builtin`、`deletedAt` 和 `updatedAt` 原样保留，日期为字符串。校验完整 overview 的所有已知字段及嵌套成员，忽略新增未知字段。取消、401/403、网络和协议错误沿用公共请求合同；不缓存或重试。
 
 ### 写操作
 
@@ -91,4 +107,4 @@ SDK 完整校验读取及全部写操作响应的已知结构：字段类型、�
 
 `sdk:build` 通过现有 TypeScript 编译 ESM 与 `.d.ts`，不引入 runtime 依赖、workspace 或发布 manifest。generated transport 仍只允许从 tracked artifact 生成。SDK 构建包含内部 transport，但服务器生产镜像只复制 `dist/api` 和 `dist/web`。
 
-CLI 已基于该入口实现 profile、demo identity、任务读取与全部任务/评论写命令、JSON 输出与退出码；配置、筛选、文件/stdin、删除确认、版本预读、30 秒超时和终端输出均由 CLI 负责。管理、reset、独立 SDK 发布与 TUI 仍未实现。
+CLI 已基于该入口实现 profile、demo identity、任务读取与全部任务/评论写命令、管理总览及用户/角色/权限列表、JSON 输出与退出码；配置、筛选、文件/stdin、删除确认、版本预读、30 秒超时和终端输出均由 CLI 负责。管理写入、管理详情与筛选、reset、独立 SDK 发布与 TUI 仍未实现。

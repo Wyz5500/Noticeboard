@@ -17,6 +17,10 @@ export type {
   TaskRecoveryStrategy,
 } from './inputs.js';
 export type {
+  AdminOverview,
+  AdminUser,
+  AdminRole,
+  AdminPermission,
   Identity,
   Permission,
   Task,

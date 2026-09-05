@@ -1,8 +1,8 @@
 # CLI 当前能力与目标合同
 
-> **实施状态：任务与评论读写 CLI 已实现。** 当前支持 profile、demo identity、任务读取、创建、生命周期、续期及评论增改删，保留 JSON 信封与稳定退出码，并提供可本地打包安装的私有 CLI。registry 发布和 TUI 仍为目标状态。
+> **实施状态：任务与评论读写及管理资源只读 CLI 已实现。** 当前支持 profile、demo identity、任务读取、创建、生命周期、续期、评论增改删和管理总览及三类列表，保留 JSON 信封与稳定退出码，并提供可本地打包安装的私有 CLI。registry 发布和 TUI 仍为目标状态。
 
-CLI 只消费手写 SDK 公共入口的 `tasks`、`comments` 与 `identities`，使用合同见 [`sdk.md`](sdk.md)。`npm run cli:build` 生成 `dist/cli`，`npm run test:cli` 验证命令和本地安装包；真实宿主机 HTTP smoke 随完整 verify 运行。
+CLI 只消费手写 SDK 公共入口的 `tasks`、`comments`、`identities` 与 `admin`，使用合同见 [`sdk.md`](sdk.md)。`npm run cli:build` 生成 `dist/cli`，`npm run test:cli` 验证命令和本地安装包；真实宿主机 HTTP smoke 随完整 verify 运行。
 
 ## 定位与边界
 
@@ -14,7 +14,7 @@ CLI 是告示牌的主要目标交互入口，也是远程 HTTP 客户端。它�
 - 可执行文件为 `noticeboard`；本地占位包名为 `noticeboard-cli-local`、版本为 `0.0.0`，标记 `private: true`，不代表 registry 发布版本。
 - SDK bundle 在 CLI 包内，不单独发布。
 - 支持 Node.js 24.x。
-- 当前覆盖 profile、demo identity、任务读取及任务和评论写入。用户、角色、权限、demo reset 与 TUI 不属于首发范围。
+- 当前覆盖 profile、demo identity、任务读取及任务和评论写入，以及管理总览、用户、角色和权限列表。管理写入、管理详情与筛选、demo reset 与 TUI 尚未实现。
 
 CLI 默认服务人工终端使用，同时必须提供稳定、无交互的脚本接口。
 
@@ -33,7 +33,27 @@ noticeboard identity use <user-id>
 
 noticeboard task list [--mine] [--status <status>] [--search <text>]
 noticeboard task get <task-id>
+
+noticeboard admin overview
+noticeboard user list
+noticeboard role list
+noticeboard permission list
 ```
+
+### 管理读取
+
+四条命令均通过 SDK `admin.overview` 请求一次现有 `GET /api/v1/admin/overview`。总览返回完整对象，三类列表分别提取 `users`、`roles`、`permissions`；保留服务器顺序及已逻辑删除记录，不提供详情、搜索或状态筛选。即使只显示一类列表，SDK 也校验完整 overview。
+
+```bash
+noticeboard admin overview --user noticeboard-admin --json
+noticeboard user list --user noticeboard-admin
+noticeboard role list --user noticeboard-admin
+noticeboard permission list --user noticeboard-admin
+```
+
+管理接口要求服务器授予 `system.manage`。公共配置优先级及 30 秒取消窗口照常生效，不预读身份列表、不自动切换管理员、不修改 profile；默认普通身份会收到 403。401/403 通过 stderr 返回错误并退出 77，协议错误退出 65，网络失败退出 69，不重试。
+
+JSON `data` 分别为 `AdminOverview`、`AdminUser[]`、`AdminRole[]`、`AdminPermission[]`，无成功 meta。人类输出为中文表格：用户显示 ID、用户名、姓名、角色 ID/名称、启用状态和删除时间；角色显示 ID、代码、名称、内置标记、权限码、启用状态和删除时间；权限显示代码、名称和描述。总览按用户、角色、权限的顺序组合三张表；空列表明确提示，远端文本统一转义终端控制字符。JSON 保留全部声明字段，包括更新时间。
 
 ### 写命令
 

@@ -31,6 +31,41 @@ export interface Identity {
   permissions?: Permission[];
 }
 
+export interface AdminUser {
+  id: string;
+  username: string;
+  name: string;
+  roleId: string;
+  roleCode: string;
+  roleName: string;
+  active: boolean;
+  deletedAt: string | null;
+  updatedAt: string;
+}
+
+export interface AdminRole {
+  id: string;
+  code: string;
+  name: string;
+  builtin: boolean;
+  permissions: Permission[];
+  active: boolean;
+  deletedAt: string | null;
+  updatedAt: string;
+}
+
+export interface AdminPermission {
+  code: Permission;
+  name: string;
+  description: string;
+}
+
+export interface AdminOverview {
+  users: AdminUser[];
+  roles: AdminRole[];
+  permissions: AdminPermission[];
+}
+
 export interface TaskActivity {
   kind: 'activity';
   action: TaskActivityAction;

@@ -28,6 +28,10 @@ const COMMANDS: Record<
   string,
   { min: number; max: number; options?: string[] }
 > = {
+  'admin overview': { min: 0, max: 0 },
+  'user list': { min: 0, max: 0 },
+  'role list': { min: 0, max: 0 },
+  'permission list': { min: 0, max: 0 },
   'profile list': { min: 0, max: 0 },
   'profile show': { min: 0, max: 1 },
   'profile set': { min: 1, max: 1 },
@@ -147,7 +151,16 @@ export function parseCommand(args: string[]): Command {
   if (
     !name ||
     (parsed.values.help &&
-      ['profile', 'identity', 'task', 'comment'].includes(name))
+      [
+        'profile',
+        'identity',
+        'task',
+        'comment',
+        'admin',
+        'user',
+        'role',
+        'permission',
+      ].includes(name))
   ) {
     if (
       [...seen].some(
@@ -194,6 +207,10 @@ export function parseCommand(args: string[]): Command {
 export function helpText(name: string): string {
   const resource = name.split(' ')[0];
   const lines = [
+    'admin overview',
+    'user list',
+    'role list',
+    'permission list',
     'profile list',
     'profile show [name]',
     'profile set <name> --base-url <url> [--user <user-id>]',

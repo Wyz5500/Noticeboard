@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { runCli, type CliContext } from '../../apps/cli/src/run.js';
 import type { Config } from '../../apps/cli/src/config.js';
+import { adminOverview } from '../sdk/admin-fixtures.js';
 import {
   activity,
   apiError,
@@ -85,6 +86,154 @@ async function invoke(args: string[], overrides: Partial<CliContext> = {}) {
 async function saved(): Promise<Config> {
   return JSON.parse(await readFile(configFile, 'utf8')) as Config;
 }
+
+/** Management reads must select the right collection through one overview request and never persist overrides. */
+it.each([
+  ['admin', 'overview', adminOverview],
+  ['user', 'list', adminOverview.users],
+  ['role', 'list', adminOverview.roles],
+  ['permission', 'list', adminOverview.permissions],
+] as const)(
+  'reads %s %s as JSON without configuration writes',
+  async (resource, action, data) => {
+    response = () => Response.json(adminOverview);
+    env.NOTICEBOARD_USER = 'noticeboard-master';
+    env.NOTICEBOARD_BASE_URL = 'https://ignored.test';
+    const result = await invoke([
+      resource,
+      action,
+      '--json',
+      '--base-url',
+      'https://admin.test/proxy',
+      '--user',
+      'noticeboard-admin',
+    ]);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual({ data });
+    expect(requests).toEqual([
+      {
+        url: 'https://admin.test/proxy/api/v1/admin/overview',
+        user: 'noticeboard-admin',
+      },
+    ]);
+    expect(await readdir(directory)).toEqual([]);
+  },
+);
+
+/** Existing profiles supply management identity without being rewritten by successful or rejected reads. */
+it('reads management using a selected profile and leaves its bytes unchanged', async () => {
+  const contents = JSON.stringify({
+    version: 1,
+    currentProfile: 'local',
+    profiles: {
+      local: {
+        baseUrl: 'https://local.test',
+        demoUserId: 'noticeboard-master',
+      },
+      admin: { baseUrl: 'https://admin.test', demoUserId: 'noticeboard-admin' },
+    },
+  });
+  await writeFile(configFile, contents);
+  response = () => Response.json(adminOverview);
+  const result = await invoke([
+    'admin',
+    'overview',
+    '--profile',
+    'admin',
+    '--json',
+  ]);
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(requests).toEqual([
+    {
+      url: 'https://admin.test/api/v1/admin/overview',
+      user: 'noticeboard-admin',
+    },
+  ]);
+  expect(await readFile(configFile, 'utf8')).toBe(contents);
+});
+
+/** New resource help must work offline even with corrupt configuration. */
+it.each(['admin', 'user', 'role', 'permission'])(
+  'shows offline %s help',
+  async (resource) => {
+    await writeFile(configFile, 'broken');
+    const result = await invoke([resource, '--help']);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toContain(
+      `noticeboard ${resource} ${resource === 'admin' ? 'overview' : 'list'}`,
+    );
+    expect(requests).toEqual([]);
+  },
+);
+
+/** List-only management commands cannot accidentally accept task filters or mutations. */
+it.each([
+  ['user', 'get', 'user-z'],
+  ['role', 'list', '--search', 'admin'],
+  ['user', 'list', '--status', 'closed'],
+  ['permission', 'list', 'extra'],
+  ['admin', 'overview', '--yes'],
+  ['user', 'list', '--user', 'a', '--user', 'b'],
+])('rejects invalid management arguments %j before HTTP', async (...args) => {
+  expect((await invoke(args)).exitCode).toBe(64);
+  expect(requests).toEqual([]);
+});
+
+/** Permission and transport failures must not leak success data or trigger identity fallback. */
+it.each([
+  [401, apiError, 77],
+  [403, apiError, 77],
+  [200, {}, 65],
+] as const)(
+  'reports management HTTP %s failures only on stderr',
+  async (status, body, exitCode) => {
+    response = () => Response.json(body, { status });
+    const result = await invoke(['user', 'list', '--json']);
+    expect(result.exitCode).toBe(exitCode);
+    expect(result.stdout).toBe('');
+    expect(JSON.parse(result.stderr)).toMatchObject({ meta: { exitCode } });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.user).toBe('noticeboard-master');
+    expect(await readdir(directory)).toEqual([]);
+  },
+);
+
+/** Render all three management tables, preserving deleted rows and escaping remote terminal controls. */
+it('renders management tables with inert user content and explicit empty states', async () => {
+  response = () =>
+    Response.json({
+      ...adminOverview,
+      users: [
+        { ...adminOverview.users[0], name: '\u001b[31m危险\n姓名' },
+        adminOverview.users[1],
+      ],
+    });
+  const result = await invoke(['admin', 'overview']);
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.stdout).toContain('user-a');
+  expect(result.stdout).toContain('2026-09-02T00:00:00.000Z');
+  expect(result.stdout).toContain('\\u001b[31m危险\\u000a姓名');
+  expect(result.stdout).not.toContain('\u001b');
+  expect(result.stdout).toContain('role-z');
+  expect(result.stdout).toContain('system.manage');
+  for (const resource of ['user', 'role', 'permission']) {
+    const list = await invoke([resource, 'list']);
+    expect(list.exitCode, list.stderr).toBe(0);
+    expect(list.stdout).toContain(
+      resource === 'user'
+        ? 'user-z'
+        : resource === 'role'
+          ? 'role-z'
+          : 'system.manage',
+    );
+  }
+  response = () => Response.json({ users: [], roles: [], permissions: [] });
+  const empty = await invoke(['admin', 'overview']);
+  expect(empty.stdout).toContain('无用户');
+  expect(empty.stdout).toContain('无角色');
+  expect(empty.stdout).toContain('无权限');
+});
 
 /** Missing config must not cause implicit writes or require network access for help. */
 it('shows help without loading damaged config or requesting HTTP', async () => {

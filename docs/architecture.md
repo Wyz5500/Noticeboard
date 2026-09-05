@@ -24,9 +24,9 @@
                                              │
                   apps/cli/src/sdk/internal/generated/transport.ts
                                              │
-                            handwritten SDK（tasks / comments / identities）
+                            handwritten SDK（tasks / comments / identities / admin）
                                              │
-                          CLI（profile / identity / task 读写 / comment 写入）
+                          CLI（profile / identity / task 读写 / comment 写入 / 管理读取）
 
 目标：
 API 模块化单体
@@ -134,7 +134,7 @@ v1 通常允许新增 endpoint、可选响应字段以及具有旧行为默认�
 
 SDK 是传输客户端，不是服务器应用层的进程外镜像。第一阶段不独立发布 SDK，而是在仓库内形成可单独 typecheck、build 和 test 的逻辑边界，并 bundle 到唯一发布的 CLI npm 包；当 SDK 需要独立发布或 CLI/TUI 成为两个真实消费者时，再引入 npm workspaces。
 
-当前 SDK 提供 `createNoticeboardClient`、`tasks.list/get/create/act/renew`、`comments.create/edit/delete` 和 `identities.list`。唯一入口为 `apps/cli/src/sdk/index.ts`；通过 `sdk:typecheck`、`sdk:build` 和 `test:sdk` 独立检查、构建和测试，输出 `dist/sdk` ESM 与声明，尚无独立 npm 包。根 build 包含 SDK，verify 包含独立 SDK 类型检查，SDK 单元/构建合同与真实宿主机 HTTP smoke 分别进入 unit / API 门禁。服务器镜像仅复制 `dist/api` 与 `dist/web`。
+当前 SDK 提供 `createNoticeboardClient`、`tasks.list/get/create/act/renew`、`comments.create/edit/delete`、`identities.list` 和 `admin.overview`。唯一入口为 `apps/cli/src/sdk/index.ts`；通过 `sdk:typecheck`、`sdk:build` 和 `test:sdk` 独立检查、构建和测试，输出 `dist/sdk` ESM 与声明，尚无独立 npm 包。根 build 包含 SDK，verify 包含独立 SDK 类型检查，SDK 单元/构建合同与真实宿主机 HTTP smoke 分别进入 unit / API 门禁。服务器镜像仅复制 `dist/api` 与 `dist/web`。
 
 SDK 依赖和行为：
 
@@ -151,14 +151,19 @@ SDK 依赖和行为：
 
 ## CLI 当前能力与目标边界
 
-CLI 是远程服务端客户端，只调用 HTTP SDK，不直接访问 PostgreSQL、migration、服务器用例或现有运维脚本内部能力。当前实现 profile、demo identity、task list/get/create/act/renew 和 comment create/edit/delete，使用 Node 原生参数解析，严格拒绝未知/重复参数。当前采用资源型命令，范围包括：
+CLI 是远程服务端客户端，只调用 HTTP SDK，不直接访问 PostgreSQL、migration、服务器用例或现有运维脚本内部能力。当前实现 profile、demo identity、task list/get/create/act/renew、comment create/edit/delete 和管理资源读取，使用 Node 原生参数解析，严格拒绝未知/重复参数。当前采用资源型命令，范围包括：
 
 - `profile`：named profile 的查询、设置、切换与删除。
 - `identity`：demo 身份列表、当前身份和切换。
 - `task`：列表、详情、创建、生命周期动作和续期。
 - `comment`：创建、编辑和删除。
+- `admin overview`、`user list`、`role list`、`permission list`：管理总览及三类列表。
 
-用户/角色/权限管理、demo reset 和 TUI 不属于首发范围。`task list` 可基于现有完整任务列表在客户端实现 `--mine`、`--status` 和 `--search`，不得因此复制或改变 `/api/v1/tasks` 的 wire contract。
+管理写入、管理详情与筛选、demo reset 和 TUI 尚未实现。`task list` 可基于现有完整任务列表在客户端实现 `--mine`、`--status` 和 `--search`，不得因此复制或改变 `/api/v1/tasks` 的 wire contract。
+
+管理读取只通过 SDK public `admin.overview(options?: RequestOptions): Promise<AdminOverview>` 调用已有 generated `getAdminOverview`，HTTP 200 返回完整用户、角色和权限目录。手写 `AdminOverview`、`AdminUser`、`AdminRole`、`AdminPermission` 从 SDK 根入口导出，权限码复用 `Permission`；字段、nullable、闭合枚举和嵌套数组按 tracked OpenAPI 校验，忽略新增未知字段。保留服务器顺序、逻辑删除记录和字符串日期，不重算状态或权限。
+
+每条管理 CLI 命令只请求一次完整 overview，再选择总览或对应数组；JSON `data` 分别为 `AdminOverview`、`AdminUser[]`、`AdminRole[]`、`AdminPermission[]`，无成功 meta。人类输出为转义控制字符的中文表格，总览按用户、角色、权限组合，空列表明确提示。所有管理读取沿用公共配置优先级、30 秒取消窗口和 401/403→77、协议→65、网络→69 的错误规则，不重试、不落盘、不预读身份或自动选择管理员；服务器是 `system.manage` 权限检查的唯一权威。
 
 CLI 配置使用版本化 JSON schema 和 XDG/平台系统配置目录。一个配置文件可包含多个 named profile；每个 profile 第一阶段只保存 base URL 和当前 demo user ID，不保存任务、响应缓存或秘密。配置解析优先级固定为：
 

@@ -1,5 +1,9 @@
 /** Read-response mappings mirror tracked OpenAPI while owning independent public SDK types. */
 import type {
+  AdminOverview,
+  AdminUser,
+  AdminRole,
+  AdminPermission,
   Identity,
   Task,
   TaskActivity,
@@ -29,6 +33,43 @@ const permission = enumeration([
   'tasks.close',
   'demo.reset',
 ]);
+
+const adminUser = object<AdminUser>({
+  id: string,
+  username: string,
+  name: string,
+  roleId: string,
+  roleCode: string,
+  roleName: string,
+  active: boolean,
+  deletedAt: nullable(string),
+  updatedAt: string,
+});
+
+const adminRole = object<AdminRole>({
+  id: string,
+  code: string,
+  name: string,
+  builtin: boolean,
+  permissions: array(permission),
+  active: boolean,
+  deletedAt: nullable(string),
+  updatedAt: string,
+});
+
+const adminPermission = object<AdminPermission>({
+  code: permission,
+  name: string,
+  description: string,
+});
+
+/** Validates all management collections without inferring permissions or filtering deleted entries. */
+export const decodeAdminOverview: Decoder<AdminOverview> =
+  object<AdminOverview>({
+    users: array(adminUser),
+    roles: array(adminRole),
+    permissions: array(adminPermission),
+  });
 
 /** Validates demo actors, including optional permissions, without adding identity defaults. */
 export const decodeIdentity: Decoder<Identity> = object<Identity>({

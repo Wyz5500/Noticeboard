@@ -1,5 +1,5 @@
 /** Public construction and cancellation contracts; SDK configuration is supplied entirely by callers. */
-import type { Identity, Task } from './models.js';
+import type { AdminOverview, Identity, Task } from './models.js';
 import type {
   CreateTaskInput,
   ActTaskInput,
@@ -24,6 +24,10 @@ export interface RequestOptions {
 }
 
 export interface NoticeboardClient {
+  admin: {
+    /** Reads the complete protected overview, retaining deleted records and server order. */
+    overview(options?: RequestOptions): Promise<AdminOverview>;
+  };
   tasks: {
     /** Reads the complete server-ordered list without filtering, caching or retrying. */
     list(options?: RequestOptions): Promise<Task[]>;

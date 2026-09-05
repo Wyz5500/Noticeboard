@@ -37,6 +37,46 @@ afterAll(async () => {
   await app?.close();
 });
 
+/** Management reads accept live schemas while the server remains the sole authorization authority. */
+it('reads a protected overview and preserves real authorization failures', async () => {
+  const client = createNoticeboardClient({
+    baseUrl,
+    getHeaders: () => ({ 'X-Demo-User-Id': 'noticeboard-admin' }),
+  });
+  const overview = await client.admin.overview();
+  expect(overview.users).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: 'noticeboard-admin', active: true }),
+    ]),
+  );
+  expect(overview.roles).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        permissions: expect.arrayContaining(['system.manage']),
+      }),
+    ]),
+  );
+  expect(overview.permissions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: 'system.manage' }),
+    ]),
+  );
+  for (const [user, status] of [
+    ['noticeboard-master', 403],
+    ['sdk-missing-admin', 401],
+  ] as const) {
+    const denied = createNoticeboardClient({
+      baseUrl,
+      getHeaders: () => ({ 'X-Demo-User-Id': user }),
+    });
+    await expect(denied.admin.overview()).rejects.toMatchObject({
+      kind: 'api',
+      status,
+      path: '/api/v1/admin/overview',
+    });
+  }
+});
+
 /** Confirms all three resource adapters accept live schemas and preserve real HTTP failures. */
 it('reads identities and tasks and maps server errors over host HTTP', async () => {
   const client = createNoticeboardClient({
