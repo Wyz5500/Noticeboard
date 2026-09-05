@@ -20,6 +20,7 @@ it.each([
     expect(await Promise.race([answer, setTimeout(100, 'pending')])).toBe(
       expected,
     );
+    expect(output.read()?.toString()).toBe('------\n确认？\n------\n');
   } finally {
     input.destroy();
     output.destroy();

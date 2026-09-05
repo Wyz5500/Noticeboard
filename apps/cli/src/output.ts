@@ -1,4 +1,5 @@
 /** Renders human results while keeping untrusted content inert in terminal output. */
+import stringWidth from 'string-width';
 import type {
   DemoResetResult,
   AdminOverview,
@@ -9,6 +10,17 @@ import type {
   Task,
 } from './sdk/index.js';
 import type { Profile } from './config.js';
+
+/** Frames text output by display width while reusing existing outer table rules. */
+export function frameHumanOutput(text: string): string {
+  const lines = text.replace(/\n+$/, '').split('\n');
+  let width = 1;
+  for (const line of lines) width = Math.max(width, stringWidth(line));
+  const rule = '-'.repeat(width);
+  if (!/^[-+]+$/.test(lines[0]!)) lines.unshift(rule);
+  if (!/^[-+]+$/.test(lines.at(-1)!)) lines.push(rule);
+  return `${lines.join('\n')}\n`;
+}
 
 /** Escapes controls in user text, leaving JSON serialization to the machine output path. */
 export function safeText(value: unknown): string {
@@ -77,7 +89,7 @@ export function humanResult(command: string, data: unknown): string {
     return `用户：\n${humanResult('user list', overview.users)}\n角色：\n${humanResult('role list', overview.roles)}\n权限：\n${humanResult('permission list', overview.permissions)}`;
   }
   if (command === 'user list')
-    return managementTable(
+    return humanTable(
       'ID\t用户名\t姓名\t角色 ID\t角色名称\t启用\t删除时间',
       (data as AdminUser[]).map((user) => [
         user.id,
@@ -91,7 +103,7 @@ export function humanResult(command: string, data: unknown): string {
       '无用户',
     );
   if (command === 'role list')
-    return managementTable(
+    return humanTable(
       'ID\t代码\t名称\t内置\t权限码\t启用\t删除时间',
       (data as AdminRole[]).map((role) => [
         role.id,
@@ -105,8 +117,8 @@ export function humanResult(command: string, data: unknown): string {
       '无角色',
     );
   if (command === 'permission list')
-    return managementTable(
-      '代码\t名称\t描述',
+    return humanTable(
+      'ID\t名称\t描述',
       (data as AdminPermission[]).map((permission) => [
         permission.code,
         permission.name,
@@ -115,19 +127,19 @@ export function humanResult(command: string, data: unknown): string {
       '无权限',
     );
   if (command === 'task list') {
-    const rows = (data as Task[]).map((task) =>
-      [
-        task.id,
-        task.title,
-        task.statusLabel,
-        task.assignee?.name ?? '未接取',
-        task.dueDate,
-        task.version,
-      ]
-        .map(safeText)
-        .join('\t'),
+    const rows = (data as Task[]).map((task) => [
+      task.id,
+      task.title,
+      task.statusLabel,
+      task.assignee?.name ?? '未接取',
+      task.dueDate,
+      task.version,
+    ]);
+    return humanTable(
+      'ID\t标题\t状态\t接取者\t截止日期\t版本',
+      rows,
+      '无匹配任务',
     );
-    return `ID\t标题\t状态\t接取者\t截止日期\t版本\n${rows.length ? rows.join('\n') : '无匹配任务'}\n`;
   }
   if (command.startsWith('task ') || command.startsWith('comment ')) {
     const task = data as Task;
@@ -135,7 +147,16 @@ export function humanResult(command: string, data: unknown): string {
   }
   if (command.startsWith('identity ')) {
     const identities = (Array.isArray(data) ? data : [data]) as Identity[];
-    return `身份 ID\t姓名\t用户名\t角色\n${identities.map((identity) => [identity.id, identity.name, `@${identity.username}`, identity.roleLabel].map(safeText).join('\t')).join('\n') || '无可用身份'}\n`;
+    return humanTable(
+      'ID\t姓名\t用户名\t角色',
+      identities.map((identity) => [
+        identity.id,
+        identity.name,
+        `@${identity.username}`,
+        identity.roleLabel,
+      ]),
+      '无可用身份',
+    );
   }
   if (command === 'profile delete')
     return `已删除 profile：${safeText((data as { name: string }).name)}\n`;
@@ -143,16 +164,51 @@ export function humanResult(command: string, data: unknown): string {
     name: string;
     current: boolean;
   })[];
-  return `Profile\t服务地址\t演示身份\t当前激活\n${profiles.map((profile) => [profile.name, profile.baseUrl, profile.demoUserId, profile.current ? '是' : '否'].map(safeText).join('\t')).join('\n')}\n`;
+  return humanTable(
+    'ID\t服务地址\t演示身份\t当前激活',
+    profiles.map((profile) => [
+      profile.name,
+      profile.baseUrl,
+      profile.demoUserId,
+      profile.current ? '是' : '否',
+    ]),
+    '',
+  );
 }
 
-/** Escapes each remote cell independently while preserving table separators and empty-state text. */
-function managementTable(
-  header: string,
-  rows: string[][],
-  empty: string,
-): string {
-  return `${header}\n${rows.length ? rows.map((row) => row.map(safeText).join('\t')).join('\n') : empty}\n`;
+/** Aligns escaped cells with a divider after ID and horizontal rules, leaving the sides open. */
+function humanTable(header: string, rows: unknown[][], empty: string): string {
+  const cells = [header.split('\t'), ...rows].map((row) => row.map(safeText));
+  const widths = cells[0]!.map(() => 0);
+  const measured = cells.map((row) =>
+    row.map((text, column) => {
+      const width = stringWidth(text);
+      widths[column] = Math.max(widths[column]!, width);
+      return { text, width };
+    }),
+  );
+  const lines = measured.map((row) =>
+    row
+      .map(({ text, width }, column) =>
+        column === row.length - 1
+          ? text
+          : text +
+            ' '.repeat(widths[column]! - width) +
+            (column === 0 ? ' | ' : '   '),
+      )
+      .join(''),
+  );
+  const rule = widths
+    .map(
+      (width, column) =>
+        (column === 0 ? '' : column === 1 ? '-+-' : '---') + '-'.repeat(width),
+    )
+    .join('');
+  lines.splice(1, 0, rule);
+  lines.unshift(rule);
+  if (!rows.length) lines.push(empty);
+  lines.push(rule);
+  return `${lines.join('\n')}\n`;
 }
 
 /** Presents complete resource fields while escaping every remote value independently. */

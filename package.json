@@ -79,6 +79,7 @@
     "orval": "8.28.1",
     "prettier": "3.9.6",
     "rimraf": "6.1.3",
+    "string-width": "4.2.3",
     "tsx": "4.23.13",
     "typescript": "6.0.3",
     "typescript-eslint": "8.69.0",

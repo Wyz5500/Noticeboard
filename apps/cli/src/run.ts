@@ -10,7 +10,7 @@ import {
   type Config,
 } from './config.js';
 import { CliError, describeError } from './errors.js';
-import { humanResult, safeText } from './output.js';
+import { frameHumanOutput, humanResult, safeText } from './output.js';
 import { createNoticeboardClient } from './sdk/index.js';
 import { filterTasks } from './tasks.js';
 import { isManagementCommand, selectManagementResult } from './management.js';
@@ -42,13 +42,19 @@ export async function runCli(
     json = command.options.json ?? false;
     if (command.options.help) {
       const help = helpText(command.name);
-      context.stdout(json ? `${JSON.stringify({ data: { help } })}\n` : help);
+      context.stdout(
+        json
+          ? `${JSON.stringify({ data: { help } })}\n`
+          : frameHumanOutput(help),
+      );
       return 0;
     }
     if (command.name === 'man') {
       const manual = manualText(command.operands.join(' '));
       context.stdout(
-        json ? `${JSON.stringify({ data: { manual } })}\n` : manual,
+        json
+          ? `${JSON.stringify({ data: { manual } })}\n`
+          : frameHumanOutput(manual),
       );
       return 0;
     }
@@ -69,7 +75,7 @@ export async function runCli(
     context.stdout(
       json
         ? `${JSON.stringify(result)}\n`
-        : humanResult(command.name, result.data),
+        : frameHumanOutput(humanResult(command.name, result.data)),
     );
     return 0;
   } catch (error) {
@@ -77,7 +83,9 @@ export async function runCli(
     context.stderr(
       json
         ? `${JSON.stringify(failure)}\n`
-        : `错误：${safeText(failure.error.message)}${failure.error.code ? ` (${safeText(failure.error.code)})` : ''}${failure.error.hint ? `；${safeText(failure.error.hint)}` : ''}\n`,
+        : frameHumanOutput(
+            `错误：${safeText(failure.error.message)}${failure.error.code ? ` (${safeText(failure.error.code)})` : ''}${failure.error.hint ? `；${safeText(failure.error.hint)}` : ''}\n`,
+          ),
     );
     return failure.meta.exitCode;
   }

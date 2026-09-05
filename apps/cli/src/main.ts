@@ -1,6 +1,7 @@
 /** Adapts process streams and TTY confirmation to the independently testable CLI dispatcher. */
 import { confirmDeletion } from './confirmation.js';
 import { runCli } from './run.js';
+import { frameHumanOutput } from './output.js';
 import { readStdin } from './write-commands.js';
 
 let streamExitCode: number | undefined;
@@ -21,7 +22,7 @@ function handleStdoutError(error: NodeJS.ErrnoException): void {
   process.stderr.write(
     process.argv.includes('--json')
       ? `${JSON.stringify(failure)}\n`
-      : `错误：${failure.error.message}\n`,
+      : frameHumanOutput(`错误：${failure.error.message}\n`),
   );
 }
 
@@ -39,7 +40,7 @@ if (process.versions.node.split('.')[0] !== '24') {
   process.stderr.write(
     process.argv.includes('--json')
       ? `${JSON.stringify(error)}\n`
-      : `${error.error.message}\n`,
+      : frameHumanOutput(`${error.error.message}\n`),
   );
   process.exitCode = 64;
 } else {

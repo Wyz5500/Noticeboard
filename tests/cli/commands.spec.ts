@@ -87,6 +87,23 @@ async function saved(): Promise<Config> {
   return JSON.parse(await readFile(configFile, 'utf8')) as Config;
 }
 
+/** All text result paths share outer rules without duplicating an existing table border. */
+it.each([
+  ['--help'],
+  ['task', 'create', '--help'],
+  ['man', 'task'],
+  ['task', 'get', 'task-1'],
+  ['identity', 'list'],
+  ['invalid-command'],
+])('frames human command output for %j', async (...args) => {
+  const result = await invoke(args);
+  const lines = (result.stdout || result.stderr).trimEnd().split('\n');
+  expect(lines[0]).toMatch(/^[-+]+$/);
+  expect(lines.at(-1)).toMatch(/^[-+]+$/);
+  expect(lines[1]).not.toMatch(/^[-+]+$/);
+  expect(lines.at(-2)).not.toMatch(/^[-+]+$/);
+});
+
 /** Management reads must select the right collection through one overview request and never persist overrides. */
 it.each([
   ['admin', 'overview', adminOverview],
@@ -680,7 +697,7 @@ it('lists and shows stored profiles and human identities', async () => {
     },
   });
   const human = await invoke(['identity', 'list']);
-  expect(human.stdout).toContain('身份 ID');
+  expect(human.stdout.split('\n')[1]).toMatch(/^ID +\| 姓名 +用户名 +角色$/);
   expect(human.stdout).toContain('演示成员');
   expect(human.stdout).toContain('user-1');
 });

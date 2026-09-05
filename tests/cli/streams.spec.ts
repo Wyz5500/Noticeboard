@@ -119,7 +119,10 @@ it.each([false, true])('reports an unwritable stdout with JSON=%s', (json) => {
         error: { kind: 'internal', code: 'EBADF' },
         meta: { exitCode: 1 },
       });
-    else expect(result.stderr).toContain('无法写入标准输出');
+    else {
+      expect(result.stderr).toContain('无法写入标准输出');
+      expect(result.stderr).toMatch(/^-+\n[\s\S]*\n-+\n$/);
+    }
   } finally {
     closeSync(descriptor);
   }

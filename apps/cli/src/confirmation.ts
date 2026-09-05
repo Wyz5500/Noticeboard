@@ -1,6 +1,7 @@
 /** Owns readline confirmation without letting terminal lifetime leak into command logic. */
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
+import { frameHumanOutput } from './output.js';
 
 /** Treats only an explicit affirmative answer as consent and always closes readline. */
 export async function confirmDeletion(
@@ -16,7 +17,7 @@ export async function confirmDeletion(
       );
       readline.once('close', () => resolve(false));
       readline.once('SIGINT', () => resolve(false));
-      readline.setPrompt(question);
+      readline.setPrompt(frameHumanOutput(question));
       readline.prompt();
     });
   } finally {
