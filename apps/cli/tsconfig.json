@@ -4,7 +4,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "lib": ["DOM", "DOM.Iterable", "ES2023"],
-    "types": [],
+    "types": ["node"],
     "emitDecoratorMetadata": false,
     "experimentalDecorators": false,
     "noEmit": true

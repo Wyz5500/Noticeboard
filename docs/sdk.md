@@ -1,6 +1,6 @@
 # 只读 HTTP SDK
 
-当前 SDK 支持 Node 24.x，位于 `apps/cli/src/sdk`，没有独立 npm 包。唯一源码入口是 `index.ts`，独立构建入口为 `dist/sdk/index.js`。CLI、SDK 写操作、profile 与 npm 发布仍未实现。
+当前 SDK 支持 Node 24.x，位于 `apps/cli/src/sdk`，没有独立 npm 包。唯一源码入口是 `index.ts`，独立构建入口为 `dist/sdk/index.js`。只读 CLI 与 profile 已实现并通过该入口访问 HTTP；SDK/CLI 写操作与 registry 发布仍未实现。
 
 ## 构建与使用
 
@@ -50,7 +50,7 @@ console.log({ identities, tasks, detail });
 
 公共资源类型包括 `Identity`、`Permission`、`Task`、`TaskType`、`TaskStatus`、`TaskWorkflowStatus`、`TaskActivityAction`、`TaskActivity`、`TaskComment` 和 `TaskTimelineEvent`；字段以 tracked OpenAPI 为依据。日期始终是字符串，版本和服务器顺序原样保留；时间线通过 `kind` 区分生命周期活动和评论，保留 `edited` 与删除 tombstone。
 
-手写类型不继承、别名引用或 re-export generated 符号。SDK 公共声明的传递依赖不包含 generated 类型；CLI / TUI 后续只允许使用公共入口。Web 继续使用现有 ApiClient。
+手写类型不继承、别名引用或 re-export generated 符号。SDK 公共声明的传递依赖不包含 generated 类型；CLI 与未来 TUI 只允许使用公共入口。Web 继续使用现有 ApiClient。
 
 ## 响应校验与错误
 
@@ -70,4 +70,4 @@ SDK 完整校验三个只读接口的已知结构：字段类型、必填性、n
 
 `sdk:build` 通过现有 TypeScript 编译 ESM 与 `.d.ts`，不引入 runtime 依赖、workspace 或发布 manifest。generated transport 仍只允许从 tracked artifact 生成。SDK 构建包含内部 transport，但服务器生产镜像只复制 `dist/api` 和 `dist/web`。
 
-下一步是基于该入口实现只读 CLI 的 profile、demo identity、task list/get、JSON 输出与退出码。写操作将后续显式加入 expectedVersion 合同；本阶段没有 `comments`、管理、reset 或写入方法。
+只读 CLI 已基于该入口实现 profile、demo identity、task list/get、JSON 输出与退出码；配置、筛选、30 秒超时和终端输出均由 CLI 负责。写操作将后续显式加入 expectedVersion 合同；本阶段没有 `comments`、管理、reset 或写入方法。

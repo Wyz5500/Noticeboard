@@ -15,7 +15,7 @@
 
 ## 产品与客户端方向
 
-- 项目采用 API 核心、CLI-first、Web maintenance-only 的长期方向。CLI 将成为主要交互入口；未来 TUI 与可能独立发布的 SDK 复用同一 HTTP SDK。tracked OpenAPI v1 artifact、稳定 operationId、internal generated transport、漂移/兼容门禁和只读手写 SDK 已经实现；尚未实现的 CLI、SDK 写操作和 TUI 必须在文档中明确标为目标状态，不得写成当前可运行能力。
+- 项目采用 API 核心、CLI-first、Web maintenance-only 的长期方向。CLI 将成为主要交互入口；未来 TUI 与可能独立发布的 SDK 复用同一 HTTP SDK。tracked OpenAPI v1 artifact、稳定 operationId、internal generated transport、漂移/兼容门禁、只读手写 SDK 和只读 CLI 已经实现；尚未实现的 SDK/CLI 写操作、registry 发布和 TUI 必须在文档中明确标为目标状态，不得写成当前可运行能力。
 - CLI、TUI 与 SDK 只能通过版本化 HTTP/OpenAPI 使用业务能力，不得导入 API 的 Domain、Application、Nest Module、DTO、ORM、数据库代码或 Feature `public/`。Feature `public/` 只属于服务端模块化单体内部合同，不是客户端公共 API。
 - 目标客户端依赖方向固定为 OpenAPI artifact → internal generated transport → handwritten HTTP SDK → CLI / TUI。CLI 与 TUI 只能导入 SDK public 入口，禁止直接导入 generated/internal 子路径；Web 继续使用现有手写 `ApiClient`，不得导入 SDK。
 - 第一阶段不引入 npm workspaces，只交付一个内部/私有 CLI npm 包；SDK 先形成严格逻辑边界并 bundle 到 CLI。只有 SDK 需要独立发布或 CLI/TUI 成为两个真实消费者时，才重新评估 workspace 化。
@@ -60,5 +60,5 @@
 - 领域/前端规则进单元测试；PostgreSQL 语义进仓储契约；HTTP/DTO/guard/OpenAPI/健康进 API 测试；跨页面交互进 Playwright 行为测试；外观进零像素视觉测试。
 - 客户端边界落地后，SDK transport/façade、错误映射和 public exports 进 SDK 单元/契约测试；CLI 参数、profile 优先级、stdout/stderr、JSON 信封、退出码、TTY 确认和乐观并发进 CLI 测试，并使用真实宿主机 API 做最小 HTTP smoke。npm 包必须验证 `files` 白名单、安装后的 `bin --help` 和不包含服务器/Web 源码或测试 fixture。
 - 视觉验证只检查“瑞士国际”主题；其桌面端与移动端截图作为唯一视觉基准。其他主题按类似于 Mod 的定位处理，不纳入视觉回归截图检查，但仍须通过主题注册、令牌、类型与行为质量检查。
-- 主题契约见 `style-configs/README.md`，架构决策见 `docs/architecture.md`，CLI 目标合同见 `docs/cli.md`，HTTP 兼容政策见 `docs/api-compatibility.md`，当前运行方式见 `README.md`。
+- 主题契约见 `style-configs/README.md`，架构决策见 `docs/architecture.md`，CLI 当前与目标合同见 `docs/cli.md`，HTTP 兼容政策见 `docs/api-compatibility.md`，当前运行方式见 `README.md`。
 - 项目完整验证命令为 `npm run verify`，并执行 `git diff --check`。最终候选额外使用 `npm run verify -- --final`；永久部署验证只能在候选合并回 primary `main` 后由 release 流程立即执行。

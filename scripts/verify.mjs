@@ -21,6 +21,7 @@ const STATIC_SCRIPTS = [
   'lint',
   'typecheck',
   'sdk:typecheck',
+  'cli:typecheck',
   'comments',
   'architecture',
   'openapi:check',

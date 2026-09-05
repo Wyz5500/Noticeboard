@@ -4,7 +4,7 @@
 
 告示牌采用 **API 核心、CLI-first、Web maintenance-only** 的长期方向：版本化 HTTP API 是跨进程业务能力边界；CLI 将成为主要交互入口；未来 TUI 与可能独立发布的 SDK 复用同一 HTTP SDK。现有 Web 保留运行和维护，但不再承接常规产品功能开发。
 
-本文同时描述当前架构与目标架构。tracked OpenAPI v1 artifact、稳定 operationId、服务端漂移检查、显式受支持基线兼容门禁、internal generated Fetch transport / artifact → generated 漂移门禁和只读手写 HTTP SDK 已经实现。CLI、SDK 写操作、npm 客户端发布和 TUI 仍属于尚未实现的目标合同，不能据此假定仓库中已经存在对应命令或发布包。
+本文同时描述当前架构与目标架构。tracked OpenAPI v1 artifact、稳定 operationId、服务端漂移检查、显式受支持基线兼容门禁、internal generated Fetch transport / artifact → generated 漂移门禁和只读手写 HTTP SDK 已经实现。只读 CLI 与本地私有安装包也已实现。SDK/CLI 写操作、npm registry 发布和 TUI 仍属于尚未实现的目标合同，不能据此假定仓库中已经存在对应命令或发布包。
 
 当前仍是模块化单体：唯一的 NestJS + Fastify 进程同时提供版本化 API、健康检查、运行时 OpenAPI 和编译后的静态页面。应用实例无状态，PostgreSQL 是服务器任务与时间线的权威数据源。现有架构不包含 SQLite、Redis、CQRS、Outbox、Event Sourcing、Helm 或正式认证。
 
@@ -25,6 +25,8 @@
                   apps/cli/src/sdk/internal/generated/transport.ts
                                              │
                             handwritten SDK（tasks / identities 只读）
+                                             │
+                          CLI（profile / identity / task list/get）
 
 目标：
 API 模块化单体
@@ -47,7 +49,7 @@ API 模块化单体
 必须区分两类 public contract：
 
 - **服务端内部公共合同**：`apps/api/src/<feature>/public/`，只服务模块化单体内部的跨 Feature 协作，不是 npm SDK 或客户端导入入口。
-- **外部稳定合同**：HTTP `/api/v1` 的路径、方法、字段、枚举、状态码、错误语义与身份头；tracked OpenAPI v1 artifact；SDK 根入口导出的 API；未来 CLI 命令、参数、配置、JSON 信封、stdout/stderr 和退出码。
+- **外部稳定合同**：HTTP `/api/v1` 的路径、方法、字段、枚举、状态码、错误语义与身份头；tracked OpenAPI v1 artifact；SDK 根入口导出的 API；CLI 命令、参数、配置、JSON 信封、stdout/stderr 和退出码。
 
 业务模块内部遵循：
 
@@ -62,7 +64,7 @@ DTO、领域模型、读取投影与 ORM 实体分别建模。ORM 实体不会�
 
 `apps/api/src` 的直接顶层文件是 Composition Root，负责 Nest Module、全局 DataSource、migration 和 seed 组装。只有这些文件可以导入 Feature 的 `public/composition/` 注册入口；普通 Feature、`common` 和嵌套顶层代码不能使用该入口，Composition Root 也不能直接导入 Feature 私有实现。`common` 只能被 Feature 依赖，不能反向依赖任何 Feature。
 
-当前 `scripts/check-architecture.ts` 自动识别任意 `apps/api/src/<feature>/...`，检查 Feature Boundary、Composition Root 例外、循环、逆向层依赖、核心层框架泄漏和通用仓储/服务基类；新增 Feature 无需修改规则名单。当前门禁也扫描已存在的 `apps/cli/src`，强制以下方向（CLI / TUI 仍未实现）：
+当前 `scripts/check-architecture.ts` 自动识别任意 `apps/api/src/<feature>/...`，检查 Feature Boundary、Composition Root 例外、循环、逆向层依赖、核心层框架泄漏和通用仓储/服务基类；新增 Feature 无需修改规则名单。当前门禁也扫描已存在的 `apps/cli/src`，强制以下方向（只读 CLI 已实现，TUI 仍为目标）：
 
 ```text
 OpenAPI artifact → generated transport → handwritten SDK → CLI / TUI
@@ -147,9 +149,9 @@ SDK 依赖和行为：
 
 只读响应按 tracked OpenAPI 校验全部已知字段的类型、必填性、闭合枚举、nullable 和时间线联合，容忍新增字段并仅映射已声明字段。SDK 不推导服务器业务规则或修改评论 tombstone。合法 HTTP 错误信封保留状态与所有已知错误字段；非法 JSON、结构错误和意外成功状态归为 protocol，保留可取得的 HTTP status；连接和响应读取失败归为 network 并保留 cause。使用方式和精确公共合同见 `docs/sdk.md`。
 
-## CLI 目标边界
+## CLI 当前能力与目标边界
 
-CLI 是远程服务端客户端，只调用 HTTP SDK，不直接访问 PostgreSQL、migration、服务器用例或现有运维脚本内部能力。第一阶段采用资源型命令，范围包括：
+CLI 是远程服务端客户端，只调用 HTTP SDK，不直接访问 PostgreSQL、migration、服务器用例或现有运维脚本内部能力。当前实现 profile、demo identity、task list/get，使用 Node 原生参数解析，严格拒绝未知/重复参数。任务创建、生命周期、续期和评论写入尚未实现。完整首发目标采用资源型命令，范围包括：
 
 - `profile`：named profile 的查询、设置、切换与删除。
 - `identity`：demo 身份列表、当前身份和切换。
@@ -168,11 +170,19 @@ CLI 配置使用版本化 JSON schema 和 XDG/平台系统配置目录。一个�
 
 CLI 默认输出人类可读文本或表格；`--json` 成功输出统一的 `{ "data": ..., "meta"?: ... }` 信封。stdout 只承载结果，stderr 承载错误、警告和诊断；JSON 模式不得混入 banner、进度或调试文本。退出码必须稳定区分成功、usage/本地输入、协议、资源不存在、网络/服务不可用、临时冲突以及身份/权限失败。
 
+CLI 进程入口处理异步输出流错误：stdout 的 EPIPE 视为下游主动结束消费，安静返回 0；其他 stdout 写入错误返回 1 并尽可能输出受控诊断，stderr 写入失败返回 1 且不递归报告。有效请求身份统一使用 Headers 规范化后的值进行 HTTP 注入和本地身份/归属比较，不因读取操作修改 profile 文件。
+
 全部操作必须可由参数或 stdin 非交互执行。只有危险操作可在 TTY 中请求确认并接受 `--yes` 跳过；非 TTY 环境缺少 `--yes` 时必须拒绝执行，不能因无法确认而默认继续。默认格式不能因为 stdout 被管道连接而自动切换为 JSON。
 
-CLI npm 包名在公开发布前另行确定；可执行文件暂定为 `noticeboard`。首版只通过内部或私有方式发布。包内容必须使用白名单，不能携带 API/Web 源码、数据库代码、测试 fixture 或仓库配置。
+CLI npm 包名在公开发布前另行确定；可执行文件为 `noticeboard`。首版只通过内部或私有方式发布。包内容必须使用白名单，不能携带 API/Web 源码、数据库代码、测试 fixture 或仓库配置。
 
-完整目标合同见 `docs/cli.md`。
+当前配置缺失时只在内存中使用 local demo 默认值，显式配置修改才落盘。profile set 不切换激活项，省略身份时保留旧值或使用 demo 默认；identity use 必须先通过服务器有效身份列表验证，只更新当前激活 profile，拒绝选择其他 profile 后直接修改。所有配置修改使用同目录临时文件、文件同步和原子替换，POSIX 文件权限 0600；并行写入采用最后成功替换的快照，不做跨进程合并。JSON 删除必须使用 --yes，即使在 TTY 中也不提示确认。
+
+任务 list 在 CLI 内按 AND 组合筛选并保持服务器顺序；mine 额外读取身份列表并忽略评论及失效生命周期操作人，search 固定搜索标题、类型标签、描述、发布者与接取者姓名，去除搜索词首尾空白后以 zh-CN 小写化包含匹配。远端命令共用 30 秒取消窗口，不重试。协议错误优先返回 65，包括 HTML 503；其余退出映射遵循 CLI 合同。
+
+CLI 独立类型检查允许 Node 类型，SDK 独立类型检查仍只允许 Fetch/DOM 类型。根 build 用精确锁定的 esbuild@0.28.2 bundle CLI 和 SDK，生成 dist/cli 下无运行时依赖的 ESM 可执行文件与私有 manifest；本地占位包为 noticeboard-cli-local@0.0.0，不代表 registry 发布。包白名单只含 bin/noticeboard.js 与 README.md（npm 自动包含 manifest），实际 tarball 安装检查进入 unit 门禁，真实宿主机 HTTP smoke 进入 API 门禁，cli:typecheck 进入 verify。服务器镜像继续仅复制 dist/api 与 dist/web。
+
+完整当前与目标合同见 `docs/cli.md`。
 
 ## Web 冻结边界
 
