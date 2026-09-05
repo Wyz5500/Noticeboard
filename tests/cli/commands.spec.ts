@@ -167,10 +167,18 @@ it.each(['admin', 'user', 'role', 'permission'])(
   },
 );
 
-/** List-only management commands cannot accidentally accept task filters or mutations. */
+/** Management commands reject invalid filters and operands before HTTP. */
 it.each([
-  ['user', 'get', 'user-z'],
-  ['role', 'list', '--search', 'admin'],
+  ['user', 'get'],
+  ['role', 'get', 'role-z', '--search', 'admin'],
+  ['permission', 'get', 'system.manage', 'extra'],
+  ['permission', 'list', '--active', 'true'],
+  ['user', 'list', '--active', 'yes'],
+  ['role', 'list', '--deleted', 'FALSE'],
+  ['role', 'list', '--active'],
+  ['user', 'list', '--deleted', 'all', '--deleted', 'false'],
+  ['user', 'list', '--search', 'a', '--search', 'b'],
+  ['admin', 'overview', '--search', 'a'],
   ['user', 'list', '--status', 'closed'],
   ['permission', 'list', 'extra'],
   ['admin', 'overview', '--yes'],
@@ -725,3 +733,216 @@ it('cancels a stalled request after the configured timeout', async () => {
   expect(attempts).toBe(1);
   expect(timeout).toHaveBeenCalledWith(30_000);
 });
+
+/** Details preserve the complete selected resource, including deleted rows, through one authorized request. */
+it.each([
+  ['user', 'user-z', adminOverview.users[0]],
+  ['user', 'user-a', adminOverview.users[1]],
+  ['role', 'role-z', adminOverview.roles[0]],
+  ['role', 'role-a', adminOverview.roles[1]],
+  ['permission', 'system.manage', adminOverview.permissions[0]],
+] as const)(
+  'reads %s detail %s without persisting configuration',
+  async (resource, id, data) => {
+    response = () => Response.json(adminOverview);
+    const result = await invoke([
+      resource,
+      'get',
+      id,
+      '--user',
+      'noticeboard-admin',
+      '--json',
+    ]);
+    expect(result).toEqual({
+      exitCode: 0,
+      stderr: '',
+      stdout: `${JSON.stringify({ data })}\n`,
+    });
+    expect(requests).toEqual([
+      {
+        url: 'http://127.0.0.1:3000/api/v1/admin/overview',
+        user: 'noticeboard-admin',
+      },
+    ]);
+    expect(await readdir(directory)).toEqual([]);
+  },
+);
+
+/** Exact keys must not silently match a name, a different case or an absent resource. */
+it.each([
+  ['user', 'USER-Z'],
+  ['user', '管理员'],
+  ['user', ' user-z '],
+  ['role', 'admin'],
+  ['permission', 'TASKS.VIEW'],
+  ['permission', 'missing'],
+])(
+  'reports missing %s detail %s without inventing an HTTP error',
+  async (resource, id) => {
+    response = () => Response.json(adminOverview);
+    const result = await invoke([resource, 'get', id, '--json']);
+    expect(result.exitCode).toBe(66);
+    expect(result.stdout).toBe('');
+    expect(JSON.parse(result.stderr)).toEqual({
+      error: { kind: 'usage', message: expect.any(String) },
+      meta: { exitCode: 66 },
+    });
+    expect(requests).toHaveLength(1);
+  },
+);
+
+/** Search and independent state filters narrow results without changing order or the HTTP query. */
+it.each([
+  ['user', ['--search', ' USER-Z '], ['user-z']],
+  ['user', ['--search', '管理员'], ['user-z']],
+  ['user', ['--search', 'role-a'], ['user-a']],
+  ['user', ['--search', 'CUSTOM'], ['user-a']],
+  ['user', ['--search', '自定义角色'], ['user-a']],
+  ['user', ['--search', '   '], ['user-z', 'user-a']],
+  ['user', ['--active', 'true'], ['user-z']],
+  ['user', ['--active', 'false'], ['user-a']],
+  ['user', ['--deleted', 'true'], ['user-a']],
+  ['user', ['--deleted', 'false'], ['user-z']],
+  ['user', ['--active', 'all', '--deleted', 'all'], ['user-z', 'user-a']],
+  ['user', ['--active', 'true', '--deleted', 'true'], []],
+  ['user', ['--search', '管理员', '--active', 'false'], []],
+  ['role', ['--search', 'ROLE-A'], ['role-a']],
+  ['role', ['--search', 'ADMIN'], ['role-z']],
+  ['role', ['--search', '自定义角色'], ['role-a']],
+  ['role', ['--search', 'TASKS.VIEW'], ['role-z']],
+  ['role', ['--active', 'false', '--deleted', 'true'], ['role-a']],
+  ['role', ['--active', 'true', '--deleted', 'false'], ['role-z']],
+  ['role', ['--active', 'all', '--deleted', 'all'], ['role-z', 'role-a']],
+  ['permission', ['--search', ' SYSTEM.MANAGE '], ['system.manage']],
+  ['permission', ['--search', '查看任务'], ['tasks.view']],
+  ['permission', ['--search', '管理用户与角色'], ['system.manage']],
+  ['permission', ['--search', 'no-match'], []],
+] as const)('filters %s with %j', async (resource, options, keys) => {
+  response = () => Response.json(adminOverview);
+  const result = await invoke([resource, 'list', ...options, '--json']);
+  expect(result.exitCode, result.stderr).toBe(0);
+  const body = JSON.parse(result.stdout) as {
+    data: { id?: string; code?: string }[];
+  };
+  expect(Object.keys(body)).toEqual(['data']);
+  expect(
+    body.data.map(
+      (item: { id?: string; code?: string }) => item.id ?? item.code,
+    ),
+  ).toEqual(keys);
+  expect(requests).toEqual([
+    {
+      url: 'http://127.0.0.1:3000/api/v1/admin/overview',
+      user: 'noticeboard-master',
+    },
+  ]);
+  expect(await readdir(directory)).toEqual([]);
+});
+
+/** Disabled and deleted are separate server fields, and search includes username independently of ID. */
+it('filters disabled live users without treating them as deleted', async () => {
+  response = () =>
+    Response.json({
+      ...adminOverview,
+      users: [
+        { ...adminOverview.users[0], username: 'UniqueHandle', active: false },
+        adminOverview.users[1],
+      ],
+    });
+  const result = await invoke([
+    'user',
+    'list',
+    '--active',
+    'false',
+    '--deleted',
+    'false',
+    '--search',
+    'uniquehandle',
+    '--json',
+  ]);
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout).data).toEqual([
+    expect.objectContaining({ id: 'user-z', active: false, deletedAt: null }),
+  ]);
+});
+
+/** Human details expose every declared field and escape controls instead of executing terminal sequences. */
+it.each([
+  [
+    'user',
+    'user-z',
+    ['用户名', '角色代码', 'admin', '更新时间', '2026-09-01T00:00:00.000Z'],
+  ],
+  [
+    'role',
+    'role-z',
+    ['内置', '权限码', 'tasks.view', '更新时间', '2026-09-01T00:00:00.000Z'],
+  ],
+  ['permission', 'system.manage', ['代码', '描述', '管理用户与角色']],
+] as const)(
+  'renders complete %s detail safely',
+  async (resource, id, fields) => {
+    response = () =>
+      Response.json({
+        users: adminOverview.users.map((item) => ({
+          ...item,
+          name: '\u001b[31m危险\n姓名',
+        })),
+        roles: adminOverview.roles.map((item) => ({
+          ...item,
+          name: '\u001b[31m危险\n姓名',
+        })),
+        permissions: adminOverview.permissions.map((item) => ({
+          ...item,
+          name: '\u001b[31m危险\n姓名',
+        })),
+      });
+    const result = await invoke([resource, 'get', id]);
+    expect(result.exitCode, result.stderr).toBe(0);
+    for (const field of fields) expect(result.stdout).toContain(field);
+    expect(result.stdout).toContain('\\u001b[31m危险\\u000a姓名');
+    expect(result.stdout).not.toContain('\u001b');
+  },
+);
+
+/** Details and filters must not skip validation of unrelated overview collections or permission failures. */
+it.each([
+  ['user', 'get', 'user-z'],
+  ['role', 'list', '--search', 'no-match'],
+  ['permission', 'get', 'missing'],
+])('preserves management failures for %j', async (...args) => {
+  for (const [body, status, exitCode] of [
+    [{ ...adminOverview, roles: [{}] }, 200, 65],
+    [apiError, 401, 77],
+    [apiError, 403, 77],
+  ] as const) {
+    requests = [];
+    response = () => Response.json(body, { status });
+    const result = await invoke([...args, '--json']);
+    expect(result.exitCode).toBe(exitCode);
+    expect(result.stdout).toBe('');
+    expect(requests).toHaveLength(1);
+  }
+  requests = [];
+  response = () => {
+    throw new TypeError('offline');
+  };
+  expect((await invoke([...args, '--json'])).exitCode).toBe(69);
+  expect(requests).toHaveLength(1);
+  expect(await readdir(directory)).toEqual([]);
+});
+
+/** New detail help remains usable with damaged configuration and no positional key. */
+it.each(['user', 'role', 'permission'])(
+  'shows offline %s detail help',
+  async (resource) => {
+    await writeFile(configFile, 'broken');
+    const result = await invoke([resource, 'get', '--help', '--json']);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout).data.help).toContain(
+      `noticeboard ${resource} get`,
+    );
+    expect(JSON.parse(result.stdout).data.help).toContain('--search');
+    expect(requests).toEqual([]);
+  },
+);

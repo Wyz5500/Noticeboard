@@ -95,6 +95,11 @@ it('packs only runnable client assets and installs an offline bin', () => {
     expect(help.stdout).toContain('user list');
     expect(help.stdout).toContain('role list');
     expect(help.stdout).toContain('permission list');
+    expect(help.stdout).toContain('user get');
+    expect(help.stdout).toContain('role get');
+    expect(help.stdout).toContain('permission get');
+    expect(help.stdout).toContain('--active true|false|all');
+    expect(help.stdout).toContain('--deleted true|false|all');
     const invalid = spawnSync(
       process.execPath,
       [bin, 'task', 'create', '--json'],

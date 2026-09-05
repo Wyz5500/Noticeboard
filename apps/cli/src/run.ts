@@ -17,6 +17,7 @@ import { CliError, describeError } from './errors.js';
 import { humanResult, safeText } from './output.js';
 import { createNoticeboardClient } from './sdk/index.js';
 import { filterTasks } from './tasks.js';
+import { isManagementCommand, selectManagementResult } from './management.js';
 import { isWriteCommand, writeCommand } from './write-commands.js';
 export interface CliContext {
   env: NodeJS.ProcessEnv;
@@ -155,23 +156,11 @@ async function remoteCommand(
     getHeaders: () => ({ 'X-Demo-User-Id': profile.demoUserId }),
   });
   const options = { signal: AbortSignal.timeout(30_000) };
-  if (
-    ['admin overview', 'user list', 'role list', 'permission list'].includes(
-      command.name,
-    )
-  ) {
-    const overview = await client.admin.overview(options);
-    switch (command.name) {
-      case 'user list':
-        return overview.users;
-      case 'role list':
-        return overview.roles;
-      case 'permission list':
-        return overview.permissions;
-      default:
-        return overview;
-    }
-  }
+  if (isManagementCommand(command.name))
+    return selectManagementResult(
+      command,
+      await client.admin.overview(options),
+    );
   if (command.name === 'task get')
     return client.tasks.get(command.operands[0]!, options);
   if (command.name === 'task list') {

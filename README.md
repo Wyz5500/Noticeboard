@@ -190,6 +190,8 @@ node dist/cli/bin/noticeboard.js admin overview --user noticeboard-admin --json
 node dist/cli/bin/noticeboard.js user list --user noticeboard-admin
 node dist/cli/bin/noticeboard.js role list --user noticeboard-admin
 node dist/cli/bin/noticeboard.js permission list --user noticeboard-admin
+node dist/cli/bin/noticeboard.js user list --active false --deleted false --user noticeboard-admin
+node dist/cli/bin/noticeboard.js user get noticeboard-admin --user noticeboard-admin --json
 ```
 
 可通过 `npm pack ./dist/cli --pack-destination /tmp` 创建本地 tarball，再以 `npm install --prefix <安装目录> <tarball绝对路径>` 安装；运行 `<安装目录>/node_modules/.bin/noticeboard --help`。此过程不发布 registry。
@@ -215,9 +217,9 @@ Generated operations 接收 `RequestInit` 与可选的 `fetchFn`；当前手写 
 
 当前已完成管理员 restore HTTP 200 对齐、确定性 OpenAPI v1 artifact、稳定 operationId、各项漂移/兼容门禁，以及 HTTP SDK 和 CLI（profile、demo identity、任务读取、创建、动作、续期、评论增改删、JSON 与退出码）。写操作未显式提供 expected version 时 CLI 只预读一次，409 后不自动重放；正文可由文件/stdin 输入，评论删除需要确认，结果不确定时提示核对服务器状态。
 
-管理资源读取也已实现：SDK `admin.overview` 与 CLI `admin overview`、`user list`、`role list`、`permission list` 均复用现有管理 overview API。每条命令请求一次，完整保留服务器顺序及已逻辑删除记录；服务器要求 `system.manage`，可显式使用 `--user noticeboard-admin`。只读命令不修改 profile，JSON 返回完整总览或对应数组。
+管理资源读取也已实现：SDK `admin.overview` 与 CLI `admin overview`、`user list/get`、`role list/get`、`permission list/get` 均复用现有管理 overview API。每条命令请求一次，完整保留服务器顺序及已逻辑删除记录；服务器要求 `system.manage`，可显式使用 `--user noticeboard-admin`。只读命令不修改 profile，JSON 返回完整总览、对应数组或单个详情。列表支持 `--search`，用户/角色另支持 `--active true|false|all` 和 `--deleted true|false|all`，默认均为 `all`；筛选按 AND 组合。详情按 ID 或权限 code 精确匹配，找不到返回 66。
 
-下一阶段在 SDK 与 CLI 合同稳定后再评估管理写入、管理详情与筛选、独立 SDK 发布、workspaces 和 TUI；registry 发布仍需独立授权。
+下一阶段在 SDK 与 CLI 合同稳定后再评估管理写入、独立 SDK 发布、workspaces 和 TUI；registry 发布仍需独立授权。
 
 ## 健康与关闭
 

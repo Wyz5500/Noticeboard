@@ -129,6 +129,79 @@ it('reads management collections and rejects non-management identities', async (
   }
 });
 
+/** Details and local filters must agree with the real overview without adding HTTP endpoints. */
+it('reads management details and combines filters through the built CLI', async () => {
+  const admin = ['--user', 'noticeboard-admin'];
+  const detail = await cli(['user', 'get', 'noticeboard-admin', ...admin]);
+  expect(detail.exitCode, detail.stderr).toBe(0);
+  const user = JSON.parse(detail.stdout).data as {
+    id: string;
+    username: string;
+    roleId: string;
+  };
+  expect(user.id).toBe('noticeboard-admin');
+  const filtered = await cli([
+    'user',
+    'list',
+    '--search',
+    user.username.toUpperCase(),
+    '--active',
+    'true',
+    '--deleted',
+    'false',
+    ...admin,
+  ]);
+  expect(filtered.exitCode, filtered.stderr).toBe(0);
+  expect(JSON.parse(filtered.stdout)).toEqual({ data: [user] });
+  const role = await cli(['role', 'get', user.roleId, ...admin]);
+  expect(role.exitCode, role.stderr).toBe(0);
+  expect(JSON.parse(role.stdout).data.id).toBe(user.roleId);
+  const permission = await cli([
+    'permission',
+    'get',
+    'system.manage',
+    ...admin,
+  ]);
+  expect(permission.exitCode, permission.stderr).toBe(0);
+  const permissions = await cli([
+    'permission',
+    'list',
+    '--search',
+    'SYSTEM.MANAGE',
+    ...admin,
+  ]);
+  expect(permissions.exitCode, permissions.stderr).toBe(0);
+  expect(JSON.parse(permissions.stdout)).toEqual({
+    data: [JSON.parse(permission.stdout).data],
+  });
+  const empty = await cli([
+    'role',
+    'list',
+    '--search',
+    'cli-no-such-role-9238',
+    ...admin,
+  ]);
+  expect(empty.exitCode, empty.stderr).toBe(0);
+  expect(JSON.parse(empty.stdout)).toEqual({ data: [] });
+  const missing = await cli(['user', 'get', 'cli-no-such-user-9238', ...admin]);
+  expect(missing.exitCode).toBe(66);
+  expect(missing.stdout).toBe('');
+  expect(JSON.parse(missing.stderr).error).toEqual({
+    kind: 'usage',
+    message: expect.any(String),
+  });
+  const denied = await cli([
+    'permission',
+    'get',
+    'system.manage',
+    '--user',
+    'noticeboard-master',
+  ]);
+  expect(denied.exitCode).toBe(77);
+  expect(denied.stdout).toBe('');
+  expect(JSON.parse(denied.stderr).error.status).toBe(403);
+});
+
 /** Verifies all read resources and configuration identity selection through the bundled public client. */
 it('reads real identities, task lists and details', async () => {
   const identities = await cli(['identity', 'list']);

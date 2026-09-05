@@ -12,6 +12,8 @@ const OPTIONS = {
   mine: { type: 'boolean' },
   status: { type: 'string' },
   search: { type: 'string' },
+  active: { type: 'string' },
+  deleted: { type: 'string' },
   yes: { type: 'boolean' },
   title: { type: 'string' },
   type: { type: 'string' },
@@ -29,9 +31,12 @@ const COMMANDS: Record<
   { min: number; max: number; options?: string[] }
 > = {
   'admin overview': { min: 0, max: 0 },
-  'user list': { min: 0, max: 0 },
-  'role list': { min: 0, max: 0 },
-  'permission list': { min: 0, max: 0 },
+  'user list': { min: 0, max: 0, options: ['search', 'active', 'deleted'] },
+  'role list': { min: 0, max: 0, options: ['search', 'active', 'deleted'] },
+  'permission list': { min: 0, max: 0, options: ['search'] },
+  'user get': { min: 1, max: 1 },
+  'role get': { min: 1, max: 1 },
+  'permission get': { min: 1, max: 1 },
   'profile list': { min: 0, max: 0 },
   'profile show': { min: 0, max: 1 },
   'profile set': { min: 1, max: 1 },
@@ -200,6 +205,12 @@ export function parseCommand(args: string[]): Command {
     !STATUSES.includes(parsed.values.status as TaskStatus)
   )
     throw new CliError('usage', `无效状态；可选：${STATUSES.join(', ')}`);
+  for (const option of ['active', 'deleted'] as const)
+    if (
+      parsed.values[option] !== undefined &&
+      !['true', 'false', 'all'].includes(parsed.values[option])
+    )
+      throw new CliError('usage', `--${option} 可选：true, false, all`);
   return { name, operands, options: parsed.values };
 }
 
@@ -208,9 +219,12 @@ export function helpText(name: string): string {
   const resource = name.split(' ')[0];
   const lines = [
     'admin overview',
-    'user list',
-    'role list',
-    'permission list',
+    'user list [--search <text>] [--active true|false|all] [--deleted true|false|all]',
+    'user get <user-id>',
+    'role list [--search <text>] [--active true|false|all] [--deleted true|false|all]',
+    'role get <role-id>',
+    'permission list [--search <text>]',
+    'permission get <permission-code>',
     'profile list',
     'profile show [name]',
     'profile set <name> --base-url <url> [--user <user-id>]',
@@ -228,5 +242,5 @@ export function helpText(name: string): string {
     'comment edit <task-id> <comment-id> (--content <text> | --content-file <path|->) [--expected-version <number>]',
     'comment delete <task-id> <comment-id> [--expected-version <number>] [--yes]',
   ].filter((line) => !resource || line.startsWith(`${resource} `));
-  return `用法：noticeboard <资源> <命令> [选项]\n\n${lines.map((line) => `  noticeboard ${line}`).join('\n')}\n\n公共选项：--profile <name> --base-url <url> --user <user-id> --json --help\n状态：${STATUSES.join(', ')}\n类型：exploration, collection, escort, bounty, building\n动作：accept, complete, approve, reopen, close\n续期策略：preserve_status, reopened\n写操作不重试；省略版本时只预读一次。评论删除在非 TTY 或 JSON 模式必须提供 --yes。\nHTTP 客户端；身份为 demo-only。\n`;
+  return `用法：noticeboard <资源> <命令> [选项]\n\n${lines.map((line) => `  noticeboard ${line}`).join('\n')}\n\n公共选项：--profile <name> --base-url <url> --user <user-id> --json --help\n状态：${STATUSES.join(', ')}\n类型：exploration, collection, escort, bounty, building\n动作：accept, complete, approve, reopen, close\n续期策略：preserve_status, reopened\n写操作不重试；省略版本时只预读一次。评论删除在非 TTY 或 JSON 模式必须提供 --yes。\n管理筛选默认保留全部记录，条件按 AND 组合；详情按 ID 或权限代码精确匹配。\nHTTP 客户端；身份为 demo-only。\n`;
 }

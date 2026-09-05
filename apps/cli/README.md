@@ -29,10 +29,13 @@ JSON 成功只在 stdout 输出 `{ "data": ... }`；错误只在 stderr 输出
 退出码：0 成功、1 内部/未分类、64 输入/配置、65 协议、66 不存在、69 网络/服务不可用、75 冲突/限流、77 身份/权限。
 HTTP 请求不重试，单次命令请求窗口为 30 秒。
 
-管理总览及三类列表要求服务器授予 `system.manage`，默认普通身份会返回 403/退出码 77。
+管理总览、三类列表筛选与详情要求服务器授予 `system.manage`，默认普通身份会返回 403/退出码 77。
 每条命令只读取一次完整 overview，列表保留服务器顺序和已逻辑删除记录，不自动切换身份或改写配置。
-JSON `data` 为完整 `{users, roles, permissions}` 或对应数组，无成功 meta；人类输出为中文表格。
-管理写入、详情及筛选尚未实现。
+JSON `data` 为完整 `{users, roles, permissions}`、对应数组或单个完整详情，无成功 meta；人类列表为中文表格，详情逐字段展示并转义控制字符。
+`user get <user-id>`、`role get <role-id>` 和 `permission get <permission-code>` 按 ID/code 区分大小写精确匹配，支持已删除记录，找不到返回本地 usage/66。
+三类列表支持 `--search <text>`，用户和角色另支持 `--active true|false|all` 与 `--deleted true|false|all`，默认均为 `all`，条件按 AND 组合；停用与删除分别判断。
+搜索词去除首尾空白并以 zh-CN 小写化包含匹配，全空白不筛选。用户搜索 ID、用户名、姓名及角色 ID/code/名称；角色搜索 ID、code、名称及权限码；权限搜索 code、名称、描述。空列表返回成功 `[]`，详情不接受筛选参数。
+管理写入尚未实现。
 
 `X-Demo-User-Id` 仅用于 demo 身份选择。正式认证及 TUI 尚未实现。
 

@@ -157,13 +157,13 @@ CLI 是远程服务端客户端，只调用 HTTP SDK，不直接访问 PostgreSQ
 - `identity`：demo 身份列表、当前身份和切换。
 - `task`：列表、详情、创建、生命周期动作和续期。
 - `comment`：创建、编辑和删除。
-- `admin overview`、`user list`、`role list`、`permission list`：管理总览及三类列表。
+- `admin overview`、`user list/get`、`role list/get`、`permission list/get`：管理总览、三类列表筛选与详情。
 
-管理写入、管理详情与筛选、demo reset 和 TUI 尚未实现。`task list` 可基于现有完整任务列表在客户端实现 `--mine`、`--status` 和 `--search`，不得因此复制或改变 `/api/v1/tasks` 的 wire contract。
+管理写入、demo reset 和 TUI 尚未实现。`task list` 可基于现有完整任务列表在客户端实现 `--mine`、`--status` 和 `--search`，不得因此复制或改变 `/api/v1/tasks` 的 wire contract。
 
 管理读取只通过 SDK public `admin.overview(options?: RequestOptions): Promise<AdminOverview>` 调用已有 generated `getAdminOverview`，HTTP 200 返回完整用户、角色和权限目录。手写 `AdminOverview`、`AdminUser`、`AdminRole`、`AdminPermission` 从 SDK 根入口导出，权限码复用 `Permission`；字段、nullable、闭合枚举和嵌套数组按 tracked OpenAPI 校验，忽略新增未知字段。保留服务器顺序、逻辑删除记录和字符串日期，不重算状态或权限。
 
-每条管理 CLI 命令只请求一次完整 overview，再选择总览或对应数组；JSON `data` 分别为 `AdminOverview`、`AdminUser[]`、`AdminRole[]`、`AdminPermission[]`，无成功 meta。人类输出为转义控制字符的中文表格，总览按用户、角色、权限组合，空列表明确提示。所有管理读取沿用公共配置优先级、30 秒取消窗口和 401/403→77、协议→65、网络→69 的错误规则，不重试、不落盘、不预读身份或自动选择管理员；服务器是 `system.manage` 权限检查的唯一权威。
+每条管理 CLI 命令只请求一次完整 overview，完整校验后选择总览、对应数组或单个详情；JSON `data` 为 `AdminOverview`、`AdminUser[]`、`AdminRole[]`、`AdminPermission[]` 或对应单个资源，无成功 meta。详情按用户/角色 ID 或权限 code 区分大小写精确匹配，包含已删除记录；未找到返回本地 usage/66，不伪造 HTTP 错误。三类列表支持 CLI 本地 `--search`，用户/角色另支持独立的 `--active true|false|all` 与 `--deleted true|false|all`，默认保留全部记录，按 AND 组合并保留服务器顺序。搜索字段及标准化规则见 `docs/cli.md`；不新增 HTTP query 或 SDK 方法。人类输出为转义控制字符的中文表格，总览按用户、角色、权限组合，空列表明确提示；人类详情以中文逐字段展示全部声明字段并转义远端值。所有管理读取沿用公共配置优先级、30 秒取消窗口和 401/403→77、协议→65、网络→69 的错误规则，不重试、不落盘、不预读身份或自动选择管理员；服务器是 `system.manage` 权限检查的唯一权威。
 
 CLI 配置使用版本化 JSON schema 和 XDG/平台系统配置目录。一个配置文件可包含多个 named profile；每个 profile 第一阶段只保存 base URL 和当前 demo user ID，不保存任务、响应缓存或秘密。配置解析优先级固定为：
 

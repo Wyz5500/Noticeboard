@@ -26,6 +26,41 @@ export function safeText(value: unknown): string {
 
 /** Provides actionable task summaries and readable structured output for other resources. */
 export function humanResult(command: string, data: unknown): string {
+  if (command === 'user get') {
+    const user = data as AdminUser;
+    return managementDetail([
+      ['ID', user.id],
+      ['用户名', `@${user.username}`],
+      ['姓名', user.name],
+      ['角色 ID', user.roleId],
+      ['角色代码', user.roleCode],
+      ['角色名称', user.roleName],
+      ['启用', user.active ? '是' : '否'],
+      ['删除时间', user.deletedAt ?? '—'],
+      ['更新时间', user.updatedAt],
+    ]);
+  }
+  if (command === 'role get') {
+    const role = data as AdminRole;
+    return managementDetail([
+      ['ID', role.id],
+      ['代码', role.code],
+      ['名称', role.name],
+      ['内置', role.builtin ? '是' : '否'],
+      ['权限码', role.permissions.join(', ')],
+      ['启用', role.active ? '是' : '否'],
+      ['删除时间', role.deletedAt ?? '—'],
+      ['更新时间', role.updatedAt],
+    ]);
+  }
+  if (command === 'permission get') {
+    const permission = data as AdminPermission;
+    return managementDetail([
+      ['代码', permission.code],
+      ['名称', permission.name],
+      ['描述', permission.description],
+    ]);
+  }
   if (command === 'admin overview') {
     const overview = data as AdminOverview;
     return `用户：\n${humanResult('user list', overview.users)}\n角色：\n${humanResult('role list', overview.roles)}\n权限：\n${humanResult('permission list', overview.permissions)}`;
@@ -107,4 +142,9 @@ function managementTable(
   empty: string,
 ): string {
   return `${header}\n${rows.length ? rows.map((row) => row.map(safeText).join('\t')).join('\n') : empty}\n`;
+}
+
+/** Presents complete resource fields while escaping every remote value independently. */
+function managementDetail(fields: [string, string][]): string {
+  return `${fields.map(([label, value]) => `${label}：${safeText(value)}`).join('\n')}\n`;
 }
