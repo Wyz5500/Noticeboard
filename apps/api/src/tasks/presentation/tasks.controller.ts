@@ -15,9 +15,9 @@ import {
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
-  ApiHeader,
   ApiNotFoundResponse,
   ApiOkResponse,
+  ApiOperation,
   ApiSecurity,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -61,8 +61,8 @@ export class TasksController {
 
   /** Lists all task projections for client-side filtering and statistics. */
   @Get()
+  @ApiOperation({ operationId: 'listTasks' })
   @ApiSecurity('demo-user')
-  @ApiHeader({ name: 'X-Demo-User-Id', required: true })
   @ApiOkResponse({ type: [TaskResponseDto] })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
@@ -75,8 +75,8 @@ export class TasksController {
 
   /** Returns one complete task projection including its ordered timeline. */
   @Get(':taskId')
+  @ApiOperation({ operationId: 'getTask' })
   @ApiSecurity('demo-user')
-  @ApiHeader({ name: 'X-Demo-User-Id', required: true })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
@@ -91,9 +91,9 @@ export class TasksController {
 
   /** Creates a task as the recognized demo actor from the request header. */
   @Post()
+  @ApiOperation({ operationId: 'createTask' })
   @RequireDemoIdentity()
   @ApiSecurity('demo-user')
-  @ApiHeader({ name: 'X-Demo-User-Id', required: true })
   @ApiCreatedResponse({ type: TaskResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
@@ -108,9 +108,9 @@ export class TasksController {
   /** Appends one optimistic comment and returns the freshly synchronized projection. */
   @Post(':taskId/comments')
   @HttpCode(200)
+  @ApiOperation({ operationId: 'createTaskComment' })
   @RequirePermission('tasks.view')
   @ApiSecurity('demo-user')
-  @ApiHeader({ name: 'X-Demo-User-Id', required: true })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
@@ -135,9 +135,9 @@ export class TasksController {
   /** Appends one optimistic comment revision and returns the latest projection. */
   @Patch(':taskId/comments/:commentId')
   @HttpCode(200)
+  @ApiOperation({ operationId: 'editTaskComment' })
   @RequirePermission('tasks.view')
   @ApiSecurity('demo-user')
-  @ApiHeader({ name: 'X-Demo-User-Id', required: true })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
@@ -164,9 +164,9 @@ export class TasksController {
   /** Appends one optimistic comment tombstone and returns the latest projection. */
   @Delete(':taskId/comments/:commentId')
   @HttpCode(200)
+  @ApiOperation({ operationId: 'deleteTaskComment' })
   @RequirePermission('tasks.view')
   @ApiSecurity('demo-user')
-  @ApiHeader({ name: 'X-Demo-User-Id', required: true })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
@@ -192,9 +192,9 @@ export class TasksController {
   /** Applies one optimistic task action and returns the freshly synchronized projection. */
   @Post(':taskId/actions')
   @HttpCode(200)
+  @ApiOperation({ operationId: 'actOnTask' })
   @RequireDemoIdentity()
   @ApiSecurity('demo-user')
-  @ApiHeader({ name: 'X-Demo-User-Id', required: true })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
@@ -218,9 +218,9 @@ export class TasksController {
   /** Renews one expired task and returns the freshly synchronized projection. */
   @Post(':taskId/expiration-renewal')
   @HttpCode(200)
+  @ApiOperation({ operationId: 'renewExpiredTask' })
   @RequireDemoIdentity()
   @ApiSecurity('demo-user')
-  @ApiHeader({ name: 'X-Demo-User-Id', required: true })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })

@@ -2,6 +2,7 @@
 import { Controller, Get } from '@nestjs/common';
 import {
   ApiOkResponse,
+  ApiOperation,
   ApiProperty,
   ApiServiceUnavailableResponse,
   ApiTags,
@@ -31,6 +32,7 @@ export class HealthController {
 
   /** Returns process liveness without testing the database. */
   @Get('live')
+  @ApiOperation({ operationId: 'getLiveness' })
   @ApiOkResponse({ type: LiveHealthResponseDto })
   live(): LiveHealthResponseDto {
     return this.health.live();
@@ -38,6 +40,7 @@ export class HealthController {
 
   /** Returns readiness only after the database probe succeeds. */
   @Get('ready')
+  @ApiOperation({ operationId: 'getReadiness' })
   @ApiOkResponse({ type: ReadyHealthResponseDto })
   @ApiServiceUnavailableResponse({ type: ApiErrorResponseDto })
   ready(): Promise<ReadyHealthResponseDto> {

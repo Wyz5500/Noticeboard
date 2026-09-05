@@ -71,7 +71,8 @@ export class AdminUserResponseDto {
   @ApiProperty() roleCode!: string;
   @ApiProperty() roleName!: string;
   @ApiProperty() active!: boolean;
-  @ApiProperty({ nullable: true }) deletedAt!: string | null;
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  deletedAt!: string | null;
   @ApiProperty({ format: 'date-time' }) updatedAt!: string;
 }
 
@@ -83,7 +84,8 @@ export class AdminRoleResponseDto {
   @ApiProperty({ enum: ALL_PERMISSION_CODES, isArray: true })
   permissions!: PermissionCode[];
   @ApiProperty() active!: boolean;
-  @ApiProperty({ nullable: true }) deletedAt!: string | null;
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  deletedAt!: string | null;
   @ApiProperty({ format: 'date-time' }) updatedAt!: string;
 }
 

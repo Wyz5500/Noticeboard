@@ -1,6 +1,6 @@
 /** Exposes demo-only identity discovery and deterministic task reset endpoints. */
 import { Controller, Get } from '@nestjs/common';
-import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ActorResponseDto, toActorResponse } from './dto/actor-response.dto.js';
 import { ListDemoActors } from '../application/use-cases/list-demo-actors.js';
@@ -13,6 +13,7 @@ export class DemoController {
 
   /** Lists selectable demo users without requiring an existing identity. */
   @Get('users')
+  @ApiOperation({ operationId: 'listDemoUsers' })
   @ApiOkResponse({ type: [ActorResponseDto] })
   async users(): Promise<ActorResponseDto[]> {
     return (await this.listDemoActors.execute()).map(toActorResponse);

@@ -2,8 +2,8 @@
 import { Controller, Headers, HttpCode, Post } from '@nestjs/common';
 import {
   ApiForbiddenResponse,
-  ApiHeader,
   ApiOkResponse,
+  ApiOperation,
   ApiProperty,
   ApiSecurity,
   ApiTags,
@@ -28,9 +28,9 @@ export class DemoTasksController {
   /** Restores deterministic server-side tasks after validating the demo actor. */
   @Post('reset')
   @HttpCode(200)
+  @ApiOperation({ operationId: 'resetDemoTasks' })
   @RequireDemoIdentity()
   @ApiSecurity('demo-user')
-  @ApiHeader({ name: 'X-Demo-User-Id', required: true })
   @ApiOkResponse({ type: ResetDemoResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })

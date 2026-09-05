@@ -18,6 +18,7 @@ import {
   ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
+  ApiOperation,
   ApiSecurity,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -72,6 +73,7 @@ export class AdminController {
 
   /** Lists users, roles, and the fixed permission catalog for the management view. */
   @Get('overview')
+  @ApiOperation({ operationId: 'getAdminOverview' })
   @ApiOkResponse({ type: AdminOverviewResponseDto })
   async getOverview(): Promise<AdminOverviewResponseDto> {
     const result = await this.overview.execute();
@@ -84,6 +86,7 @@ export class AdminController {
 
   /** Creates one user with a server-generated identifier. */
   @Post('users')
+  @ApiOperation({ operationId: 'createAdminUser' })
   @ApiCreatedResponse({ type: AdminUserResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiConflictResponse({ type: ApiErrorResponseDto })
@@ -96,6 +99,7 @@ export class AdminController {
 
   /** Updates one user's name or single assigned role. */
   @Patch('users/:id')
+  @ApiOperation({ operationId: 'updateAdminUser' })
   @ApiOkResponse({ type: AdminUserResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiConflictResponse({ type: ApiErrorResponseDto })
@@ -109,6 +113,7 @@ export class AdminController {
 
   /** Soft-deletes one user while retaining task history. */
   @Delete('users/:id')
+  @ApiOperation({ operationId: 'deleteAdminUser' })
   @HttpCode(204)
   @ApiNoContentResponse()
   @ApiConflictResponse({ type: ApiErrorResponseDto })
@@ -119,6 +124,8 @@ export class AdminController {
 
   /** Restores one logically deleted user. */
   @Post('users/:id/restore')
+  @HttpCode(200)
+  @ApiOperation({ operationId: 'restoreAdminUser' })
   @ApiOkResponse({ type: AdminUserResponseDto })
   @ApiConflictResponse({ type: ApiErrorResponseDto })
   @ApiNotFoundResponse({ type: ApiErrorResponseDto })
@@ -128,6 +135,7 @@ export class AdminController {
 
   /** Creates a custom role, defaulting to an empty permission set. */
   @Post('roles')
+  @ApiOperation({ operationId: 'createAdminRole' })
   @ApiCreatedResponse({ type: AdminRoleResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiConflictResponse({ type: ApiErrorResponseDto })
@@ -139,6 +147,7 @@ export class AdminController {
 
   /** Updates one role's editable name and permissions. */
   @Patch('roles/:id')
+  @ApiOperation({ operationId: 'updateAdminRole' })
   @ApiOkResponse({ type: AdminRoleResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiConflictResponse({ type: ApiErrorResponseDto })
@@ -152,6 +161,7 @@ export class AdminController {
 
   /** Soft-deletes an unbound custom role. */
   @Delete('roles/:id')
+  @ApiOperation({ operationId: 'deleteAdminRole' })
   @HttpCode(204)
   @ApiNoContentResponse()
   @ApiConflictResponse({ type: ApiErrorResponseDto })
@@ -162,6 +172,8 @@ export class AdminController {
 
   /** Restores one logically deleted custom role. */
   @Post('roles/:id/restore')
+  @HttpCode(200)
+  @ApiOperation({ operationId: 'restoreAdminRole' })
   @ApiOkResponse({ type: AdminRoleResponseDto })
   @ApiConflictResponse({ type: ApiErrorResponseDto })
   @ApiNotFoundResponse({ type: ApiErrorResponseDto })

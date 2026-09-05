@@ -15,7 +15,7 @@
 
 ## 产品与客户端方向
 
-- 项目采用 API 核心、CLI-first、Web maintenance-only 的长期方向。CLI 将成为主要交互入口；未来 TUI 与可能独立发布的 SDK 复用同一 HTTP SDK。尚未实现的 CLI、SDK、静态 OpenAPI artifact、generated transport 和 TUI 必须在文档中明确标为目标状态，不得写成当前可运行能力。
+- 项目采用 API 核心、CLI-first、Web maintenance-only 的长期方向。CLI 将成为主要交互入口；未来 TUI 与可能独立发布的 SDK 复用同一 HTTP SDK。tracked OpenAPI v1 artifact、稳定 operationId 及其漂移/兼容门禁已经实现；尚未实现的 CLI、SDK、generated transport 和 TUI 必须在文档中明确标为目标状态，不得写成当前可运行能力。
 - CLI、TUI 与 SDK 只能通过版本化 HTTP/OpenAPI 使用业务能力，不得导入 API 的 Domain、Application、Nest Module、DTO、ORM、数据库代码或 Feature `public/`。Feature `public/` 只属于服务端模块化单体内部合同，不是客户端公共 API。
 - 目标客户端依赖方向固定为 OpenAPI artifact → internal generated transport → handwritten HTTP SDK → CLI / TUI。CLI 与 TUI 只能导入 SDK public 入口，禁止直接导入 generated/internal 子路径；Web 继续使用现有手写 `ApiClient`，不得导入 SDK。
 - 第一阶段不引入 npm workspaces，只交付一个内部/私有 CLI npm 包；SDK 先形成严格逻辑边界并 bundle 到 CLI。只有 SDK 需要独立发布或 CLI/TUI 成为两个真实消费者时，才重新评估 workspace 化。
@@ -28,7 +28,7 @@
 
 - 除非任务明确改变架构范围，不得擅自引入 SQLite、Redis、CQRS、Outbox、Event Sourcing、Helm 或正式认证等重大技术。
 - `X-Demo-User-Id`、demo 路由、seed/reset 均为 demo-only，不得视为正式认证或生产安全机制。浏览器只保存当前演示身份和视觉偏好，不保存任务或秘密。
-- OpenAPI 是唯一 HTTP 字段契约；改变字段、枚举、状态码、错误语义、默认排序或身份头行为时，必须先更新失败测试和 OpenAPI 描述。静态 v1 artifact 建立后，还必须同步重新生成 artifact 与 generated transport，并通过漂移和兼容检查；不得手工修改生成结果。
+- OpenAPI 是唯一 HTTP 字段契约；改变字段、枚举、状态码、错误语义、默认排序或身份头行为时，必须先更新失败测试和 OpenAPI 描述，再重新生成 tracked v1 artifact 并通过漂移和兼容检查。`openapi/v1/baselines/*.openapi.json` 是按 SemVer 显式保留的受支持快照，不得用 Git 历史代替，也不得原地改写；generated transport 建立后还必须从 candidate artifact 重新生成。不得手工修改任何生成结果。
 
 ## 环境与验证前置条件
 
@@ -38,7 +38,7 @@
 - Docker 在本机开发与测试中只允许承载 PostgreSQL。migration、seed、build、API 应用、Vitest、Node Test、Playwright 和 Chromium 全部运行在宿主机；不得使用 Docker 构建或运行本机测试应用。
 - `npm run instance -- up|status|down|destroy --yes` 只管理当前 worktree 的 `dev` PostgreSQL。完整验证和 standalone Playwright 分别使用同一 worktree 下独立的 `verify`、`playwright` Compose project、容器、网络和卷；PostgreSQL 宿主机端口由 Docker 动态分配，不得恢复固定 `54329`。
 - 本机应用固定绑定 `127.0.0.1` 并以 `PORT=0` 由操作系统动态分配端口；不得占用永久部署的 `127.0.0.1:3000`，也不得恢复固定 `3100`。
-- `npm run verify` 在宿主机执行格式、lint、类型、注释、架构、构建、单元、API、PostgreSQL 契约、Playwright 行为和视觉检查。它只启动 `verify` PostgreSQL，不执行或模拟永久 Docker 部署；成功删除验证数据库容器、网络和卷，失败保留数据库现场，但宿主机应用进程始终停止。
+- `npm run verify` 在宿主机执行格式、lint、类型、注释、架构、OpenAPI artifact 漂移与兼容、构建、单元、API、PostgreSQL 契约、Playwright 行为和视觉检查。它只启动 `verify` PostgreSQL，不执行或模拟永久 Docker 部署；成功删除验证数据库容器、网络和卷，失败保留数据库现场，但宿主机应用进程始终停止。
 - `npm run verify -- --final` 仅用于 clean、已提交且验证期间 HEAD 不变的候选提交；成功后创建本地 `refs/noticeboard/verified/<sha>`，供 primary `main` 的 release 校验。worktree 最终验证不得调用部署入口。
 - 永久部署只能在 Git primary checkout 的 clean `main` 分支执行 `npm run deploy`，固定使用 Compose project `noticeboard` 和应用端口 `127.0.0.1:3000`，PostgreSQL 不发布宿主机端口。部署命令只允许 `up -d --build --wait` 式升级，不得添加任何删除路径；完成后必须通过 readiness、首页、OpenAPI 和数据库只读 API smoke。
 - 标准发布使用 `npm run release -- <候选> --expect-sha=<sha> --confirm-auto-revert`：要求候选已有 final verified ref，在本地 `main` 创建 no-ff merge commit 后立即部署验证。部署失败时只撤回本次 merge commit并尝试一次补偿部署；不得自动 fetch、push、reset、force push、删除分支或执行数据库 migration revert。补偿仍失败时停止自动操作并转人工恢复。

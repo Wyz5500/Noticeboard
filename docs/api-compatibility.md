@@ -1,6 +1,6 @@
 # API v1 兼容政策
 
-> **实施状态：部分为目标治理。** 当前 HTTP API 与运行时 `/api/openapi.json` 已存在；提交到 Git 的静态 OpenAPI artifact、generated transport、自动漂移检查和兼容比较尚未实现。本文定义它们落地后的约束，不表示仓库当前已有这些产物或命令。
+> **实施状态：基础治理已落地。** 当前 HTTP API、运行时 `/api/openapi.json`、tracked `openapi/v1/noticeboard.openapi.json`、稳定 operationId、服务端漂移检查、runtime 等价测试和显式受支持基线兼容比较均已存在。generated transport、artifact → generated drift、SDK 与 CLI 仍是目标状态。
 
 ## 目标
 
@@ -21,6 +21,8 @@ API v1 public contract 包括：
 - 列表默认排序、资源归属和乐观并发行为。
 - 评论时间线的折叠与删除脱敏。
 
+未版本化的 `/health/live` 与 `/health/ready` 属于运维表面，不是客户端 API v1 contract，也不进入 tracked artifact 或运行时 `/api/openapi.json`。
+
 以下实现名称本身不是外部合同：
 
 - controller、DTO、Application use case、Domain class 或 ORM Entity 的 TypeScript 名称。
@@ -32,11 +34,19 @@ API v1 public contract 包括：
 
 ## Artifact 生命周期
 
-目标 tracked artifact 路径应包含 HTTP major，例如：
+当前 tracked candidate artifact 路径包含 HTTP major：
 
 ```text
 openapi/v1/noticeboard.openapi.json
 ```
+
+仍受支持的兼容快照按 OpenAPI SemVer 显式提交到：
+
+```text
+openapi/v1/baselines/<semver>.openapi.json
+```
+
+candidate 是 codegen 的唯一输入；baseline 只用于兼容比较。一旦某个 baseline 代表已支持或已发布的合同，就不得原地改写或删除，只能在结束相应支持窗口后通过明确评审移除。
 
 生成流程必须：
 
@@ -47,15 +57,15 @@ openapi/v1/noticeboard.openapi.json
 5. 确定性排序、缩进和换行。
 6. 关闭 Nest、数据库连接和其他资源。
 
-tracked artifact 不得手工编辑。需要改变 HTTP 契约时，应先更新失败的 HTTP/OpenAPI 测试和服务端 authoring source，再重新生成 artifact。
+tracked artifact 不得手工编辑。需要改变 HTTP 契约时，应先更新失败的 HTTP/OpenAPI 测试和服务端 authoring source，再使用 `npm run openapi:generate` 重新生成 artifact。该命令先通过 tsc 编译真实 API graph，以保留 Nest decorator metadata；`npm run openapi:check` 从同一 graph 重建并执行字节比较。两个命令都需要可用的 `DATABASE_URL`，完整 `npm run verify` 会使用隔离的 verify PostgreSQL 自动注入。
 
 ### 漂移检查
 
-验证必须区分三种漂移：
+验证区分三种漂移：
 
-- **服务端 → artifact drift**：从当前服务端重新生成后，结果必须与 tracked artifact 字节一致。
-- **artifact → generated drift**：从 tracked artifact 重新 codegen 后，结果必须与提交的 generated transport 一致。
-- **runtime drift**：运行时 `/api/openapi.json` 必须与 tracked artifact 语义一致。
+- **服务端 → artifact drift（当前已实现）**：`npm run openapi:check` 从当前服务端重新生成后，结果必须与 tracked artifact 字节一致。
+- **runtime drift（当前已实现）**：真实 `AppModule` 的运行时 `/api/openapi.json` 必须与 tracked artifact 语义一致。
+- **artifact → generated drift（generated transport 建立后启用）**：从 tracked artifact 重新 codegen 后，结果必须与提交的 generated transport 一致。
 
 Generated transport 是生成物：
 
@@ -66,15 +76,13 @@ Generated transport 是生成物：
 
 ## 首个 v1 基线
 
-建立首个静态 v1 artifact 前，必须先消除已知的管理员 restore 状态码缝隙：
+首个静态 v1 artifact 已在消除管理员 restore 状态码缝隙后建立：
 
 - 用户 restore 与角色 restore 恢复既有资源，不创建新资源。
-- 规范成功状态码定为 HTTP 200。
-- Controller 运行时、OpenAPI 注解和真实集成测试必须统一为 200。
+- 规范成功状态码为 HTTP 200。
+- Controller 运行时、OpenAPI 注解和真实集成测试统一为 200。
 
-在该修复完成前，不应把当前不一致结果冻结为正式兼容基线。
-
-首个基线建立后，任何 v1 变化都必须经过 artifact diff、兼容检查和人工语义审查。
+首个受支持快照固定为 `openapi/v1/baselines/1.0.0.openapi.json`。`npm run openapi:compatibility` 将工作区 candidate 与 baseline 目录中的全部显式快照比较；目录不存在或没有符合 `<semver>.openapi.json` 命名的文件时失败关闭。该命令不读取 Git 历史、不 fetch，也不依赖远端分支，因此 shallow checkout 不会静默漏检，未发布功能分支的中间 artifact 也不会自动成为永久基线。后续任何 v1 变化都必须经过 artifact diff、结构兼容检查和人工语义审查。
 
 ## 四类版本
 
@@ -107,7 +115,9 @@ Generated transport 是生成物：
 - 删除、重命名或移动 endpoint。
 - 删除或重命名请求/响应字段。
 - 修改字段类型、format 或判别字段。
-- 把可选字段改为必填，或收紧长度、日期、格式和数值范围。
+- 新增必填参数或必填请求体，把可选请求字段改为必填，或把既有必填响应字段改为可选。
+- 新增或改变全局/operation 安全要求，或改变既有 security scheme。
+- 新增 `pattern`、`nullable`、`additionalProperties`、`uniqueItems` 等 schema 限定，或收紧长度、日期、格式和数值范围。
 - 修改既有成功状态码。
 - 改变错误信封结构，或改变既有 `error.code` 的状态码与语义。
 - 改变 `X-Demo-User-Id` 的既有处理方式，而未提供替代迁移路径。
@@ -196,9 +206,9 @@ HTTP/OpenAPI 变化至少需要：
 
 - 先更新失败的 HTTP/DTO/guard/OpenAPI 测试。
 - 生成并审查 tracked artifact diff。
-- 运行 artifact drift、generated drift 和 runtime equivalence 检查。
+- 运行当前的 artifact drift 与 runtime equivalence 检查；generated transport 建立后再加入 generated drift。
 - 运行 v1 compatibility 检查，并人工审查工具无法判断的错误语义、排序、并发和脱敏行为。
-- 运行 SDK contract 和 CLI HTTP smoke。
+- SDK 与 CLI 建立后运行其 contract 和真实宿主机 HTTP smoke。
 - 保留 Web API、行为和视觉回归。
 - 通过完整 `npm run verify` 与 `git diff --check`。
 

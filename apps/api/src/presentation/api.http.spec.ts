@@ -46,6 +46,28 @@ import { DomainError } from '../tasks/domain/domain-error.js';
 import { DemoTasksController } from '../tasks/presentation/demo-tasks.controller.js';
 import { TasksController } from '../tasks/presentation/tasks.controller.js';
 
+type OpenApiHttpMethod =
+  'get' | 'put' | 'post' | 'delete' | 'patch' | 'options' | 'head' | 'trace';
+
+interface OpenApiOperation {
+  operationId?: string;
+  parameters?: Array<{ in?: string; name?: string }>;
+  responses: Record<string, unknown>;
+}
+
+type OpenApiPath = Partial<Record<OpenApiHttpMethod, OpenApiOperation>>;
+
+const OPENAPI_HTTP_METHODS: readonly OpenApiHttpMethod[] = [
+  'get',
+  'put',
+  'post',
+  'delete',
+  'patch',
+  'options',
+  'head',
+  'trace',
+];
+
 const TASK: TaskViewModel = {
   id: 'task-http',
   title: 'HTTP 契约任务',
@@ -893,18 +915,7 @@ describe('HTTP API contract', () => {
     expect(docs.statusCode).toBe(200);
     expect(schema.statusCode).toBe(200);
     const document = schema.json<{
-      paths: Record<
-        string,
-        {
-          get?: { responses: Record<string, unknown> };
-          post?: {
-            parameters?: Array<{ name?: string }>;
-            responses: Record<string, unknown>;
-          };
-          patch?: { responses: Record<string, unknown> };
-          delete?: { responses: Record<string, unknown> };
-        }
-      >;
+      paths: Record<string, OpenApiPath>;
       components: {
         schemas: Record<
           string,
@@ -930,6 +941,58 @@ describe('HTTP API contract', () => {
       };
     }>();
     expect(document.paths).toHaveProperty('/api/v1/tasks');
+    const operations = Object.entries(document.paths).flatMap(([path, item]) =>
+      OPENAPI_HTTP_METHODS.flatMap((method) => {
+        const operation = item[method];
+        return operation ? [{ method, operation, path }] : [];
+      }),
+    );
+    expect(
+      operations.filter(
+        ({ operation }) =>
+          typeof operation.operationId !== 'string' ||
+          !operation.operationId.trim(),
+      ),
+    ).toEqual([]);
+    const operationIds = operations.map(
+      ({ operation }) => operation.operationId!,
+    );
+    expect([...operationIds].sort()).toEqual(
+      [
+        'actOnTask',
+        'createAdminRole',
+        'createAdminUser',
+        'createTask',
+        'createTaskComment',
+        'deleteAdminRole',
+        'deleteAdminUser',
+        'deleteTaskComment',
+        'editTaskComment',
+        'getAdminOverview',
+        'getTask',
+        'listDemoUsers',
+        'listTasks',
+        'renewExpiredTask',
+        'resetDemoTasks',
+        'restoreAdminRole',
+        'restoreAdminUser',
+        'updateAdminRole',
+        'updateAdminUser',
+      ].sort(),
+    );
+    expect(new Set(operationIds).size).toBe(operationIds.length);
+    expect(
+      operations.flatMap(({ method, operation, path }) => {
+        const identityHeaders = (operation.parameters ?? []).filter(
+          (parameter) =>
+            parameter.in === 'header' &&
+            parameter.name?.toLowerCase() === 'x-demo-user-id',
+        );
+        return identityHeaders.length > 1
+          ? [`${method.toUpperCase()} ${path}`]
+          : [];
+      }),
+    ).toEqual([]);
     expect(
       document.paths['/api/v1/admin/users']?.post?.responses,
     ).toHaveProperty('404');
@@ -939,13 +1002,20 @@ describe('HTTP API contract', () => {
     expect(
       document.paths['/api/v1/admin/roles/{id}']?.delete?.responses,
     ).toHaveProperty('204');
+    expect(
+      document.paths['/api/v1/admin/users/{id}/restore']?.post?.responses,
+    ).toHaveProperty('200');
+    expect(
+      document.paths['/api/v1/admin/roles/{id}/restore']?.post?.responses,
+    ).toHaveProperty('200');
     expect(document.paths['/api/v1/tasks']?.get?.responses).toHaveProperty(
       '401',
     );
     expect(document.paths['/api/v1/tasks']?.get?.responses).toHaveProperty(
       '403',
     );
-    expect(document.paths).toHaveProperty('/health/ready');
+    expect(document.paths).not.toHaveProperty('/health/live');
+    expect(document.paths).not.toHaveProperty('/health/ready');
     expect(
       document.paths['/api/v1/demo/reset']?.post?.responses,
     ).toHaveProperty('401');
@@ -953,8 +1023,14 @@ describe('HTTP API contract', () => {
       document.paths['/api/v1/demo/reset']?.post?.responses,
     ).toHaveProperty('403');
     expect(
-      document.paths['/api/v1/tasks/{taskId}/actions']?.post?.parameters,
-    ).toContainEqual(expect.objectContaining({ name: 'X-Demo-User-Id' }));
+      document.paths[
+        '/api/v1/tasks/{taskId}/actions'
+      ]?.post?.parameters?.filter(
+        (parameter) =>
+          parameter.in === 'header' &&
+          parameter.name?.toLowerCase() === 'x-demo-user-id',
+      ),
+    ).toHaveLength(1);
     expect(
       document.paths['/api/v1/tasks/{taskId}/actions']?.post?.responses,
     ).toHaveProperty('409');
@@ -989,8 +1065,11 @@ describe('HTTP API contract', () => {
       document.paths['/api/v1/tasks/{taskId}/expiration-renewal']?.post
         ?.responses,
     ).toHaveProperty('409');
-    expect(document.paths['/health/ready']?.get?.responses).toHaveProperty(
-      '503',
+    expect(document.components.schemas).not.toHaveProperty(
+      'LiveHealthResponseDto',
+    );
+    expect(document.components.schemas).not.toHaveProperty(
+      'ReadyHealthResponseDto',
     );
     expect(
       document.components.schemas.CreateTaskDto?.properties?.type?.enum,
@@ -1077,10 +1156,16 @@ describe('HTTP API contract', () => {
         ?.items?.enum,
     ).toEqual([...ALL_PERMISSION_CODES]);
     expect(
+      document.components.schemas.AdminUserResponseDto?.properties?.deletedAt,
+    ).toMatchObject({ type: 'string', nullable: true, format: 'date-time' });
+    expect(
       document.components.schemas.AdminUserResponseDto?.properties?.updatedAt,
-    ).toMatchObject({ format: 'date-time' });
+    ).toMatchObject({ type: 'string', format: 'date-time' });
+    expect(
+      document.components.schemas.AdminRoleResponseDto?.properties?.deletedAt,
+    ).toMatchObject({ type: 'string', nullable: true, format: 'date-time' });
     expect(
       document.components.schemas.AdminRoleResponseDto?.properties?.updatedAt,
-    ).toMatchObject({ format: 'date-time' });
+    ).toMatchObject({ type: 'string', format: 'date-time' });
   });
 });

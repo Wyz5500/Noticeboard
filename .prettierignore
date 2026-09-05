@@ -1,6 +1,7 @@
 coverage/
 dist/
 node_modules/
+openapi/v1/**/*.openapi.json
 playwright-report/
 test-results/
 .agents/

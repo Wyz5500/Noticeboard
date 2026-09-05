@@ -4,7 +4,7 @@
 
 告示牌采用 **API 核心、CLI-first、Web maintenance-only** 的长期方向：版本化 HTTP API 是跨进程业务能力边界；CLI 将成为主要交互入口；未来 TUI 与可能独立发布的 SDK 复用同一 HTTP SDK。现有 Web 保留运行和维护，但不再承接常规产品功能开发。
 
-本文同时描述当前架构与目标架构。除非章节明确写明“当前”，CLI、SDK、静态 OpenAPI artifact、generated transport、npm 客户端发布和 TUI 均属于尚未实现的目标合同，不能据此假定仓库中已经存在对应命令、目录或构建产物。
+本文同时描述当前架构与目标架构。tracked OpenAPI v1 artifact、稳定 operationId、服务端漂移检查和显式受支持基线兼容门禁已经实现；除非章节明确写明“当前”，CLI、SDK、generated transport、npm 客户端发布和 TUI 均属于尚未实现的目标合同，不能据此假定仓库中已经存在对应命令、目录或构建产物。
 
 当前仍是模块化单体：唯一的 NestJS + Fastify 进程同时提供版本化 API、健康检查、运行时 OpenAPI 和编译后的静态页面。应用实例无状态，PostgreSQL 是服务器任务与时间线的权威数据源。现有架构不包含 SQLite、Redis、CQRS、Outbox、Event Sourcing、Helm 或正式认证。
 
@@ -18,10 +18,12 @@
                                              │
                            TypeORM Data Mapper / PostgreSQL
 
+同一 AppModule ── 确定性生成/漂移检查 ── tracked OpenAPI v1 artifact
+
 目标：
 API 模块化单体
   └─ HTTP /api/v1
-       └─ 确定性生成并提交的 OpenAPI v1 artifact
+       └─ tracked OpenAPI v1 artifact
             └─ internal generated transport
                  └─ handwritten HTTP SDK
                       ├─ CLI（主要交互入口）
@@ -39,7 +41,7 @@ API 模块化单体
 必须区分两类 public contract：
 
 - **服务端内部公共合同**：`apps/api/src/<feature>/public/`，只服务模块化单体内部的跨 Feature 协作，不是 npm SDK 或客户端导入入口。
-- **外部稳定合同**：HTTP `/api/v1` 的路径、方法、字段、枚举、状态码、错误语义与身份头；目标 OpenAPI artifact；未来 SDK 根入口导出的 API；CLI 命令、参数、配置、JSON 信封、stdout/stderr 和退出码。
+- **外部稳定合同**：HTTP `/api/v1` 的路径、方法、字段、枚举、状态码、错误语义与身份头；tracked OpenAPI v1 artifact；未来 SDK 根入口导出的 API；CLI 命令、参数、配置、JSON 信封、stdout/stderr 和退出码。
 
 业务模块内部遵循：
 
@@ -82,20 +84,19 @@ PostgreSQL 持久化账户、角色与权限关系、任务及有序任务事件
 
 部署 seed 幂等初始化演示身份，并且只在任务数据为空时于单一事务中初始化演示任务；只有显式 reset 才替换任务数据。seed 与 reset 不读取浏览器或客户端配置，也不能绕过 Feature 所属的持久化边界。
 
-HTTP 使用 URI 版本 `/api/v1`。当前稳定枚举、字段、状态码与 demo-only 身份头以运行时 `/api/openapi.json` 为唯一字段契约；公开任务时间线以判别联合区分生命周期活动和评论，读取适配器必须在进入 HTTP 契约前完成删除脱敏。本文不复制 DTO 字段以避免双重真相。演示身份头、demo 路由、seed 和 reset 只服务演示环境，不构成正式认证或生产安全边界。
+HTTP 使用 URI 版本 `/api/v1`。Nest controller、DTO 和 metadata 是 authoring source；提交的 `openapi/v1/noticeboard.openapi.json` 是稳定枚举、字段、状态码与 demo-only 身份头的可审查客户端合同，运行时 `/api/openapi.json` 必须与其语义一致，且两者都只包含 `/api/v1/*`。实际存在的 `/health/live` 与 `/health/ready` 是未版本化运维端点，不进入客户端 artifact。公开任务时间线以判别联合区分生命周期活动和评论，读取适配器必须在进入 HTTP 契约前完成删除脱敏。本文不复制 DTO 字段以避免双重真相。演示身份头、demo 路由、seed 和 reset 只服务演示环境，不构成正式认证或生产安全边界。
 
 ### OpenAPI artifact 与漂移治理
 
-目标架构将由真实 Nest controller、DTO 和 module graph 确定性生成、提交到 Git 的 OpenAPI v1 JSON artifact 定义为外部 HTTP 契约的可审查载体。Nest metadata 仍是 authoring source，不得再手工维护一套平行 YAML/JSON；tracked artifact 是 SDK codegen、兼容比较和客户端发布构建的唯一输入。
+当前由真实 Nest controller、DTO 和 `AppModule` 确定性生成并提交 `openapi/v1/noticeboard.openapi.json`。Nest metadata 仍是 authoring source，不再手工维护平行 YAML/JSON；tracked artifact 是后续 SDK codegen、兼容比较和客户端发布构建的唯一输入。管理员用户和角色 restore 已统一为 HTTP 200，所有公开 operation 均具有稳定、唯一、资源化的 `operationId`。
 
-生成结果不得包含构建时间、主机名、动态 server URL 或其他环境差异，并须稳定排序和格式化。所有进入 SDK 的 operation 必须具有稳定、唯一、资源化的 `operationId`。验证最终必须覆盖：
+`npm run openapi:generate` 先以 tsc 编译真实 API graph，再稳定排序并原子替换 artifact；`npm run openapi:check` 重建后执行字节比较；`npm run openapi:compatibility` 将候选与 `openapi/v1/baselines/*.openapi.json` 中按 SemVer 命名、显式提交且不可改写的全部受支持快照比较。兼容检查不读取 Git 历史，基线目录为空时失败关闭，避免 shallow checkout 漏检或把未发布分支中间态误当作永久合同。生成结果不得包含构建时间、主机名、动态 server URL 或其他环境差异。当前验证覆盖：
 
 - 当前服务端生成结果与 tracked artifact 字节一致。
-- runtime `/api/openapi.json` 与发布 artifact 语义一致。
-- generated transport 可从 tracked artifact 重建且无漂移。
-- v1 候选相对兼容基线没有未经批准的 breaking change。
+- runtime `/api/openapi.json` 与 tracked artifact 语义一致，且不混入未版本化 health 运维端点。
+- v1 候选相对全部显式受支持基线没有结构性 breaking change。
 
-在建立首个静态 v1 基线前，管理员用户和角色 restore 必须统一为 HTTP 200：restore 恢复既有资源，不创建新资源；运行时、OpenAPI 和集成测试必须一致。该代码修复不属于当前文档变更。
+默认排序、错误码语义、身份处理、事务提交、乐观并发和脱敏继续由契约测试与人工审查固定。generated transport 尚未实现；建立后必须补充从 tracked artifact 重建且无漂移的门禁。
 
 ### 版本与兼容政策
 

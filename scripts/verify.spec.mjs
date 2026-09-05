@@ -28,6 +28,8 @@ test('verify dry-run keeps build application and tests on the host', () => {
     'typecheck',
     'comments',
     'architecture',
+    'openapi:check',
+    'openapi:compatibility',
     'test:instance',
     'build',
     'test:unit',

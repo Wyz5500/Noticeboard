@@ -6,7 +6,7 @@
 
 项目后续采用 **API 核心、CLI-first、Web maintenance-only** 的方向：CLI 将成为主要交互入口，未来 TUI 与可能独立发布的 SDK 通过同一版本化 HTTP SDK 使用 `/api/v1`；现有 Web 继续运行和维护，但不再承接常规产品功能开发。
 
-CLI、SDK、提交到 Git 的静态 OpenAPI artifact、generated transport 和 TUI 目前尚未实现。本 README 中的命令仍只描述当前可运行的 API/Web、数据库、测试和部署入口；目标 CLI 合同见 [`docs/cli.md`](docs/cli.md)，API v1 兼容政策见 [`docs/api-compatibility.md`](docs/api-compatibility.md)，完整依赖边界见 [`docs/architecture.md`](docs/architecture.md)。
+提交到 Git 的 `openapi/v1/noticeboard.openapi.json`、稳定 operationId、服务端漂移检查和显式受支持基线兼容门禁已经实现。CLI、SDK、generated transport 和 TUI 目前尚未实现。本 README 中的命令仍只描述当前可运行的 API/Web、数据库、测试和部署入口；目标 CLI 合同见 [`docs/cli.md`](docs/cli.md)，API v1 兼容政策见 [`docs/api-compatibility.md`](docs/api-compatibility.md)，完整依赖边界见 [`docs/architecture.md`](docs/architecture.md)。
 
 第一阶段计划只交付一个内部/私有 CLI npm 包，SDK 先作为 CLI 内部的严格逻辑边界，不引入 npm workspaces，也不单独发布 SDK。npm 包名在发布前另行确定，可执行文件暂定为 `noticeboard`。
 
@@ -58,8 +58,9 @@ npm run verify
 ```
 
 - `test:api` 和 `test:contract` 的数据库套件要求 `DATABASE_URL_TEST`，缺少时会明确失败，不再静默跳过。可使用 `instance status` 打印的地址，或通过完整验证自动注入。
+- `openapi:generate` 与 `openapi:check` 先编译真实 API graph，并要求 `DATABASE_URL` 指向可用 PostgreSQL；完整验证会自动使用隔离的 `verify` 数据库。`openapi:compatibility` 只读取候选 artifact 和 `openapi/v1/baselines/*.openapi.json` 中显式提交的受支持基线，不读取 Git 历史、fetch 或访问远端；基线目录为空时失败关闭。
 - 单独运行 `test:e2e` 或 `test:visual` 且未提供 `E2E_BASE_URL` 时，会创建当前 worktree 专属的 `playwright` PostgreSQL；migration、seed、build、应用和浏览器仍全部在宿主机运行。
-- `npm run verify` 使用独立的 `verify` PostgreSQL，依次执行格式、lint、类型、注释、架构、生命周期、宿主机构建、单元/API/contract、行为和零像素视觉测试，最后执行 `git diff --check`。
+- `npm run verify` 使用独立的 `verify` PostgreSQL，依次执行格式、lint、类型、注释、架构、OpenAPI artifact 漂移与兼容、生命周期、宿主机构建、单元/API/contract、行为和零像素视觉测试，最后执行 `git diff --check`。
 - 完整验证和 standalone Playwright 成功时删除各自数据库容器、网络和卷；失败时保留数据库及测试产物，但宿主机应用进程始终停止。`dev`、`verify` 和 `playwright` 数据库互不共享。
 - 测试固定注入 `TASK_BUSINESS_TIME_ZONE=Asia/Shanghai` 与 `TASK_CURRENT_DATE_OVERRIDE=2026-09-01`，不会使用固定 `3100` 或 `54329` 回退端口。
 
@@ -136,6 +137,9 @@ npm run test:api                      # HTTP 契约及真实模块集成测试
 npm run test:contract                 # PostgreSQL 仓储契约测试
 npm run test:e2e                      # 宿主机 Chromium 行为测试
 npm run test:visual                   # 宿主机桌面/移动零像素视觉测试
+npm run openapi:generate              # 从真实 AppModule 重新生成 tracked v1 artifact
+npm run openapi:check                 # 字节检查服务端与 tracked artifact 漂移
+npm run openapi:compatibility         # 对比显式提交的全部受支持 v1 基线
 npm run verify                        # 宿主机完整交付门禁
 npm run verify -- --final             # 为 clean 候选提交记录 verified ref
 npm run deploy                        # 仅从 primary clean main 部署当前版本
@@ -150,6 +154,9 @@ npm run release -- ...                # 合并候选、部署、失败 revert �
 - `tests/e2e`：行为测试与由旧原型冻结的视觉基线。
 - `scripts/instance.mjs`：worktree PostgreSQL-only 生命周期。
 - `scripts/local-app.mjs`、`scripts/run-local.mjs`：宿主机应用进程与开发入口。
+- `openapi/v1/noticeboard.openapi.json`：从真实 AppModule 确定性生成并提交的当前 HTTP 合同。
+- `openapi/v1/baselines/*.openapi.json`：按 SemVer 命名、显式保留且不可改写的受支持 v1 兼容快照。
+- `scripts/openapi-artifact.ts`、`scripts/check-openapi-compatibility.ts`：artifact 生成、漂移和显式基线兼容门禁。
 - `scripts/verify.mjs`、`scripts/run-playwright.mjs`：宿主机验证与浏览器编排。
 - `scripts/deploy.mjs`、`scripts/release.mjs`：main-only 永久部署和 release 事务。
 - `docs/architecture.md`：当前架构、CLI-first 目标、依赖边界和事务设计。
@@ -157,16 +164,17 @@ npm run release -- ...                # 合并候选、部署、失败 revert �
 - `docs/api-compatibility.md`：API v1、OpenAPI artifact、SemVer、兼容变化与迁移政策。
 - `Dockerfile`、`compose.deploy.yaml`：永久部署；`compose.yaml`：仅本地隔离 PostgreSQL。
 
-目标客户端结构尚未创建；后续将依次建立 `openapi/v1`、SDK 逻辑边界和 `apps/cli`。这些路径当前只是架构目标，不是可用源码入口。首个 CLI 版本稳定后，只有在 SDK 需要独立发布或 TUI 成为第二个真实消费者时才评估 npm workspaces。
+`openapi/v1` 已作为客户端合同输入建立；SDK 逻辑边界和 `apps/cli` 尚未创建，仍只是架构目标而非可用源码入口。首个 CLI 版本稳定后，只有在 SDK 需要独立发布或 TUI 成为第二个真实消费者时才评估 npm workspaces。
 
 ## 后续客户端阶段
 
-1. 先把管理员 restore 的运行时、OpenAPI 与测试统一为 HTTP 200，再建立确定性生成的 OpenAPI v1 artifact、稳定 operationId 和漂移/兼容门禁。
-2. 从 tracked artifact 生成 internal transport，并由手写 HTTP SDK 隔离生成器实现、错误映射和认证注入。
-3. 交付 profile、demo identity、`task list/get` 和稳定 `--json`/退出码的只读 CLI。
-4. 加入任务创建、动作、续期和评论写入；未显式提供 expected version 时只预读一次，409 后不自动重放。
-5. SDK 与 CLI 合同稳定后再评估管理资源、独立 SDK 发布、workspaces 和 TUI。
+当前已完成管理员 restore HTTP 200 对齐、确定性 OpenAPI v1 artifact、稳定 operationId，以及服务端漂移和显式受支持基线兼容门禁。下一阶段按以下顺序推进：
+
+1. 从 tracked artifact 生成 internal transport，并由手写 HTTP SDK 隔离生成器实现、错误映射和认证注入。
+2. 交付 profile、demo identity、`task list/get` 和稳定 `--json`/退出码的只读 CLI。
+3. 加入任务创建、动作、续期和评论写入；未显式提供 expected version 时只预读一次，409 后不自动重放。
+4. SDK 与 CLI 合同稳定后再评估管理资源、独立 SDK 发布、workspaces 和 TUI。
 
 ## 健康与关闭
 
-`GET /health/live` 只检查进程存活；`GET /health/ready` 探测 PostgreSQL，未就绪时返回 503。应用输出结构化 JSON 日志，并以 `application.ready` 事件公布实际监听 URL；接收终止信号后执行 Nest/Fastify 优雅关闭。
+`GET /health/live` 只检查进程存活；`GET /health/ready` 探测 PostgreSQL，未就绪时返回 503。这两个未版本化端点属于运维表面，不属于 `/api/v1` 客户端合同，因此不进入 tracked artifact 或运行时 `/api/openapi.json`。应用输出结构化 JSON 日志，并以 `application.ready` 事件公布实际监听 URL；接收终止信号后执行 Nest/Fastify 优雅关闭。

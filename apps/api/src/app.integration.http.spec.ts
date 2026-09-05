@@ -4,6 +4,8 @@ import {
   type NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { AppModule } from './app.module.js';
@@ -41,6 +43,23 @@ describe('application composition', () => {
   /** Closes the real TypeORM pool and Fastify instance after integration checks. */
   afterAll(async () => {
     await app.close();
+  });
+
+  /** Keeps the runtime OpenAPI response semantically equal to the tracked client contract. */
+  it('serves the tracked OpenAPI artifact', async () => {
+    const artifact = JSON.parse(
+      await readFile(
+        resolve('openapi', 'v1', 'noticeboard.openapi.json'),
+        'utf8',
+      ),
+    ) as unknown;
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/openapi.json',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(artifact);
   });
 
   /** Proves reset, list, create, and action commands traverse the full production module graph. */
@@ -337,7 +356,7 @@ describe('application composition', () => {
       url: `/api/v1/admin/users/${user.json().id as string}/restore`,
       headers: { 'x-demo-user-id': 'noticeboard-admin' },
     });
-    expect(restoredUser.statusCode).toBe(201);
+    expect(restoredUser.statusCode).toBe(200);
     expect(restoredUser.json()).toMatchObject({
       active: true,
       updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
@@ -403,7 +422,7 @@ describe('application composition', () => {
       url: `/api/v1/admin/roles/${role.json().id as string}/restore`,
       headers: { 'x-demo-user-id': 'noticeboard-admin' },
     });
-    expect(restoredRole.statusCode).toBe(201);
+    expect(restoredRole.statusCode).toBe(200);
     expect(restoredRole.json()).toMatchObject({
       active: true,
       updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
