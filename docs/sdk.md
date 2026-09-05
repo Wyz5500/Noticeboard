@@ -1,21 +1,24 @@
 # HTTP SDK
 
-当前 SDK 支持 Node 24.x，位于 `apps/cli/src/sdk`，没有独立 npm 包。唯一源码入口是 `index.ts`，独立构建入口为 `dist/sdk/index.js`。CLI 与 profile 已实现并通过该入口访问 HTTP；SDK/CLI 支持任务读取、创建、生命周期、续期、评论增改删和管理资源读写。registry 发布仍未实现。
+当前 SDK 支持 Node 24.x，位于 `apps/cli/src/sdk`，已交付独立本地 npm 包 `noticeboard-sdk-local@0.0.0`（private: true、ESM、无运行时依赖）。唯一源码入口是 `index.ts`，独立构建入口为 `dist/sdk/index.js`。CLI 与 profile 已实现并通过该入口访问 HTTP；SDK/CLI 支持任务读取、创建、生命周期、续期、评论增改删和管理资源读写。registry 发布仍未实现。
 
 ## 构建与使用
 
 ```bash
 npm run sdk:typecheck
 npm run sdk:build
+npm run sdk:pack
 npm run test:sdk
 ```
 
-这三个命令不需要数据库。真实 HTTP smoke 随 `npm run verify` 的 API 测试运行；验证只使用隔离 PostgreSQL 和动态端口的宿主机应用。
+这些命令不需要数据库。`sdk:pack` 从独立临时构建生成 `dist/packages/noticeboard-sdk-local-0.0.0.tgz`，支持 `-- --out-dir <目录>`，不访问 registry；`sdk:build` 先在临时目录完成编译和包元数据，再替换输出以清除陈旧文件。真实 HTTP smoke 随 `npm run verify` 的 API 测试运行；验证只使用隔离 PostgreSQL 和动态端口的宿主机应用。
 
-在仓库根目录运行以下调用方示例；先把调用方环境变量 `NOTICEBOARD_BASE_URL` 设置为宿主机应用打印的实际 URL 或远端服务地址：
+在仓库外的 ESM 项目中执行 `npm install /绝对路径/noticeboard-sdk-local-0.0.0.tgz`，即可按包名导入。包仅公开根 exports，internal/generated 及其他子路径不属于公共 API；完整 `.d.ts` 随包交付。原 `dist/sdk/index.js` 构建入口继续保留。
+
+安装后运行以下调用方示例；先把调用方环境变量 `NOTICEBOARD_BASE_URL` 设置为宿主机应用打印的实际 URL 或远端服务地址：
 
 ```js
-import { createNoticeboardClient } from './dist/sdk/index.js';
+import { createNoticeboardClient } from 'noticeboard-sdk-local';
 
 const client = createNoticeboardClient({
   baseUrl: process.env.NOTICEBOARD_BASE_URL,
@@ -126,6 +129,6 @@ SDK 完整校验读取及全部写操作响应的已知结构：字段类型、�
 
 ## 构建与后续边界
 
-`sdk:build` 通过现有 TypeScript 编译 ESM 与 `.d.ts`，不引入 runtime 依赖、workspace 或发布 manifest。generated transport 仍只允许从 tracked artifact 生成。SDK 构建包含内部 transport，但服务器生产镜像只复制 `dist/api` 和 `dist/web`。
+`sdk:build` 通过现有 TypeScript 编译 ESM 与 `.d.ts`，补充独立本地 npm manifest 与 README，不引入 runtime 依赖或 workspace。generated transport 仍只允许从 tracked artifact 生成。SDK 构建包含内部 transport，但服务器生产镜像只复制 `dist/api` 和 `dist/web`。
 
-CLI 已基于该入口实现 profile、demo identity、任务读取与全部任务/评论写命令、管理总览及用户/角色/权限列表、JSON 输出与退出码；配置、筛选、文件/stdin、删除确认、版本预读、30 秒超时和终端输出均由 CLI 负责。管理详情、筛选、写入及 demo reset 均已实现；独立 SDK 发布与 TUI 仍未实现。
+CLI 已基于该入口实现 profile、demo identity、任务读取与全部任务/评论写命令、管理总览及用户/角色/权限列表、JSON 输出与退出码；配置、筛选、文件/stdin、删除确认、版本预读、30 秒超时和终端输出均由 CLI 负责。管理详情、筛选、写入及 demo reset 均已实现；独立 SDK 本地包已实现，registry 发布未实现。近期开发聚焦 CLI，TUI 暂缓；服务端继续维护双方共用的版本化 HTTP 合同。安装后两个 SDK 实例的真实 HTTP 验证覆盖共享状态、身份隔离和冲突不重放，不替代未来 TUI 验收。

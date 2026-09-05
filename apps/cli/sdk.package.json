@@ -1,0 +1,21 @@
+{
+  "name": "noticeboard-sdk-local",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "告示牌独立 HTTP SDK，本地安装验证包。",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=24 <25" },
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": { "types": "./index.d.ts", "import": "./index.js" }
+  },
+  "files": [
+    "/*.js",
+    "/*.d.ts",
+    "/internal/**/*.js",
+    "/internal/**/*.d.ts",
+    "/README.md"
+  ]
+}

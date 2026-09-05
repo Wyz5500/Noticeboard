@@ -200,7 +200,9 @@ Generated transport 只消费 tracked artifact；手写 SDK 隔离生成器实�
 
 ### Future TUI
 
-TUI 与 CLI 平级，只依赖 SDK public API。不得导入 CLI command、renderer、配置内部实现或 generated transport；需要共享 profile 时，应依赖未来明确的客户端配置公共合同，而不是跨 app 私有 import。
+近期开发重心为 CLI，TUI 暂缓且尚未实现。服务端必须保持两类客户端共用的版本化 HTTP 合同、独立请求身份和并发语义，不按客户端类型分叉。当前两个独立 SDK 实例与安装后 CLI 的真实 HTTP smoke 验证共享状态、身份隔离、409 不重放；真实 TUI 验收留到其恢复开发时。
+
+未来 TUI 与 CLI 平级，只依赖 SDK public API。不得导入 CLI command、renderer、配置内部实现或 generated transport；需要共享 profile 时，应依赖未来明确的客户端配置公共合同，而不是跨 app 私有 import。
 
 ## 验证职责
 
@@ -226,4 +228,4 @@ HTTP/OpenAPI 变化至少需要：
 - registry authentication；
 - npm provenance。
 
-未来 CLI publish 必须使用独立入口、独立验证和当前任务中的明确授权。第一阶段只发布内部/私有 CLI 包，SDK bundle 在 CLI 中且不独立发布。包名、公开 scope、许可与公共 registry 策略在公开发布前另行决策。
+未来 CLI publish 必须使用独立入口、独立验证和当前任务中的明确授权。当前已交付 CLI 与独立 SDK 的 private: true 本地 npm 包，CLI 仍 bundle SDK；本地打包及安装不构成 registry 发布。包名、公开 scope、许可与公共 registry 策略在公开发布前另行决策。

@@ -4,11 +4,11 @@
 
 ## 产品方向与当前状态
 
-项目后续采用 **API 核心、CLI-first、Web maintenance-only** 的方向：CLI 将成为主要交互入口，未来 TUI 与可能独立发布的 SDK 通过同一版本化 HTTP SDK 使用 `/api/v1`；现有 Web 继续运行和维护，但不再承接常规产品功能开发。
+项目后续采用 **API 核心、CLI-first、Web maintenance-only** 的方向：近期开发重心为 CLI，TUI 暂缓；服务端持续维护 CLI 与未来 TUI 共用的版本化 HTTP 合同，两者通过同一 HTTP SDK 使用 `/api/v1`；现有 Web 继续运行和维护，但不再承接常规产品功能开发。
 
 提交到 Git 的 `openapi/v1/noticeboard.openapi.json`、稳定 operationId、服务端漂移检查和显式受支持基线兼容门禁已经实现。internal generated Fetch transport、artifact → generated 漂移门禁、手写 HTTP SDK 和 CLI 读写能力也已实现；registry 发布和 TUI 尚未实现。本 README 中的命令描述当前可运行入口；SDK 使用合同见 [`docs/sdk.md`](docs/sdk.md)，CLI 当前与目标合同见 [`docs/cli.md`](docs/cli.md)，API v1 兼容政策见 [`docs/api-compatibility.md`](docs/api-compatibility.md)，完整依赖边界见 [`docs/architecture.md`](docs/architecture.md)。
 
-当前提供一个 `private: true` 的本地安装包 `noticeboard-cli-local@0.0.0`，可执行文件为 `noticeboard`，SDK bundle 在其中。没有 npm workspaces 或独立 SDK 包；正式包名和版本在发布前另行确定。
+当前提供两个 `private: true` 的本地安装包：`noticeboard-cli-local@0.0.0` 和独立的 `noticeboard-sdk-local@0.0.0`。CLI 可执行文件为 `noticeboard`，仍 bundle SDK；两者均无运行时 npm 依赖。不引入 npm workspaces；正式 registry 包名和版本在发布前另行确定。
 
 ## 快速开始
 
@@ -145,7 +145,10 @@ npm run openapi:generate              # 从真实 AppModule 重新生成 tracked
 npm run openapi:check                 # 字节检查服务端与 tracked artifact 漂移
 npm run openapi:compatibility         # 对比显式提交的全部受支持 v1 基线
 npm run sdk:typecheck                 # 独立检查 SDK，使用纯 Fetch/DOM 类型
-npm run sdk:build                     # 独立生成 dist/sdk ESM 与类型声明
+npm run sdk:build                     # 独立生成 dist/sdk ESM、类型声明和包 manifest
+npm run sdk:pack                      # SDK 本地 tarball 至 dist/packages
+npm run cli:pack                      # CLI 本地 tarball 至 dist/packages
+npm run cli:install:local             # 将已打包 CLI 安装至用户目录并固定当前 Node 24
 npm run test:sdk                      # SDK 单元、响应合同和独立构建测试，无需数据库
 npm run cli:build                     # bundle CLI 与 SDK 至 dist/cli 本地安装包
 npm run cli:typecheck                 # 独立 CLI 类型检查
@@ -179,7 +182,7 @@ npm run release -- ...                # 合并候选、部署、失败 revert �
 - `docs/api-compatibility.md`：API v1、OpenAPI artifact、SemVer、兼容变化与迁移政策。
 - `Dockerfile`、`compose.deploy.yaml`：永久部署；`compose.yaml`：仅本地隔离 PostgreSQL。
 
-`apps/cli` 当前包含读写 CLI、internal generated transport 和手写 SDK。SDK 可独立构建至 `dist/sdk`，CLI bundle 与本地安装 manifest 输出至 `dist/cli`；任务与评论写操作已实现，独立 SDK npm 包尚未实现。首个 CLI 版本稳定后，只有在 SDK 需要独立发布或 TUI 成为第二个真实消费者时才评估 npm workspaces。
+`apps/cli` 当前包含读写 CLI、internal generated transport 和手写 SDK。SDK 可独立构建至 `dist/sdk`，CLI bundle 与本地安装 manifest 输出至 `dist/cli`；任务与评论写操作、独立 SDK 本地 npm 包均已实现。SDK 通过根 exports 开放公共入口。此次评估后保留现有源码布局，不引入 npm workspaces；独立 registry 发布或 TUI 成为第二个真实应用消费者时再评估。
 
 ## CLI 使用
 
@@ -198,7 +201,7 @@ node dist/cli/bin/noticeboard.js user list --active false --deleted false --user
 node dist/cli/bin/noticeboard.js user get noticeboard-admin --user noticeboard-admin --json
 ```
 
-可通过 `npm pack ./dist/cli --pack-destination /tmp` 创建本地 tarball，再以 `npm install --prefix <安装目录> <tarball绝对路径>` 安装；运行 `<安装目录>/node_modules/.bin/noticeboard --help`。此过程不发布 registry。
+运行 `npm run sdk:pack` / `npm run cli:pack` 从独立临时构建生成 `dist/packages/noticeboard-{sdk,cli}-local-0.0.0.tgz`；可用 `-- --out-dir <目录>` 指定交付目录。命令不发布 registry。SDK 安装方式见 [`docs/sdk.md`](docs/sdk.md)，从任意目录运行 CLI 的本机安装方式见 [`docs/cli.md`](docs/cli.md#本机独立安装与升级)。
 
 缺少配置时使用内存 `local` 默认值（`http://127.0.0.1:3000`、`noticeboard-master`），读取不落盘；开发命令应显式指定宿主机动态端口。`--profile`、`--base-url`、`--user` 只覆盖当前命令；JSON 成功写 stdout，错误写 stderr。完整合同见 `docs/cli.md`。
 
@@ -227,7 +230,7 @@ Generated operations 接收 `RequestInit` 与可选的 `fetchFn`；当前手写 
 
 逐命令帮助与离线中文手册也已实现，并随私有 CLI 包分发；无需配置或服务连接即可阅读。当前 SDK 与 CLI 的读写能力、包安装和公共合同均已纳入完整验证。
 
-尚未实施的客户端事项为独立 SDK 包、TUI 和 registry 发布。只有 SDK 需要独立发布或 TUI 成为第二个真实消费者时才重新评估 workspaces；registry 发布的包名、版本与发布动作仍需独立授权。历史设计文档保留各阶段原始范围，当前能力以本 README、`docs/sdk.md` 和 `docs/cli.md` 为准。
+独立 SDK 本地 npm 包和固定 Node 24 的本机 CLI 安装入口已实现。接下来的开发重心是 CLI；TUI 暂缓，registry 发布尚未实施。服务端保持两类客户端共用的 HTTP 合同，并通过两个独立 SDK 实例及安装后 CLI 的真实 HTTP 测试验证共享状态、身份隔离和冲突不重放，不宣称已完成真实 TUI 验收。独立 registry 发布或 TUI 成为第二个真实应用消费者时再评估 workspaces；registry 发布的包名、版本与发布动作仍需独立授权。历史设计文档保留各阶段原始范围，当前能力以本 README、`docs/sdk.md` 和 `docs/cli.md` 为准。
 
 ## 健康与关闭
 
