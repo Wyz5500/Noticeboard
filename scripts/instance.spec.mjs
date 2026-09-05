@@ -106,7 +106,7 @@ test('declares only Node and npm runtime majors', () => {
   assert.match(dockerfile, /^FROM node:24-alpine AS runtime-base$/m);
   assert.match(dockerfile, /^RUN npm install --global npm@11$/m);
   assert.equal(packageJson.dependencies['@nestjs/common'], '11.2.3');
-  assert.equal(packageJson.devDependencies['@playwright/test'], '1.62.1');
+  assert.equal(packageJson.devDependencies['@playwright/test'], '1.63.0');
   assert.equal(packageJson.allowScripts['esbuild@0.28.2'], true);
   assert.equal(packageJson.scripts['start:dev'], 'node scripts/run-local.mjs');
   assert.equal(packageJson.scripts.release, 'node scripts/release.mjs');

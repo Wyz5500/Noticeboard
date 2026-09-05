@@ -14,6 +14,8 @@
 
 项目支持任意 Node.js 24.x 与 npm 11.x。直接 npm 依赖、lockfile、PostgreSQL、Playwright/Chromium、Dockerfile frontend 和 esbuild 安装脚本授权仍保持精确版本。
 
+`@nestjs/platform-fastify` 的 Fastify 依赖通过定向 `overrides` 跟随根依赖的精确版本，避免适配器锁定旧版导致安全修复缺失和插件类型不兼容。升级 NestJS 适配器时应重新评估该覆盖是否仍有必要。
+
 Docker 在本机开发和测试中只用于 PostgreSQL。先确保 Docker daemon 已运行，再安装依赖：
 
 ```bash
