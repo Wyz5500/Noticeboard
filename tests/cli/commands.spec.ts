@@ -10,6 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import stringWidth from 'string-width';
 import { runCli, type CliContext } from '../../apps/cli/src/run.js';
 import type { Config } from '../../apps/cli/src/config.js';
 import { adminOverview } from '../sdk/admin-fixtures.js';
@@ -963,3 +964,58 @@ it.each(['user', 'role', 'permission'])(
     expect(requests).toEqual([]);
   },
 );
+
+/** Stream widths are independent, read at output time, and never affect JSON envelopes. */
+it('uses current output stream widths for human results and errors', async () => {
+  let columns = 80;
+  const widths = { stdoutColumns: () => columns, stderrColumns: () => 7 };
+  const help = await invoke(['--help'], widths);
+  expect(help.stdout.split('\n')[0]!.length).toBeLessThanOrEqual(80);
+  columns = 20;
+  const list = await invoke(['identity', 'list'], widths);
+  expect(list.exitCode).toBe(0);
+  for (const line of list.stdout.split('\n')) {
+    expect(stringWidth(line)).toBeLessThanOrEqual(20);
+  }
+  const failure = await invoke(['invalid-command'], widths);
+  expect(failure.stderr.split('\n')[0]).toBe('-------');
+  const json = await invoke(['identity', 'list', '--json'], widths);
+  expect(JSON.parse(json.stdout)).toEqual({ data: [identity] });
+});
+
+/** All overview tables receive the same width even when the dimension source changes per read. */
+it('takes one width snapshot after the request finishes', async () => {
+  response = () => Response.json(adminOverview);
+  let reads = 0;
+  const result = await invoke(['admin', 'overview'], {
+    stdoutColumns: () => (++reads === 1 ? 40 : 200),
+  });
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).toContain('用户：');
+  expect(result.stdout).toContain('角色：');
+  expect(result.stdout).toContain('权限：');
+  for (const line of result.stdout.split('\n'))
+    expect(stringWidth(line)).toBeLessThanOrEqual(40);
+  expect(reads).toBe(1);
+});
+
+/** Human prose paths must fit too, including headers, descriptions, timelines and diagnostics. */
+it.each([
+  ['--help'],
+  ['man'],
+  ['task', 'create', '--help'],
+  ['task', 'get', 'task-1'],
+  ['profile', 'show'],
+  ['invalid-command'],
+])('bounds every human output line for %j', async (...args) => {
+  for (const columns of [80, 40, 20, 2, 1]) {
+    const result = await invoke(args, {
+      stdoutColumns: () => columns,
+      stderrColumns: () => columns,
+    });
+    expect(result.exitCode).toBe(args[0] === 'invalid-command' ? 64 : 0);
+    for (const line of (result.stdout + result.stderr).split('\n')) {
+      expect(stringWidth(line)).toBeLessThanOrEqual(columns);
+    }
+  }
+});

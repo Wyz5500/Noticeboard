@@ -7,7 +7,7 @@ import { frameHumanOutput } from './output.js';
 export async function confirmDeletion(
   question: string,
   input: Readable,
-  output: Writable,
+  output: Writable & { columns?: number },
 ): Promise<boolean> {
   const readline = createInterface({ input, output });
   try {
@@ -17,7 +17,7 @@ export async function confirmDeletion(
       );
       readline.once('close', () => resolve(false));
       readline.once('SIGINT', () => resolve(false));
-      readline.setPrompt(frameHumanOutput(question));
+      readline.setPrompt(frameHumanOutput(question, output.columns));
       readline.prompt();
     });
   } finally {

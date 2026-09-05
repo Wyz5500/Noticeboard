@@ -25,6 +25,10 @@ export interface CliContext {
   stdout: (text: string) => void;
   stderr: (text: string) => void;
   isTTY: boolean;
+  /** Reads stdout width immediately before rendering a result block. */
+  stdoutColumns?: () => number | undefined;
+  /** Reads stderr width independently for diagnostics. */
+  stderrColumns?: () => number | undefined;
   confirm: (question: string) => Promise<boolean>;
   fetch: typeof globalThis.fetch;
   /** Supplies stdin on demand; omitted by callers that only execute commands without stdin input. */
@@ -45,7 +49,7 @@ export async function runCli(
       context.stdout(
         json
           ? `${JSON.stringify({ data: { help } })}\n`
-          : frameHumanOutput(help),
+          : frameHumanOutput(help, context.stdoutColumns?.()),
       );
       return 0;
     }
@@ -54,7 +58,7 @@ export async function runCli(
       context.stdout(
         json
           ? `${JSON.stringify({ data: { manual } })}\n`
-          : frameHumanOutput(manual),
+          : frameHumanOutput(manual, context.stdoutColumns?.()),
       );
       return 0;
     }
@@ -72,10 +76,14 @@ export async function runCli(
                   ? await profileCommand(command, config, path, context)
                   : await remoteCommand(command, config, path, context),
               };
+    const columns = json ? undefined : context.stdoutColumns?.();
     context.stdout(
       json
         ? `${JSON.stringify(result)}\n`
-        : frameHumanOutput(humanResult(command.name, result.data)),
+        : frameHumanOutput(
+            humanResult(command.name, result.data, columns),
+            columns,
+          ),
     );
     return 0;
   } catch (error) {
@@ -85,6 +93,7 @@ export async function runCli(
         ? `${JSON.stringify(failure)}\n`
         : frameHumanOutput(
             `错误：${safeText(failure.error.message)}${failure.error.code ? ` (${safeText(failure.error.code)})` : ''}${failure.error.hint ? `；${safeText(failure.error.hint)}` : ''}\n`,
+            context.stderrColumns?.(),
           ),
     );
     return failure.meta.exitCode;

@@ -22,7 +22,10 @@ function handleStdoutError(error: NodeJS.ErrnoException): void {
   process.stderr.write(
     process.argv.includes('--json')
       ? `${JSON.stringify(failure)}\n`
-      : frameHumanOutput(`错误：${failure.error.message}\n`),
+      : frameHumanOutput(
+          `错误：${failure.error.message}\n`,
+          process.stderr.columns,
+        ),
   );
 }
 
@@ -40,7 +43,7 @@ if (process.versions.node.split('.')[0] !== '24') {
   process.stderr.write(
     process.argv.includes('--json')
       ? `${JSON.stringify(error)}\n`
-      : frameHumanOutput(`${error.error.message}\n`),
+      : frameHumanOutput(`${error.error.message}\n`, process.stderr.columns),
   );
   process.exitCode = 64;
 } else {
@@ -52,6 +55,8 @@ if (process.versions.node.split('.')[0] !== '24') {
     stderr: (text) => {
       process.stderr.write(text);
     },
+    stdoutColumns: () => process.stdout.columns,
+    stderrColumns: () => process.stderr.columns,
     isTTY: Boolean(process.stdin.isTTY && process.stderr.isTTY),
     confirm: (question) =>
       confirmDeletion(question, process.stdin, process.stderr),
