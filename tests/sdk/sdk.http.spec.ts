@@ -18,6 +18,24 @@ if (!databaseUrl)
 let app: NestFastifyApplication | undefined;
 let baseUrl: string;
 
+/** Exercises the public reset facade against the real endpoint and preserves missing-identity errors. */
+it('resets through public SDK and requires a valid identity', async () => {
+  const anonymous = createNoticeboardClient({ baseUrl });
+  await expect(anonymous.demo.reset()).rejects.toMatchObject({
+    kind: 'api',
+    status: 401,
+    path: '/api/v1/demo/reset',
+  });
+  const client = createNoticeboardClient({
+    baseUrl,
+    getHeaders: () => ({ 'X-Demo-User-Id': 'noticeboard-admin' }),
+  });
+  expect(await client.demo.reset()).toEqual({ reset: true });
+  expect(await client.tasks.list()).toEqual(
+    expect.arrayContaining([expect.objectContaining({ id: 'task-herbs' })]),
+  );
+});
+
 /** Starts on an OS-assigned loopback port and uses the verification database supplied by the host runner. */
 beforeAll(async () => {
   process.env.DATABASE_URL = databaseUrl;

@@ -1,5 +1,6 @@
 /** Renders human results while keeping untrusted content inert in terminal output. */
 import type {
+  DemoResetResult,
   AdminOverview,
   AdminUser,
   AdminRole,
@@ -26,6 +27,10 @@ export function safeText(value: unknown): string {
 
 /** Provides actionable task summaries and readable structured output for other resources. */
 export function humanResult(command: string, data: unknown): string {
+  if (command === 'demo reset')
+    return (data as DemoResetResult).reset
+      ? '已重置全部任务及时间线为演示数据。\n'
+      : '服务器返回未重置（reset=false）。\n';
   if (command === 'user delete' || command === 'role delete')
     return `已删除${command === 'user delete' ? '用户' : '角色'}：${safeText((data as { id: string }).id)}\n`;
   if (

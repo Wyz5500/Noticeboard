@@ -22,6 +22,107 @@ let directory: string;
 let app: NestFastifyApplication | undefined;
 let baseUrl: string;
 
+/** Reset must replace tasks and comments while preserving management resources and enforcing permission. */
+it('resets demo tasks only after explicit consent and server authorization', async () => {
+  const admin = ['--user', 'noticeboard-admin'];
+  const createdRole = await cli([
+    'role',
+    'create',
+    '--name',
+    `重置测试 ${randomUUID()}`,
+    '--permissions',
+    'tasks.view',
+    ...admin,
+  ]);
+  expect(createdRole.exitCode, createdRole.stderr).toBe(0);
+  const roleId = (JSON.parse(createdRole.stdout).data as { id: string }).id;
+  const createdUser = await cli([
+    'user',
+    'create',
+    '--name',
+    '无重置权限用户',
+    '--role-id',
+    roleId,
+    ...admin,
+  ]);
+  expect(createdUser.exitCode, createdUser.stderr).toBe(0);
+  const userId = (JSON.parse(createdUser.stdout).data as { id: string }).id;
+  try {
+    const created = await cli([
+      'task',
+      'create',
+      '--title',
+      '重置应清除的任务',
+      '--type',
+      'exploration',
+      '--reward',
+      '测试',
+      '--due-date',
+      '2026-09-10',
+      '--description',
+      '重置测试',
+    ]);
+    expect(created.exitCode, created.stderr).toBe(0);
+    const id = (JSON.parse(created.stdout).data as { id: string }).id;
+    const commented = await cli([
+      'comment',
+      'create',
+      id,
+      '--content',
+      '重置应清除的评论',
+    ]);
+    expect(commented.exitCode, commented.stderr).toBe(0);
+    const beforeTask = JSON.parse(commented.stdout).data;
+    const beforeAdmin = await cli(['admin', 'overview', ...admin]);
+    expect(beforeAdmin.exitCode, beforeAdmin.stderr).toBe(0);
+    const refused = await cli(['demo', 'reset', ...admin]);
+    expect(refused.exitCode).toBe(64);
+    expect(refused.stdout).toBe('');
+    const denied = await cli(['demo', 'reset', '--yes', '--user', userId]);
+    expect(denied.exitCode).toBe(77);
+    expect(JSON.parse(denied.stderr).error).toMatchObject({
+      status: 403,
+      path: '/api/v1/demo/reset',
+    });
+    expect(JSON.parse((await cli(['task', 'get', id])).stdout).data).toEqual(
+      beforeTask,
+    );
+    const reset = await cli(['demo', 'reset', '--yes', ...admin]);
+    expect(reset.exitCode, reset.stderr).toBe(0);
+    expect(JSON.parse(reset.stdout)).toEqual({ data: { reset: true } });
+    expect(reset.stderr).toBe('');
+    const missing = await cli(['task', 'get', id]);
+    expect(missing.exitCode).toBe(66);
+    const tasks = await cli(['task', 'list']);
+    expect(tasks.exitCode, tasks.stderr).toBe(0);
+    const restored = JSON.parse(tasks.stdout).data as { id: string }[];
+    expect(restored.some((task) => task.id === id)).toBe(false);
+    expect(restored.some((task) => task.id === 'task-herbs')).toBe(true);
+    const afterAdmin = await cli(['admin', 'overview', ...admin]);
+    expect(afterAdmin.exitCode, afterAdmin.stderr).toBe(0);
+    expect(JSON.parse(afterAdmin.stdout)).toEqual(
+      JSON.parse(beforeAdmin.stdout),
+    );
+  } finally {
+    // Soft-deleted accounts retain role bindings, so reassign before retiring the fixture role.
+    const reassigned = await cli([
+      'user',
+      'update',
+      userId,
+      '--role-id',
+      'role-user',
+      ...admin,
+    ]);
+    expect(reassigned.exitCode, reassigned.stderr).toBe(0);
+    expect(
+      (await cli(['user', 'delete', userId, '--yes', ...admin])).exitCode,
+    ).toBe(0);
+    expect(
+      (await cli(['role', 'delete', roleId, '--yes', ...admin])).exitCode,
+    ).toBe(0);
+  }
+});
+
 /** Builds an independent executable and starts only a loopback host API on a dynamic port. */
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'noticeboard-cli-http-'));

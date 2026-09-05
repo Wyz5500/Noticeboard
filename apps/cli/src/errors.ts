@@ -27,6 +27,13 @@ export class WriteFailure extends Error {
   }
 }
 
+export class DemoResetFailure extends Error {
+  /** Carries reset reconciliation context without inventing a task ID or version. */
+  constructor(cause: unknown) {
+    super('演示任务重置失败', { cause });
+  }
+}
+
 export class ManagementWriteFailure extends Error {
   /** Carries resource reconciliation context without inventing an optimistic task version. */
   constructor(
@@ -43,6 +50,16 @@ export function describeError(cause: unknown): {
   error: Record<string, unknown>;
   meta: { exitCode: number; expectedVersion?: number };
 } {
+  if (cause instanceof DemoResetFailure) {
+    const failure = describeError(cause.cause);
+    if (failure.error.status === 409)
+      failure.error.hint =
+        '请使用 task list，必要时通过 task get 核对服务器状态后再决定操作';
+    if (failure.error.kind === 'network' || failure.error.kind === 'protocol')
+      failure.error.hint =
+        '重置可能已提交；请使用 task list，必要时通过 task get 核对服务器状态，不要直接重复重置';
+    return failure;
+  }
   if (cause instanceof ManagementWriteFailure) {
     const failure = describeError(cause.cause);
     const read =

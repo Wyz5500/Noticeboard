@@ -49,7 +49,16 @@ noticeboard role restore <id>
 ```
 
 用户更新至少提供一个字段；角色更新必须显式提交名称和完整权限，创建省略权限为空。权限按逗号分隔并逐项去除首尾空白，拒绝空项、重复项和未知码，清空只用 `--clear-permissions`。管理写入仅请求一次，不预读、不重试，不接受版本参数。删除为软删除，在非 TTY 或 JSON 模式必须提供 `--yes`；TTY 请求确认。其余操作直接执行。
-成功 JSON data 为完整用户/角色，删除为 `{ok:true,id}`，无成功 meta。409 保留业务错误并提示对应 get；网络/协议失败可能已提交，创建通过 list/get 核对，其余通过 get 核对。demo reset 仍未实现。
+成功 JSON data 为完整用户/角色，删除为 `{ok:true,id}`，无成功 meta。409 保留业务错误并提示对应 get；网络/协议失败可能已提交，创建通过 list/get 核对，其余通过 get 核对。demo reset 已实现，见下文。
+
+演示任务重置：
+
+```bash
+noticeboard demo reset --help
+noticeboard demo reset --user noticeboard-admin --yes --json
+```
+
+命令替换当前目标服务的全部任务及时间线为演示数据，保留用户和角色。普通 TTY 先展示服务地址并确认；非 TTY 或 JSON 必须提供 `--yes`。确认后开始 30 秒超时，只请求一次，不预读、不重试、不自动选择身份。成功为 `{data:{reset:boolean}}`，人类输出区分已重置和未重置。权限由服务器检查；网络或协议失败可能已提交，请用 `task list` / `task get` 核对，不要直接重复重置。
 
 `X-Demo-User-Id` 仅用于 demo 身份选择。正式认证及 TUI 尚未实现。
 

@@ -21,6 +21,7 @@ export type {
   TaskRecoveryStrategy,
 } from './inputs.js';
 export type {
+  DemoResetResult,
   AdminOverview,
   AdminUser,
   AdminRole,
