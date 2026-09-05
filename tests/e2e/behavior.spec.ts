@@ -1554,7 +1554,8 @@ test('prevents native scrolling for an active hash link', async ({
 test('restores task scroll after an in-place search route update', async ({
   page,
 }) => {
-  await page.goto('/#tasks?scope=all&filter=全部');
+  // Finish the initial route's scheduled scroll restoration before choosing a test position.
+  await navigateToHash(page, '#tasks?scope=all&filter=全部');
   await expect(page.locator('.task-card')).toHaveCount(12);
   await page.locator('#searchInput').fill('用户');
   await expect
