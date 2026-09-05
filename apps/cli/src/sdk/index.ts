@@ -7,6 +7,16 @@ export {
 } from './errors.js';
 export type { ApiErrorMetadata } from './errors.js';
 export type {
+  CreateTaskInput,
+  ActTaskInput,
+  RenewTaskInput,
+  CreateCommentInput,
+  EditCommentInput,
+  DeleteCommentInput,
+  TaskAction,
+  TaskRecoveryStrategy,
+} from './inputs.js';
+export type {
   Identity,
   Permission,
   Task,

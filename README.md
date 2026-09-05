@@ -6,7 +6,7 @@
 
 项目后续采用 **API 核心、CLI-first、Web maintenance-only** 的方向：CLI 将成为主要交互入口，未来 TUI 与可能独立发布的 SDK 通过同一版本化 HTTP SDK 使用 `/api/v1`；现有 Web 继续运行和维护，但不再承接常规产品功能开发。
 
-提交到 Git 的 `openapi/v1/noticeboard.openapi.json`、稳定 operationId、服务端漂移检查和显式受支持基线兼容门禁已经实现。internal generated Fetch transport、artifact → generated 漂移门禁、只读手写 HTTP SDK 和只读 CLI 也已实现；SDK/CLI 写操作、registry 发布和 TUI 尚未实现。本 README 中的命令描述当前可运行入口；SDK 使用合同见 [`docs/sdk.md`](docs/sdk.md)，CLI 当前与目标合同见 [`docs/cli.md`](docs/cli.md)，API v1 兼容政策见 [`docs/api-compatibility.md`](docs/api-compatibility.md)，完整依赖边界见 [`docs/architecture.md`](docs/architecture.md)。
+提交到 Git 的 `openapi/v1/noticeboard.openapi.json`、稳定 operationId、服务端漂移检查和显式受支持基线兼容门禁已经实现。internal generated Fetch transport、artifact → generated 漂移门禁、手写 HTTP SDK 和 CLI 读写能力也已实现；registry 发布和 TUI 尚未实现。本 README 中的命令描述当前可运行入口；SDK 使用合同见 [`docs/sdk.md`](docs/sdk.md)，CLI 当前与目标合同见 [`docs/cli.md`](docs/cli.md)，API v1 兼容政策见 [`docs/api-compatibility.md`](docs/api-compatibility.md)，完整依赖边界见 [`docs/architecture.md`](docs/architecture.md)。
 
 当前提供一个 `private: true` 的本地安装包 `noticeboard-cli-local@0.0.0`，可执行文件为 `noticeboard`，SDK bundle 在其中。没有 npm workspaces 或独立 SDK 包；正式包名和版本在发布前另行确定。
 
@@ -165,19 +165,19 @@ npm run release -- ...                # 合并候选、部署、失败 revert �
 - `openapi/v1/baselines/*.openapi.json`：按 SemVer 命名、显式保留且不可改写的受支持 v1 兼容快照。
 - `scripts/openapi-artifact.ts`、`scripts/check-openapi-compatibility.ts`：artifact 生成、漂移和显式基线兼容门禁。
 - `apps/cli/src/sdk/internal/generated/transport.ts`：从 tracked candidate 生成的内部 Fetch transport，禁止手改。
-- `apps/cli/src/sdk/index.ts`：只读手写 SDK 唯一公共入口；资源、选项和错误类型不暴露 generated 符号。
+- `apps/cli/src/sdk/index.ts`：手写 SDK 唯一公共入口；资源、选项和错误类型不暴露 generated 符号。
 - `scripts/generated-transport.ts`：完整生成目录的确定性生成、替换恢复与漂移门禁。
 - `scripts/verify.mjs`、`scripts/run-playwright.mjs`：宿主机验证与浏览器编排。
 - `scripts/deploy.mjs`、`scripts/release.mjs`：main-only 永久部署和 release 事务。
 - `docs/architecture.md`：当前架构、CLI-first 目标、依赖边界和事务设计。
-- `docs/cli.md`：当前只读 CLI 命令、配置、输出、退出码及后续写操作目标合同。
-- `docs/sdk.md`：当前只读 SDK 的使用、认证注入、校验和错误合同。
+- `docs/cli.md`：当前 CLI 读写命令、配置、输出、退出码及后续客户端目标合同。
+- `docs/sdk.md`：当前读写 SDK 的使用、认证注入、校验和错误合同。
 - `docs/api-compatibility.md`：API v1、OpenAPI artifact、SemVer、兼容变化与迁移政策。
 - `Dockerfile`、`compose.deploy.yaml`：永久部署；`compose.yaml`：仅本地隔离 PostgreSQL。
 
-`apps/cli` 当前包含只读 CLI、internal generated transport 和手写 SDK。SDK 可独立构建至 `dist/sdk`，CLI bundle 与本地安装 manifest 输出至 `dist/cli`；写操作和独立 SDK npm 包尚未实现。首个 CLI 版本稳定后，只有在 SDK 需要独立发布或 TUI 成为第二个真实消费者时才评估 npm workspaces。
+`apps/cli` 当前包含读写 CLI、internal generated transport 和手写 SDK。SDK 可独立构建至 `dist/sdk`，CLI bundle 与本地安装 manifest 输出至 `dist/cli`；任务与评论写操作已实现，独立 SDK npm 包尚未实现。首个 CLI 版本稳定后，只有在 SDK 需要独立发布或 TUI 成为第二个真实消费者时才评估 npm workspaces。
 
-## 只读 CLI 使用
+## CLI 使用
 
 ```bash
 npm run cli:build
@@ -209,10 +209,9 @@ Generated operations 接收 `RequestInit` 与可选的 `fetchFn`；当前手写 
 
 ## 后续客户端阶段
 
-当前已完成管理员 restore HTTP 200 对齐、确定性 OpenAPI v1 artifact、稳定 operationId、各项漂移/兼容门禁，以及只读 HTTP SDK 和只读 CLI（profile、demo identity、task list/get、JSON 与退出码）。下一阶段按以下顺序推进：
+当前已完成管理员 restore HTTP 200 对齐、确定性 OpenAPI v1 artifact、稳定 operationId、各项漂移/兼容门禁，以及 HTTP SDK 和 CLI（profile、demo identity、任务读取、创建、动作、续期、评论增改删、JSON 与退出码）。写操作未显式提供 expected version 时 CLI 只预读一次，409 后不自动重放；正文可由文件/stdin 输入，评论删除需要确认，结果不确定时提示核对服务器状态。
 
-1. 加入 SDK 与 CLI 的任务创建、动作、续期和评论写入；未显式提供 expected version 时 CLI 只预读一次，409 后不自动重放。
-2. SDK 与 CLI 合同稳定后再评估管理资源、独立 SDK 发布、workspaces 和 TUI。
+下一阶段在 SDK 与 CLI 合同稳定后再评估管理资源、独立 SDK 发布、workspaces 和 TUI；registry 发布仍需独立授权。
 
 ## 健康与关闭
 

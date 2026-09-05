@@ -1,8 +1,8 @@
 # CLI 当前能力与目标合同
 
-> **实施状态：只读 CLI 已实现。** 当前支持 profile、demo identity、`task list/get`、JSON 信封与稳定退出码，并提供可本地打包安装的私有 CLI。SDK 写操作、任务与评论写命令、registry 发布和 TUI 仍为目标状态。
+> **实施状态：任务与评论读写 CLI 已实现。** 当前支持 profile、demo identity、任务读取、创建、生命周期、续期及评论增改删，保留 JSON 信封与稳定退出码，并提供可本地打包安装的私有 CLI。registry 发布和 TUI 仍为目标状态。
 
-CLI 只消费手写 SDK 公共入口的 `tasks.list/get` 与 `identities.list`，使用合同见 [`sdk.md`](sdk.md)。`npm run cli:build` 生成 `dist/cli`，`npm run test:cli` 验证命令和本地安装包；真实宿主机 HTTP smoke 随完整 verify 运行。
+CLI 只消费手写 SDK 公共入口的 `tasks`、`comments` 与 `identities`，使用合同见 [`sdk.md`](sdk.md)。`npm run cli:build` 生成 `dist/cli`，`npm run test:cli` 验证命令和本地安装包；真实宿主机 HTTP smoke 随完整 verify 运行。
 
 ## 定位与边界
 
@@ -14,7 +14,7 @@ CLI 是告示牌的主要目标交互入口，也是远程 HTTP 客户端。它�
 - 可执行文件为 `noticeboard`；本地占位包名为 `noticeboard-cli-local`、版本为 `0.0.0`，标记 `private: true`，不代表 registry 发布版本。
 - SDK bundle 在 CLI 包内，不单独发布。
 - 支持 Node.js 24.x。
-- 当前覆盖 profile、demo identity、任务读取；任务和评论写入为下一阶段目标。用户、角色、权限、demo reset 与 TUI 不属于首发范围。
+- 当前覆盖 profile、demo identity、任务读取及任务和评论写入。用户、角色、权限、demo reset 与 TUI 不属于首发范围。
 
 CLI 默认服务人工终端使用，同时必须提供稳定、无交互的脚本接口。
 
@@ -35,7 +35,7 @@ noticeboard task list [--mine] [--status <status>] [--search <text>]
 noticeboard task get <task-id>
 ```
 
-### 后续写命令（尚未实现）
+### 写命令
 
 ```text
 noticeboard task create --title <text> --type <type> --reward <text> \
@@ -68,7 +68,7 @@ noticeboard comment delete <task-id> <comment-id> \
 
 参数允许出现在命令前后。未知命令、未知选项、重复单值参数、缺少参数与多余位置参数返回 64。`--help` 不读取配置或发起请求；与 `--json` 同用时返回 `{ "data": { "help": "..." } }`。
 
-后续任务写动作使用 API v1 机器枚举：
+任务写动作使用 API v1 机器枚举：
 
 - `accept`
 - `complete`
@@ -175,9 +175,9 @@ API v1 当前一次返回完整任务数组，不提供分页、mine、状态或
 
 ## 输入与交互原则
 
-当前 `profile delete` 在非 TTY 或 `--json` 模式下必须提供 `--yes`。普通 TTY 仅输入 `y` 或 `yes` 才执行；拒绝、EOF 或中断均不修改配置并返回 64。以下文件/stdin 输入规则适用于尚未实现的写命令。
+当前 `profile delete` 和 `comment delete` 在非 TTY 或 `--json` 模式下必须提供 `--yes`。普通 TTY 仅输入 `y` 或 `yes` 才执行；拒绝、EOF 或中断均不修改配置并返回 64。文件/stdin 输入已用于任务创建和评论创建、编辑。
 
-所有操作都必须能通过参数、文件或 stdin 非交互完成。`--description-file -` 与 `--content-file -` 表示从 stdin 读取；同一字段的直接参数和文件参数互斥。
+所有操作都必须能通过参数、文件或 stdin 非交互完成。`--description-file -` 与 `--content-file -` 表示从 stdin 读取；同一字段的直接参数和文件参数必须二选一。文件与 stdin 按 UTF-8 严格解码，允许多行并保留原文交给服务器规范化；读取失败、非法 UTF-8、全空白或含 NUL 的正文返回 64。缺少必填参数、非法机器枚举、非 `yyyy-mm-dd` 日期格式及非法版本参数也返回 64；版本只接受十进制正安全整数。业务日期、字段长度和状态权限由服务器判断。
 
 CLI 不提供默认交互向导。缺少必填输入时返回 usage 错误，不在自动化环境中逐项询问。
 
@@ -186,19 +186,19 @@ CLI 不提供默认交互向导。缺少必填输入时返回 usage 错误，不
 - TTY：默认请求确认，可用 `--yes` 明确跳过。
 - 非 TTY：必须显式传入 `--yes`；缺少时拒绝执行。
 
-首版至少把评论删除和 profile 删除视为危险操作。不能因为 stdin 不可交互而默认执行。
+评论删除和 profile 删除视为危险操作；任务动作（包括 close）直接执行，不接受 `--yes`。删除确认在任何 HTTP 请求前完成。不能因为 stdin 不可交互而默认执行。
 
 ## 乐观并发与重试
 
-当前只读命令不重试；远端命令共用一个 30 秒请求窗口，超时取消通过 SDK 映射为 network/69。以下乐观并发规则属于后续写操作目标。
+全部远端命令不重试，共用一个 30 秒请求窗口，超时取消通过 SDK 映射为 network/69。写命令在本地输入读取及删除确认完成后开始计时，版本预读和提交共享该窗口。
 
 任务生命周期、续期和评论写入必须使用任务 `version`：
 
 1. 提供 `--expected-version` 时，CLI 直接用该版本提交。
 2. 未提供时，CLI 先执行一次任务详情读取，并使用读取到的最新版本提交。
-3. 服务端返回 409 时，CLI 不自动再次读取并重放操作；应显示服务器 `error.code`、本次使用的版本和重新 `task get` 的建议，并以退出码 75 结束。
+3. 服务端返回 409 时，CLI 不自动再次读取并重放操作；应显示服务器 `error.code`、本次使用的版本和重新 `task get` 的建议，并以退出码 75 结束。JSON 错误保留服务器信封字段，`meta.expectedVersion` 记录本次提交版本，`error.hint` 提供核对建议。
 
-SDK 和 CLI 均不得默认重试非幂等写操作。网络在提交后断开时，客户端无法确定服务器是否已提交；此时应报告结果不确定并要求用户重新读取状态，不能自动重复评论或任务动作。
+SDK 和 CLI 均不得默认重试非幂等写操作。网络在提交后断开时，客户端无法确定服务器是否已提交；此时应报告结果不确定并要求用户重新读取状态，不能自动重复评论或任务动作。写入 network 失败保持退出码 69，protocol 失败保持 65，并在 `error.hint` 提醒“可能已提交”；任务创建提示 `task list` 查找后 `task get` 核对，其余写入提示 `task get`。预读失败不提交，也不标为写入结果不确定。
 
 只读请求未来可以在明确、可观测且不改变 public 行为的策略下增加有限重试，但不属于首版默认合同。
 
@@ -236,7 +236,7 @@ SDK 和 CLI 均不得默认重试非幂等写操作。网络在提交后断开�
 - 不能在 JSON 前后混入进度、提示或人类文案。
 - 无响应正文的成功操作仍输出明确结果，例如 `{ "data": { "ok": true } }`。
 
-当前读取 JSON 的 `data`：任务列表为 `Task[]`，详情为 `Task`，身份列表为 `Identity[]`，当前/切换身份为 `Identity`。profile 列表为 `{name,baseUrl,demoUserId,current}[]`，show/set/use 返回单个同形对象；删除返回 `{ok:true,name}`。当前不输出成功 meta。
+当前读取 JSON 的 `data`：任务列表为 `Task[]`，详情为 `Task`，身份列表为 `Identity[]`，当前/切换身份为 `Identity`。profile 列表为 `{name,baseUrl,demoUserId,current}[]`，show/set/use 返回单个同形对象；删除返回 `{ok:true,name}`。读取不输出成功 meta。全部写命令成功的 `data` 为服务器返回的完整 `Task`；任务创建无 meta，其余写操作带 `meta.expectedVersion`，表示提交使用的版本，而 `data.version` 为服务器结果版本。人类输出展示任务详情及评论 ID，便于后续编辑和删除；终端控制字符继续转义。
 
 ### JSON 错误信封
 

@@ -34,9 +34,9 @@ export function humanResult(command: string, data: unknown): string {
     );
     return `ID\t标题\t状态\t接取者\t截止日期\t版本\n${rows.length ? rows.join('\n') : '无匹配任务'}\n`;
   }
-  if (command === 'task get') {
+  if (command.startsWith('task ') || command.startsWith('comment ')) {
     const task = data as Task;
-    return `ID：${safeText(task.id)}\n标题：${safeText(task.title)}\n状态：${safeText(task.statusLabel)}\n接取者：${safeText(task.assignee?.name ?? '未接取')}\n截止日期：${safeText(task.dueDate)}\n版本：${task.version}\n描述：${safeText(task.description)}\n奖励：${safeText(task.reward)}\n时间线：\n${task.timeline.map((event) => (event.kind === 'activity' ? `${safeText(event.at)} ${safeText(event.actor.name)} ${safeText(event.actionLabel)} ${safeText(event.detail)}` : `${safeText(event.at)} @${safeText(event.actor.username)} ${event.deleted ? '[评论已删除]' : `${event.edited ? '[已编辑] ' : ''}${safeText(event.content)}`}`)).join('\n')}\n`;
+    return `ID：${safeText(task.id)}\n标题：${safeText(task.title)}\n状态：${safeText(task.statusLabel)}\n接取者：${safeText(task.assignee?.name ?? '未接取')}\n截止日期：${safeText(task.dueDate)}\n版本：${task.version}\n描述：${safeText(task.description)}\n奖励：${safeText(task.reward)}\n时间线：\n${task.timeline.map((event) => (event.kind === 'activity' ? `${safeText(event.at)} ${safeText(event.actor.name)} ${safeText(event.actionLabel)} ${safeText(event.detail)}` : `${safeText(event.at)} [${safeText(event.commentId)}] @${safeText(event.actor.username)} ${event.deleted ? '[评论已删除]' : `${event.edited ? '[已编辑] ' : ''}${safeText(event.content)}`}`)).join('\n')}\n`;
   }
   if (command.startsWith('identity ')) {
     const identities = (Array.isArray(data) ? data : [data]) as Identity[];

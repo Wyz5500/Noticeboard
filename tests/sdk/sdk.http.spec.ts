@@ -50,7 +50,9 @@ it('reads identities and tasks and maps server errors over host HTTP', async () 
   );
   const tasks = await client.tasks.list();
   expect(tasks.length).toBeGreaterThan(0);
-  const task = tasks[0]!;
+  // Compare a stable seed rather than a task left by another smoke suite.
+  const task = tasks.find((task) => task.id === 'task-herbs')!;
+  expect(task).toBeDefined();
   expect(await client.tasks.get(task.id)).toMatchObject({
     id: task.id,
     dueDate: expect.any(String),
@@ -75,4 +77,86 @@ it('reads identities and tasks and maps server errors over host HTTP', async () 
     code: expect.any(String),
     timestamp: expect.any(String),
   });
+});
+
+/** Exercises every write operation against persisted versions and public comment projections. */
+it('creates, acts, renews and folds comment revisions over real HTTP', async () => {
+  const client = createNoticeboardClient({
+    baseUrl,
+    getHeaders: () => ({ 'X-Demo-User-Id': 'noticeboard-master' }),
+  });
+  const created = await client.tasks.create({
+    title: 'SDK 写入验证',
+    type: 'exploration',
+    description: '独立任务',
+    reward: '测试',
+    dueDate: '2026-08-31',
+  });
+  expect(created).toMatchObject({ version: 1, status: 'expired' });
+  const renewed = await client.tasks.renew(created.id, {
+    dueDate: '2026-09-10',
+    recoveryStrategy: 'preserve_status',
+    expectedVersion: 1,
+  });
+  expect(renewed).toMatchObject({ version: 2, status: 'not_started' });
+  const added = await client.comments.create(created.id, {
+    content: 'SDK 原正文',
+    expectedVersion: 2,
+  });
+  const comment = added.timeline.find((event) => event.kind === 'comment');
+  expect(comment?.kind).toBe('comment');
+  if (comment?.kind !== 'comment') throw new Error('missing created comment');
+  const edited = await client.comments.edit(created.id, comment.commentId, {
+    content: 'SDK 新正文',
+    expectedVersion: 3,
+  });
+  expect(edited).toMatchObject({ version: 4 });
+  expect(edited.timeline).toContainEqual(
+    expect.objectContaining({
+      kind: 'comment',
+      content: 'SDK 新正文',
+      edited: true,
+      commentId: comment.commentId,
+    }),
+  );
+  await expect(
+    client.comments.delete(created.id, comment.commentId, {
+      expectedVersion: 3,
+    }),
+  ).rejects.toMatchObject({ kind: 'api', status: 409 });
+  expect((await client.tasks.get(created.id)).version).toBe(4);
+  const deleted = await client.comments.delete(created.id, comment.commentId, {
+    expectedVersion: 4,
+  });
+  expect(deleted).toMatchObject({ version: 5 });
+  expect(deleted.timeline).toContainEqual(
+    expect.objectContaining({
+      kind: 'comment',
+      deleted: true,
+      content: null,
+      commentId: comment.commentId,
+    }),
+  );
+  expect(JSON.stringify(deleted)).not.toContain('SDK 原正文');
+  expect(JSON.stringify(deleted)).not.toContain('SDK 新正文');
+  const accepted = await client.tasks.act(created.id, {
+    action: 'accept',
+    expectedVersion: 5,
+  });
+  expect(accepted).toMatchObject({ version: 6, status: 'in_progress' });
+  const completed = await client.tasks.act(created.id, {
+    action: 'complete',
+    expectedVersion: 6,
+  });
+  expect(completed).toMatchObject({ version: 7, status: 'completed' });
+  const reopened = await client.tasks.act(created.id, {
+    action: 'reopen',
+    expectedVersion: 7,
+  });
+  expect(reopened).toMatchObject({ version: 8, status: 'reopened' });
+  const closed = await client.tasks.act(created.id, {
+    action: 'close',
+    expectedVersion: 8,
+  });
+  expect(closed).toMatchObject({ version: 9, status: 'closed' });
 });

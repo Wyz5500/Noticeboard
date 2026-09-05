@@ -1,6 +1,6 @@
-# 只读 HTTP SDK
+# HTTP SDK
 
-当前 SDK 支持 Node 24.x，位于 `apps/cli/src/sdk`，没有独立 npm 包。唯一源码入口是 `index.ts`，独立构建入口为 `dist/sdk/index.js`。只读 CLI 与 profile 已实现并通过该入口访问 HTTP；SDK/CLI 写操作与 registry 发布仍未实现。
+当前 SDK 支持 Node 24.x，位于 `apps/cli/src/sdk`，没有独立 npm 包。唯一源码入口是 `index.ts`，独立构建入口为 `dist/sdk/index.js`。CLI 与 profile 已实现并通过该入口访问 HTTP；SDK/CLI 支持任务读取、创建、生命周期、续期和评论增改删。registry 发布仍未实现。
 
 ## 构建与使用
 
@@ -39,6 +39,27 @@ console.log({ identities, tasks, detail });
 | `client.tasks.get(taskId, options?)` | `Promise<Task>`       |
 | `client.identities.list(options?)`   | `Promise<Identity[]>` |
 
+### 写操作
+
+全部方法返回 `Promise<Task>`，最后一个 `options?: RequestOptions` 与读取共享身份和取消规则。
+
+| 方法                                                  | 手写输入类型         | 必填字段                                            |
+| ----------------------------------------------------- | -------------------- | --------------------------------------------------- |
+| `tasks.create(input, options?)`                       | `CreateTaskInput`    | `title`, `type`, `description`, `reward`, `dueDate` |
+| `tasks.act(taskId, input, options?)`                  | `ActTaskInput`       | `action`, `expectedVersion`                         |
+| `tasks.renew(taskId, input, options?)`                | `RenewTaskInput`     | `dueDate`, `recoveryStrategy`, `expectedVersion`    |
+| `comments.create(taskId, input, options?)`            | `CreateCommentInput` | `content`, `expectedVersion`                        |
+| `comments.edit(taskId, commentId, input, options?)`   | `EditCommentInput`   | `content`, `expectedVersion`                        |
+| `comments.delete(taskId, commentId, input, options?)` | `DeleteCommentInput` | `expectedVersion`                                   |
+
+`TaskAction` 为 `accept | complete | approve | reopen | close`；`TaskRecoveryStrategy` 为 `preserve_status | reopened`。这些类型均从 SDK 根入口导出，字段与 tracked OpenAPI 对齐；不继承或引用 generated 声明。
+
+SDK 要求调用者显式提供 `expectedVersion`，不预读、不重试、不隐藏冲突；业务输入校验与权限仍由服务器负责。任务创建只接受 HTTP 201，其余写操作只接受 200，全部复用任务响应校验。评论删除按既有 HTTP 契约发送包含版本的 JSON 请求体，并返回完整任务及已脱敏的 tombstone。
+
+写入发生 network 或 protocol 失败时可能已经提交，调用者应重新读取服务器状态核对；不要直接重复任务创建、动作或评论操作。
+
+### 请求配置
+
 构造参数 `NoticeboardClientOptions`：
 
 - `baseUrl: string` 必填。必须是绝对 HTTP(S) 地址，禁止 URL 凭据、query、fragment（含空 `?` / `#`）。尾部斜杠规范化；路径前缀保留。例如 `https://example.test/proxy/` 请求 `https://example.test/proxy/api/v1/tasks`。不要把 `/api/v1` 当作 base URL 后缀。
@@ -54,7 +75,7 @@ console.log({ identities, tasks, detail });
 
 ## 响应校验与错误
 
-SDK 完整校验三个只读接口的已知结构：字段类型、必填性、nullable、闭合枚举、数组成员与时间线联合。容忍服务端新增字段，但只映射已声明字段；不做类型强制转换，不重复实现服务端业务规则。手写资源类型与 generated 类型的结构一致性、逐字段响应破坏测试都属于验证门禁。
+SDK 完整校验读取及全部写操作响应的已知结构：字段类型、必填性、nullable、闭合枚举、数组成员与时间线联合。容忍服务端新增字段，但只映射已声明字段；不做类型强制转换，不重复实现服务端业务规则。手写资源类型与 generated 类型的结构一致性、逐字段响应破坏测试都属于验证门禁。
 
 | 错误类                     | `kind`     | 保留信息                                                                    |
 | -------------------------- | ---------- | --------------------------------------------------------------------------- |
@@ -70,4 +91,4 @@ SDK 完整校验三个只读接口的已知结构：字段类型、必填性、n
 
 `sdk:build` 通过现有 TypeScript 编译 ESM 与 `.d.ts`，不引入 runtime 依赖、workspace 或发布 manifest。generated transport 仍只允许从 tracked artifact 生成。SDK 构建包含内部 transport，但服务器生产镜像只复制 `dist/api` 和 `dist/web`。
 
-只读 CLI 已基于该入口实现 profile、demo identity、task list/get、JSON 输出与退出码；配置、筛选、30 秒超时和终端输出均由 CLI 负责。写操作将后续显式加入 expectedVersion 合同；本阶段没有 `comments`、管理、reset 或写入方法。
+CLI 已基于该入口实现 profile、demo identity、任务读取与全部任务/评论写命令、JSON 输出与退出码；配置、筛选、文件/stdin、删除确认、版本预读、30 秒超时和终端输出均由 CLI 负责。管理、reset、独立 SDK 发布与 TUI 仍未实现。

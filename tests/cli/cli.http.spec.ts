@@ -1,6 +1,6 @@
 /** Exercises built CLI subprocesses through a real host API and isolated verification PostgreSQL. */
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -48,7 +48,7 @@ afterAll(async () => {
 });
 
 /** Uses asynchronous child execution so the parent can continue serving real HTTP requests. */
-async function cli(args: string[]) {
+async function cli(args: string[], stdin?: string) {
   const command = [
     join(directory, 'package/bin/noticeboard.js'),
     ...args,
@@ -65,8 +65,10 @@ async function cli(args: string[]) {
     },
   };
   try {
+    const pending = execute(process.execPath, command, options);
+    if (stdin !== undefined) pending.child.stdin?.end(stdin);
     return {
-      ...(await execute(process.execPath, command, options)),
+      ...(await pending),
       exitCode: 0,
     };
   } catch (cause) {
@@ -93,10 +95,10 @@ it('reads real identities, task lists and details', async () => {
   );
   const tasks = await cli(['task', 'list']);
   expect(tasks.exitCode, tasks.stderr).toBe(0);
-  const first = JSON.parse(tasks.stdout).data[0] as {
-    id: string;
-    version: number;
-  };
+  // Compare a stable seed rather than a task left by another smoke suite.
+  const first = (
+    JSON.parse(tasks.stdout).data as { id: string; version: number }[]
+  ).find((task) => task.id === 'task-herbs')!;
   expect(first).toBeDefined();
   const detail = await cli(['task', 'get', first.id]);
   expect(detail.exitCode, detail.stderr).toBe(0);
@@ -120,5 +122,112 @@ it('reports real missing resources and invalid identities', async () => {
   expect(JSON.parse(invalid.stderr).error).toMatchObject({
     kind: 'api',
     status: 401,
+  });
+});
+
+/** Verifies the built command surface, real concurrency failures and durable comment deletion. */
+it('writes tasks and comments through the installed-style executable', async () => {
+  const created = await cli(
+    [
+      'task',
+      'create',
+      '--title',
+      'CLI 写入验证',
+      '--type',
+      'exploration',
+      '--reward',
+      '测试',
+      '--due-date',
+      '2026-08-31',
+      '--description-file',
+      '-',
+    ],
+    'CLI 独立任务\n来自 stdin',
+  );
+  expect(created.exitCode, created.stderr).toBe(0);
+  const id = (JSON.parse(created.stdout).data as { id: string }).id;
+  const renewed = await cli([
+    'task',
+    'renew',
+    id,
+    '--due-date',
+    '2026-09-10',
+    '--recovery-strategy',
+    'reopened',
+  ]);
+  expect(renewed.exitCode, renewed.stderr).toBe(0);
+  expect(JSON.parse(renewed.stdout)).toMatchObject({
+    data: { version: 2, status: 'reopened' },
+    meta: { expectedVersion: 1 },
+  });
+  const added = await cli([
+    'comment',
+    'create',
+    id,
+    '--content',
+    'CLI 原正文',
+    '--expected-version',
+    '2',
+  ]);
+  expect(added.exitCode, added.stderr).toBe(0);
+  const comment = (
+    JSON.parse(added.stdout).data.timeline as {
+      kind: string;
+      commentId?: string;
+    }[]
+  ).find((event) => event.kind === 'comment');
+  expect(comment?.commentId).toBeTypeOf('string');
+  const commentId = comment!.commentId!;
+  const contentFile = join(directory, 'comment.txt');
+  await writeFile(contentFile, 'CLI 新正文');
+  const edited = await cli([
+    'comment',
+    'edit',
+    id,
+    commentId,
+    '--content-file',
+    contentFile,
+  ]);
+  expect(edited.exitCode, edited.stderr).toBe(0);
+  expect(JSON.parse(edited.stdout).data).toMatchObject({
+    version: 4,
+    timeline: expect.arrayContaining([
+      expect.objectContaining({ content: 'CLI 新正文', edited: true }),
+    ]),
+  });
+  const conflict = await cli([
+    'comment',
+    'delete',
+    id,
+    commentId,
+    '--expected-version',
+    '3',
+    '--yes',
+  ]);
+  expect(conflict.exitCode).toBe(75);
+  expect(conflict.stdout).toBe('');
+  expect(JSON.parse(conflict.stderr)).toMatchObject({
+    error: { status: 409, hint: expect.stringContaining('task get') },
+    meta: { expectedVersion: 3, exitCode: 75 },
+  });
+  const refused = await cli(['comment', 'delete', id, commentId]);
+  expect(refused.exitCode).toBe(64);
+  const unchanged = await cli(['task', 'get', id]);
+  expect(JSON.parse(unchanged.stdout).data.version).toBe(4);
+  const deleted = await cli(['comment', 'delete', id, commentId, '--yes']);
+  expect(deleted.exitCode, deleted.stderr).toBe(0);
+  expect(JSON.parse(deleted.stdout).data).toMatchObject({
+    version: 5,
+    timeline: expect.arrayContaining([
+      expect.objectContaining({ commentId, deleted: true, content: null }),
+    ]),
+  });
+  expect(deleted.stdout).not.toContain('CLI 原正文');
+  expect(deleted.stdout).not.toContain('CLI 新正文');
+  const closed = await cli(['task', 'act', id, 'close']);
+  expect(closed.exitCode, closed.stderr).toBe(0);
+  expect(JSON.parse(closed.stdout).data).toMatchObject({
+    status: 'closed',
+    version: 6,
   });
 });

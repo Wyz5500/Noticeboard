@@ -1,6 +1,7 @@
 /** Adapts process streams and TTY confirmation to the independently testable CLI dispatcher. */
 import { confirmDeletion } from './confirmation.js';
 import { runCli } from './run.js';
+import { readStdin } from './write-commands.js';
 
 let streamExitCode: number | undefined;
 
@@ -54,6 +55,7 @@ if (process.versions.node.split('.')[0] !== '24') {
     confirm: (question) =>
       confirmDeletion(question, process.stdin, process.stderr),
     fetch: globalThis.fetch,
+    readStdin: () => readStdin(process.stdin),
   });
   process.exitCode = streamExitCode ?? commandExitCode;
 }

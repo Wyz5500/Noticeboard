@@ -1,4 +1,4 @@
-/** Parses the read-only command surface independently of files, network and output. */
+/** Parses the command surface independently of files, network and output. */
 import { parseArgs } from 'node:util';
 import { CliError } from './errors.js';
 import { createNoticeboardClient, type TaskStatus } from './sdk/index.js';
@@ -13,6 +13,16 @@ const OPTIONS = {
   status: { type: 'string' },
   search: { type: 'string' },
   yes: { type: 'boolean' },
+  title: { type: 'string' },
+  type: { type: 'string' },
+  reward: { type: 'string' },
+  'due-date': { type: 'string' },
+  description: { type: 'string' },
+  'description-file': { type: 'string' },
+  content: { type: 'string' },
+  'content-file': { type: 'string' },
+  'expected-version': { type: 'string' },
+  'recovery-strategy': { type: 'string' },
 } as const;
 const COMMANDS: Record<
   string,
@@ -28,6 +38,35 @@ const COMMANDS: Record<
   'identity use': { min: 1, max: 1 },
   'task list': { min: 0, max: 0, options: ['mine', 'status', 'search'] },
   'task get': { min: 1, max: 1 },
+  'task create': {
+    min: 0,
+    max: 0,
+    options: [
+      'title',
+      'type',
+      'reward',
+      'due-date',
+      'description',
+      'description-file',
+    ],
+  },
+  'task act': { min: 2, max: 2, options: ['expected-version'] },
+  'task renew': {
+    min: 1,
+    max: 1,
+    options: ['due-date', 'recovery-strategy', 'expected-version'],
+  },
+  'comment create': {
+    min: 1,
+    max: 1,
+    options: ['content', 'content-file', 'expected-version'],
+  },
+  'comment edit': {
+    min: 2,
+    max: 2,
+    options: ['content', 'content-file', 'expected-version'],
+  },
+  'comment delete': { min: 2, max: 2, options: ['expected-version', 'yes'] },
 };
 const STATUSES: readonly TaskStatus[] = [
   'not_started',
@@ -107,9 +146,15 @@ export function parseCommand(args: string[]): Command {
   const shape = Object.hasOwn(COMMANDS, name) ? COMMANDS[name] : undefined;
   if (
     !name ||
-    (parsed.values.help && ['profile', 'identity', 'task'].includes(name))
+    (parsed.values.help &&
+      ['profile', 'identity', 'task', 'comment'].includes(name))
   ) {
-    if (['mine', 'status', 'search', 'yes'].some((option) => seen.has(option)))
+    if (
+      [...seen].some(
+        (option) =>
+          !['profile', 'base-url', 'user', 'json', 'help'].includes(option),
+      )
+    )
       throw new CliError('usage', '此选项需要对应的子命令');
     return { name, operands, options: { ...parsed.values, help: true } };
   }
@@ -159,6 +204,12 @@ export function helpText(name: string): string {
     'identity use <user-id>',
     'task list [--mine] [--status <status>] [--search <text>]',
     'task get <task-id>',
+    'task create --title <text> --type <type> --reward <text> --due-date <yyyy-mm-dd> (--description <text> | --description-file <path|->)',
+    'task act <task-id> <action> [--expected-version <number>]',
+    'task renew <task-id> --due-date <yyyy-mm-dd> --recovery-strategy <strategy> [--expected-version <number>]',
+    'comment create <task-id> (--content <text> | --content-file <path|->) [--expected-version <number>]',
+    'comment edit <task-id> <comment-id> (--content <text> | --content-file <path|->) [--expected-version <number>]',
+    'comment delete <task-id> <comment-id> [--expected-version <number>] [--yes]',
   ].filter((line) => !resource || line.startsWith(`${resource} `));
-  return `用法：noticeboard <资源> <命令> [选项]\n\n${lines.map((line) => `  noticeboard ${line}`).join('\n')}\n\n公共选项：--profile <name> --base-url <url> --user <user-id> --json --help\n状态：${STATUSES.join(', ')}\n只读 HTTP 客户端；身份为 demo-only。\n`;
+  return `用法：noticeboard <资源> <命令> [选项]\n\n${lines.map((line) => `  noticeboard ${line}`).join('\n')}\n\n公共选项：--profile <name> --base-url <url> --user <user-id> --json --help\n状态：${STATUSES.join(', ')}\n类型：exploration, collection, escort, bounty, building\n动作：accept, complete, approve, reopen, close\n续期策略：preserve_status, reopened\n写操作不重试；省略版本时只预读一次。评论删除在非 TTY 或 JSON 模式必须提供 --yes。\nHTTP 客户端；身份为 demo-only。\n`;
 }

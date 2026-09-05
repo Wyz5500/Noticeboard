@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "告示牌只读 HTTP 命令行客户端，本地安装验证包。",
+  "description": "告示牌 HTTP 读写命令行客户端，本地安装验证包。",
   "license": "UNLICENSED",
   "engines": {
     "node": ">=24 <25"

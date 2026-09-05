@@ -1,4 +1,4 @@
-/** Adapts generated operations to the handwritten read-only SDK contract. */
+/** Adapts generated operations to the handwritten SDK contract. */
 import {
   NoticeboardApiError,
   NoticeboardNetworkError,
@@ -9,7 +9,17 @@ import type {
   NoticeboardClientOptions,
   RequestOptions,
 } from '../options.js';
-import { getTask, listDemoUsers, listTasks } from './generated/transport.js';
+import {
+  getTask,
+  listDemoUsers,
+  listTasks,
+  createTask,
+  actOnTask,
+  renewExpiredTask,
+  createTaskComment,
+  editTaskComment,
+  deleteTaskComment,
+} from './generated/transport.js';
 import { array } from './decoders.js';
 import type { Decoder } from './decoders.js';
 import { decodeError, decodeIdentity, decodeTask } from './read-contracts.js';
@@ -74,10 +84,11 @@ export function createNoticeboardClient(
   const defaultSignal = options.signal;
 
   /** Keeps HTTP context local to one call, including asynchronous providers and body parsing failures. */
-  async function read<T>(
+  async function requestResource<T>(
     operation: Operation,
     decode: Decoder<T>,
     request: RequestOptions = {},
+    successStatus = 200,
   ): Promise<T> {
     const signals = [defaultSignal, request.signal].filter(
       (signal): signal is AbortSignal => signal !== undefined,
@@ -124,9 +135,9 @@ export function createNoticeboardClient(
         timestamp: envelope.timestamp,
       });
     }
-    if (response.status !== 200)
+    if (response.status !== successStatus)
       throw new NoticeboardProtocolError(
-        '响应状态不符合只读合同',
+        '响应状态不符合操作合同',
         response.status,
       );
     return decodeResponse(decode, response.data, response.status);
@@ -134,19 +145,67 @@ export function createNoticeboardClient(
 
   return {
     tasks: {
+      /** Creation alone uses the existing HTTP 201 contract. */
+      create: (input, request) =>
+        requestResource(
+          (init, fetch) => createTask(input, init, fetch),
+          decodeTask,
+          request,
+          201,
+        ),
+      /** Sends the explicit expected version without additional reads. */
+      act: (taskId, input, request) =>
+        requestResource(
+          (init, fetch) => actOnTask(taskId, input, init, fetch),
+          decodeTask,
+          request,
+        ),
+      /** Leaves renewal eligibility and dates to the server. */
+      renew: (taskId, input, request) =>
+        requestResource(
+          (init, fetch) => renewExpiredTask(taskId, input, init, fetch),
+          decodeTask,
+          request,
+        ),
       /** Uses the complete list endpoint with no client-side query semantics. */
-      list: (request) => read(listTasks, array(decodeTask), request),
+      list: (request) => requestResource(listTasks, array(decodeTask), request),
       /** Lets the generated operation encode the path parameter exactly once. */
       get: (taskId, request) =>
-        read(
+        requestResource(
           (init, fetch) => getTask(taskId, init, fetch),
+          decodeTask,
+          request,
+        ),
+    },
+    comments: {
+      /** Uses generated encoding and a JSON body for all comment writes, including DELETE. */
+      create: (taskId, input, request) =>
+        requestResource(
+          (init, fetch) => createTaskComment(taskId, input, init, fetch),
+          decodeTask,
+          request,
+        ),
+      /** Keeps edits within the task aggregate version boundary. */
+      edit: (taskId, commentId, input, request) =>
+        requestResource(
+          (init, fetch) =>
+            editTaskComment(taskId, commentId, input, init, fetch),
+          decodeTask,
+          request,
+        ),
+      /** Trusts server tombstones and never replays uncertain deletion outcomes. */
+      delete: (taskId, commentId, input, request) =>
+        requestResource(
+          (init, fetch) =>
+            deleteTaskComment(taskId, commentId, input, init, fetch),
           decodeTask,
           request,
         ),
     },
     identities: {
       /** Exposes only the demo directory and does not persist a selected identity. */
-      list: (request) => read(listDemoUsers, array(decodeIdentity), request),
+      list: (request) =>
+        requestResource(listDemoUsers, array(decodeIdentity), request),
     },
   };
 }

@@ -17,6 +17,7 @@ import { CliError, describeError } from './errors.js';
 import { humanResult, safeText } from './output.js';
 import { createNoticeboardClient } from './sdk/index.js';
 import { filterTasks } from './tasks.js';
+import { isWriteCommand, writeCommand } from './write-commands.js';
 export interface CliContext {
   env: NodeJS.ProcessEnv;
   stdout: (text: string) => void;
@@ -24,6 +25,8 @@ export interface CliContext {
   isTTY: boolean;
   confirm: (question: string) => Promise<boolean>;
   fetch: typeof globalThis.fetch;
+  /** Supplies stdin on demand; omitted by callers that only execute commands without stdin input. */
+  readStdin?: () => Promise<string>;
 }
 
 /** Returns the command exit status without terminating its caller. */
@@ -42,11 +45,17 @@ export async function runCli(
     }
     const path = configPath(context.env);
     const config = await readConfig(path);
-    const data = command.name.startsWith('profile ')
-      ? await profileCommand(command, config, path, context)
-      : await remoteCommand(command, config, path, context);
+    const result = isWriteCommand(command.name)
+      ? await writeCommand(command, config, context)
+      : {
+          data: command.name.startsWith('profile ')
+            ? await profileCommand(command, config, path, context)
+            : await remoteCommand(command, config, path, context),
+        };
     context.stdout(
-      json ? `${JSON.stringify({ data })}\n` : humanResult(command.name, data),
+      json
+        ? `${JSON.stringify(result)}\n`
+        : humanResult(command.name, result.data),
     );
     return 0;
   } catch (error) {

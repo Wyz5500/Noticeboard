@@ -16,11 +16,34 @@ export class CliError extends Error {
   }
 }
 
+export class WriteFailure extends Error {
+  /** Attaches CLI reconciliation context without altering the original SDK error. */
+  constructor(
+    cause: unknown,
+    readonly taskId: string | undefined,
+    readonly expectedVersion: number | undefined,
+  ) {
+    super('写操作失败', { cause });
+  }
+}
+
 /** Keeps protocol classification ahead of HTTP status and preserves open API error codes. */
 export function describeError(cause: unknown): {
   error: Record<string, unknown>;
-  meta: { exitCode: number };
+  meta: { exitCode: number; expectedVersion?: number };
 } {
+  if (cause instanceof WriteFailure) {
+    const failure = describeError(cause.cause);
+    if (cause.expectedVersion !== undefined)
+      failure.meta.expectedVersion = cause.expectedVersion;
+    if (failure.error.status === 409)
+      failure.error.hint = `本次 expectedVersion=${cause.expectedVersion}；请重新执行 task get 读取服务器状态后再决定操作`;
+    if (failure.error.kind === 'network' || failure.error.kind === 'protocol')
+      failure.error.hint = cause.taskId
+        ? '写入可能已提交；请使用 task get 读取服务器状态核对，不要直接重复操作'
+        : '任务可能已提交；请使用 task list 查找并通过 task get 核对，不要直接重复创建';
+    return failure;
+  }
   if (cause instanceof CliError)
     return {
       error: { kind: cause.kind, message: cause.message },

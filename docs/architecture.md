@@ -4,7 +4,7 @@
 
 告示牌采用 **API 核心、CLI-first、Web maintenance-only** 的长期方向：版本化 HTTP API 是跨进程业务能力边界；CLI 将成为主要交互入口；未来 TUI 与可能独立发布的 SDK 复用同一 HTTP SDK。现有 Web 保留运行和维护，但不再承接常规产品功能开发。
 
-本文同时描述当前架构与目标架构。tracked OpenAPI v1 artifact、稳定 operationId、服务端漂移检查、显式受支持基线兼容门禁、internal generated Fetch transport / artifact → generated 漂移门禁和只读手写 HTTP SDK 已经实现。只读 CLI 与本地私有安装包也已实现。SDK/CLI 写操作、npm registry 发布和 TUI 仍属于尚未实现的目标合同，不能据此假定仓库中已经存在对应命令或发布包。
+本文同时描述当前架构与目标架构。tracked OpenAPI v1 artifact、稳定 operationId、服务端漂移检查、显式受支持基线兼容门禁、internal generated Fetch transport / artifact → generated 漂移门禁和手写 HTTP SDK 的读取与任务/评论写操作已经实现。读写 CLI 与本地私有安装包也已实现。npm registry 发布和 TUI 仍属于尚未实现的目标合同，不能据此假定仓库中已经存在对应命令或发布包。
 
 当前仍是模块化单体：唯一的 NestJS + Fastify 进程同时提供版本化 API、健康检查、运行时 OpenAPI 和编译后的静态页面。应用实例无状态，PostgreSQL 是服务器任务与时间线的权威数据源。现有架构不包含 SQLite、Redis、CQRS、Outbox、Event Sourcing、Helm 或正式认证。
 
@@ -24,9 +24,9 @@
                                              │
                   apps/cli/src/sdk/internal/generated/transport.ts
                                              │
-                            handwritten SDK（tasks / identities 只读）
+                            handwritten SDK（tasks / comments / identities）
                                              │
-                          CLI（profile / identity / task list/get）
+                          CLI（profile / identity / task 读写 / comment 写入）
 
 目标：
 API 模块化单体
@@ -64,7 +64,7 @@ DTO、领域模型、读取投影与 ORM 实体分别建模。ORM 实体不会�
 
 `apps/api/src` 的直接顶层文件是 Composition Root，负责 Nest Module、全局 DataSource、migration 和 seed 组装。只有这些文件可以导入 Feature 的 `public/composition/` 注册入口；普通 Feature、`common` 和嵌套顶层代码不能使用该入口，Composition Root 也不能直接导入 Feature 私有实现。`common` 只能被 Feature 依赖，不能反向依赖任何 Feature。
 
-当前 `scripts/check-architecture.ts` 自动识别任意 `apps/api/src/<feature>/...`，检查 Feature Boundary、Composition Root 例外、循环、逆向层依赖、核心层框架泄漏和通用仓储/服务基类；新增 Feature 无需修改规则名单。当前门禁也扫描已存在的 `apps/cli/src`，强制以下方向（只读 CLI 已实现，TUI 仍为目标）：
+当前 `scripts/check-architecture.ts` 自动识别任意 `apps/api/src/<feature>/...`，检查 Feature Boundary、Composition Root 例外、循环、逆向层依赖、核心层框架泄漏和通用仓储/服务基类；新增 Feature 无需修改规则名单。当前门禁也扫描已存在的 `apps/cli/src`，强制以下方向（读写 CLI 已实现，TUI 仍为目标）：
 
 ```text
 OpenAPI artifact → generated transport → handwritten SDK → CLI / TUI
@@ -84,7 +84,7 @@ Web → existing Web ApiClient → HTTP /api/v1
 
 跨 Feature 授权通过窄公共端口提供有效权限判断；管理类写操作通过专用能力端口和显式事务完成，不能绕过所属 Feature 的规则。并发写入必须带预期版本条件，条件失败视为乐观冲突。任务生命周期操作、评论创建、评论编辑和评论删除共享同一个任务预期版本与事务边界；一次聚合更新与其新增事件必须使用同一底层 PostgreSQL 事务，保持状态、版本和有序事件一致。
 
-HTTP SDK 必须显式保留 `expectedVersion` 契约。未来 CLI 在用户显式提供版本时直接提交；未提供时只允许先读取一次最新任务并使用该版本。收到 409 后不得自动刷新并重放动作、续期、评论创建、编辑或删除，也不得对结果不确定的非幂等写请求做网络重试；CLI 应返回稳定的临时冲突退出码并提示重新读取服务器状态。
+HTTP SDK 必须显式保留 `expectedVersion` 契约。CLI 在用户显式提供版本时直接提交；未提供时只允许先读取一次最新任务并使用该版本。收到 409 后不得自动刷新并重放动作、续期、评论创建、编辑或删除，也不得对结果不确定的非幂等写请求做网络重试；CLI 应返回稳定的临时冲突退出码并提示重新读取服务器状态。
 
 ## 数据与 HTTP 契约
 
@@ -109,7 +109,7 @@ HTTP 使用 URI 版本 `/api/v1`。Nest controller、DTO 和 metadata 是 author
 
 Orval 8.28.1 默认 Fetch 模板使用大小写敏感的对象 spread 合并 Content-Type，会使调用方 `Headers` 产生重复媒体类型及 HTTP 415。因此仓库维护请求生成模板，仍复用 Orval 的 schema 类型生成与文件输出；不修改默认生成器返回的文本，也不对生成文件做补丁。模板复制原生 `Headers`，仅在缺少 Content-Type 时填入 JSON 默认值。当前支持 v1 必填路径参数、JSON 请求与明确数字状态码的 JSON/空响应；未支持的 query、非 JSON 等 wire 形态使生成失败，必须先扩展模板及合同验证。
 
-Generated transport 接收每调用的 `RequestInit` 与 `fetchFn`，由调用方的 Fetch 闭包绑定每实例 base URL；identity 和 AbortSignal 经请求选项注入，不修改全局 Fetch。HTTP status 与响应数据/错误信封保留；日期为字符串，网络、取消与 JSON 解析失败拒绝 Promise，无写重试。当前只读手写 SDK 在其上提供请求头提供者、错误映射与 public 入口，generated 自身仍不提供运行时资源校验。
+Generated transport 接收每调用的 `RequestInit` 与 `fetchFn`，由调用方的 Fetch 闭包绑定每实例 base URL；identity 和 AbortSignal 经请求选项注入，不修改全局 Fetch。HTTP status 与响应数据/错误信封保留；日期为字符串，网络、取消与 JSON 解析失败拒绝 Promise，无写重试。当前手写 SDK 在其上提供读写 façade、请求头提供者、错误映射与 public 入口，generated 自身仍不提供运行时资源校验。
 
 生成和检查先写临时树；generate 使用同文件系统的 staging 替换旧目录，替换失败尝试恢复旧树，恢复失败保留备份并报告路径。此流程保证受控失败的恢复，不声称跨进程或进程崩溃时原子切换。check 比较完整 POSIX 相对文件集合和原始字节，不改写 tracked tree；临时目录在 finally 清理，缺失、变化和陈旧文件均阻止验证通过。
 
@@ -134,12 +134,12 @@ v1 通常允许新增 endpoint、可选响应字段以及具有旧行为默认�
 
 SDK 是传输客户端，不是服务器应用层的进程外镜像。第一阶段不独立发布 SDK，而是在仓库内形成可单独 typecheck、build 和 test 的逻辑边界，并 bundle 到唯一发布的 CLI npm 包；当 SDK 需要独立发布或 CLI/TUI 成为两个真实消费者时，再引入 npm workspaces。
 
-当前只读 SDK 提供 `createNoticeboardClient`、`tasks.list/get` 和 `identities.list`。唯一入口为 `apps/cli/src/sdk/index.ts`；通过 `sdk:typecheck`、`sdk:build` 和 `test:sdk` 独立检查、构建和测试，输出 `dist/sdk` ESM 与声明，尚无独立 npm 包。根 build 包含 SDK，verify 包含独立 SDK 类型检查，SDK 单元/构建合同与真实宿主机 HTTP smoke 分别进入 unit / API 门禁。服务器镜像仅复制 `dist/api` 与 `dist/web`。
+当前 SDK 提供 `createNoticeboardClient`、`tasks.list/get/create/act/renew`、`comments.create/edit/delete` 和 `identities.list`。唯一入口为 `apps/cli/src/sdk/index.ts`；通过 `sdk:typecheck`、`sdk:build` 和 `test:sdk` 独立检查、构建和测试，输出 `dist/sdk` ESM 与声明，尚无独立 npm 包。根 build 包含 SDK，verify 包含独立 SDK 类型检查，SDK 单元/构建合同与真实宿主机 HTTP smoke 分别进入 unit / API 门禁。服务器镜像仅复制 `dist/api` 与 `dist/web`。
 
 SDK 依赖和行为：
 
 - generated transport 只位于 internal 目录，不从 SDK 根入口导出，生成器符号和文件名不构成 public API。
-- 手写资源 façade 当前提供稳定的 `tasks`、`identities` 只读方法与独立声明的稳定类型名；`comments` 和全部写操作仍为后续目标。
+- 手写资源 façade 提供稳定的 `tasks`、`comments`、`identities` 方法与独立声明的资源和写入类型；全部版本化写方法要求调用者显式提供 `expectedVersion`，SDK 不预读。
 - SDK 构造器接收 base URL、认证/身份提供者、`fetch` 和取消信号；不读取 CLI 配置文件，不持久化 profile，不打印 stdout/stderr。
 - SDK 统一暴露 API、网络和协议错误，并保留 HTTP status、服务器 `error.code`、message、details、path 和 timestamp。错误码按开放字符串透传。
 - SDK 不自动重试非幂等写请求，也不替 CLI 隐藏乐观并发。
@@ -147,11 +147,11 @@ SDK 依赖和行为：
 
 当前构造参数为必填 `baseUrl`、可选 `fetch`、每次请求求值的同步/异步 `getHeaders` 和默认 `signal`。base URL 支持路径前缀，禁止凭据、查询和 fragment；提供者返回的请求头经复制注入，SDK 不选择默认 demo 身份。默认与单次 signal 合并，任一取消都终止请求；取消归为 network 错误的 `aborted` reason。请求不重试、不缓存、不筛选。无效 base URL 抛出 `TypeError`，提供者异常原样传播。
 
-只读响应按 tracked OpenAPI 校验全部已知字段的类型、必填性、闭合枚举、nullable 和时间线联合，容忍新增字段并仅映射已声明字段。SDK 不推导服务器业务规则或修改评论 tombstone。合法 HTTP 错误信封保留状态与所有已知错误字段；非法 JSON、结构错误和意外成功状态归为 protocol，保留可取得的 HTTP status；连接和响应读取失败归为 network 并保留 cause。使用方式和精确公共合同见 `docs/sdk.md`。
+读取及写操作响应按 tracked OpenAPI 校验全部已知字段的类型、必填性、闭合枚举、nullable 和时间线联合，容忍新增字段并仅映射已声明字段。SDK 不推导服务器业务规则或修改评论 tombstone。合法 HTTP 错误信封保留状态与所有已知错误字段；非法 JSON、结构错误和意外成功状态归为 protocol，保留可取得的 HTTP status；连接和响应读取失败归为 network 并保留 cause。使用方式和精确公共合同见 `docs/sdk.md`。
 
 ## CLI 当前能力与目标边界
 
-CLI 是远程服务端客户端，只调用 HTTP SDK，不直接访问 PostgreSQL、migration、服务器用例或现有运维脚本内部能力。当前实现 profile、demo identity、task list/get，使用 Node 原生参数解析，严格拒绝未知/重复参数。任务创建、生命周期、续期和评论写入尚未实现。完整首发目标采用资源型命令，范围包括：
+CLI 是远程服务端客户端，只调用 HTTP SDK，不直接访问 PostgreSQL、migration、服务器用例或现有运维脚本内部能力。当前实现 profile、demo identity、task list/get/create/act/renew 和 comment create/edit/delete，使用 Node 原生参数解析，严格拒绝未知/重复参数。当前采用资源型命令，范围包括：
 
 - `profile`：named profile 的查询、设置、切换与删除。
 - `identity`：demo 身份列表、当前身份和切换。
@@ -176,11 +176,15 @@ CLI 进程入口处理异步输出流错误：stdout 的 EPIPE 视为下游主�
 
 CLI npm 包名在公开发布前另行确定；可执行文件为 `noticeboard`。首版只通过内部或私有方式发布。包内容必须使用白名单，不能携带 API/Web 源码、数据库代码、测试 fixture 或仓库配置。
 
+任务写操作与评论增改删均只调用 SDK public 入口。任务创建接受 201，其余写操作接受 200，全部返回并校验完整 Task；DELETE 评论发送带 expectedVersion 的 JSON 请求体。写入输入类型独立手写并通过 generated 结构一致性及公共声明边界验证。
+
 当前配置缺失时只在内存中使用 local demo 默认值，显式配置修改才落盘。profile set 不切换激活项，省略身份时保留旧值或使用 demo 默认；identity use 必须先通过服务器有效身份列表验证，只更新当前激活 profile，拒绝选择其他 profile 后直接修改。所有配置修改使用同目录临时文件、文件同步和原子替换，POSIX 文件权限 0600；并行写入采用最后成功替换的快照，不做跨进程合并。JSON 删除必须使用 --yes，即使在 TTY 中也不提示确认。
 
-任务 list 在 CLI 内按 AND 组合筛选并保持服务器顺序；mine 额外读取身份列表并忽略评论及失效生命周期操作人，search 固定搜索标题、类型标签、描述、发布者与接取者姓名，去除搜索词首尾空白后以 zh-CN 小写化包含匹配。远端命令共用 30 秒取消窗口，不重试。协议错误优先返回 65，包括 HTML 503；其余退出映射遵循 CLI 合同。
+任务 list 在 CLI 内按 AND 组合筛选并保持服务器顺序；mine 额外读取身份列表并忽略评论及失效生命周期操作人，search 固定搜索标题、类型标签、描述、发布者与接取者姓名，去除搜索词首尾空白后以 zh-CN 小写化包含匹配。远端命令共用 30 秒取消窗口，不重试。写命令先处理 UTF-8 文件/stdin、输入检查与删除确认，再启动窗口，版本预读与提交共用该信号。描述与评论保留多行原文，非法 UTF-8、全空白或 NUL 正文返回 64；版本只接受十进制正安全整数。评论删除沿用 profile 删除的 TTY/JSON/--yes 规则，在任何 HTTP 请求前确认；任务动作（包括 close）直接执行。协议错误优先返回 65，包括 HTML 503；其余退出映射遵循 CLI 合同。
 
 CLI 独立类型检查允许 Node 类型，SDK 独立类型检查仍只允许 Fetch/DOM 类型。根 build 用精确锁定的 esbuild@0.28.2 bundle CLI 和 SDK，生成 dist/cli 下无运行时依赖的 ESM 可执行文件与私有 manifest；本地占位包为 noticeboard-cli-local@0.0.0，不代表 registry 发布。包白名单只含 bin/noticeboard.js 与 README.md（npm 自动包含 manifest），实际 tarball 安装检查进入 unit 门禁，真实宿主机 HTTP smoke 进入 API 门禁，cli:typecheck 进入 verify。服务器镜像继续仅复制 dist/api 与 dist/web。
+
+全部写命令 JSON data 为完整 Task，除任务创建外带 meta.expectedVersion；data.version 表示服务器结果版本。409 保留服务器错误信息和本次提交版本，并提示 task get；网络和协议失败分别保持 69/65，提示写入可能已提交并要求核对，禁止重试。任务创建提示 task list 查找后 task get 核对。预读失败不写入、不标为结果不确定。人类任务输出包含可用于编辑/删除的评论 ID，并继续转义终端控制字符。
 
 完整当前与目标合同见 `docs/cli.md`。
 
@@ -205,7 +209,9 @@ API major 迁移不得借机新增 Web 产品功能、迁移 generated transport
 
 永久部署与本地开发/验证是两种隔离拓扑。永久部署只能从 Git primary checkout 的 clean `main` 分支升级，固定使用 Compose project `noticeboard` 和应用端口 `127.0.0.1:3000`；其 PostgreSQL 只连接内部网络并使用持久卷。镜像使用多阶段构建，生产层只安装运行依赖并以非 root 用户启动，应用文件系统只读；migration 和非破坏性 seed 是先于无状态应用的一次性服务。部署入口只提供非破坏性升级，并在 Compose 启动后验证数据库 readiness、首页、OpenAPI 和数据库只读 API。linked worktree、其他分支和 detached HEAD 必须拒绝永久部署及其 dry-run。
 
-本机开发与全部测试在宿主机执行 migration、seed、build、API 应用、Vitest、Node Test、Playwright 和 Chromium；Docker 在本地只承载 PostgreSQL。每个 worktree 按绝对路径和用途派生相互独立的 `dev`、`verify`、`playwright` Compose project、网络和数据库卷，数据库宿主机端口由 Docker 动态分配。生命周期操作以 project 锁避免并发修改；不同 worktree 的业务测试可并行。本机应用端口不得使用永久部署的 3000，也不得回退到固定 3100；PostgreSQL 不得回退到固定 54329。
+本机开发与全部测试在宿主机执行 migration、seed、build、API 应用、Vitest、Node Test、Playwright 和 Chromium；Docker 在本地只承载 PostgreSQL。每个 worktree 按绝对路径和用途派生相互独立的 `dev`、`verify`、`playwright` Compose project、网络和数据库卷，数据库宿主机端口由 Docker 动态分配。生命周期操作以 project 锁避免并发修改；不同 worktree 的业务测试可并行。HTTP 测试文件与 PostgreSQL 契约测试文件各自串行运行：同一验证数据库中包含 demo reset、任务写入和精确列表断言，禁止这些套件并行相互污染；单个测试仍可显式构造并发冲突。
+
+本机应用端口不得使用永久部署的 3000，也不得回退到固定 3100；PostgreSQL 不得回退到固定 54329。
 
 完整验证和独立 Playwright 成功后删除各自 PostgreSQL 容器、网络及数据库卷，失败时保留数据库和测试产物，但宿主机应用进程始终停止。`dev` 的 `down`、`destroy` 以及验证清理只能作用于当前路径和用途派生的 project，不得操作永久 `noticeboard`。`npm run verify -- --final` 只验证 clean 候选提交并记录本地 verified ref，不执行永久部署。
 
