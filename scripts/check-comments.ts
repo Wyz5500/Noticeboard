@@ -18,6 +18,11 @@ function codeFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     if (EXCLUDED.has(entry.name)) return [];
     const path = join(directory, entry.name);
+    if (
+      relative(ROOT, path).split(/[\\/]/).join('/') ===
+      'apps/cli/src/sdk/internal/generated'
+    )
+      return [];
     if (entry.isDirectory()) return codeFiles(path);
     return ['.ts', '.mts', '.mjs'].includes(extname(entry.name)) ? [path] : [];
   });

@@ -1,10 +1,13 @@
-/** Enforces dependency direction, framework isolation, and acyclic imports across handwritten TypeScript modules. */
+/** Enforces dependency direction, framework isolation, and acyclic imports across server, Web, and internal client TypeScript modules. */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import ts from 'typescript';
 
 const ROOT = process.cwd();
 const API_SOURCE_ROOT = join(ROOT, 'apps', 'api', 'src');
+const CLIENT_SOURCE_ROOT = join(ROOT, 'apps', 'cli', 'src');
+const SDK_ROOT = join(CLIENT_SOURCE_ROOT, 'sdk');
+const SDK_PUBLIC_ENTRY = join(SDK_ROOT, 'index.ts');
 const SOURCE_ROOTS = [API_SOURCE_ROOT, join(ROOT, 'apps', 'web', 'src')];
 const LAYERS = [
   'domain',
@@ -78,40 +81,163 @@ function resolveLocalImport(
   return existsSync(indexCandidate) ? indexCandidate : null;
 }
 
-/** Reads static import and export edges using the TypeScript syntax tree. */
-function importsOf(path: string): Array<{
+interface ImportEdge {
   specifier: string;
   target: string | null;
   typeOnly: boolean;
   reExport: boolean;
-}> {
-  const text = readFileSync(path, 'utf8');
-  const file = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
-  const imports: Array<{
-    specifier: string;
-    target: string | null;
-    typeOnly: boolean;
-    reExport: boolean;
-  }> = [];
-  for (const statement of file.statements) {
-    if (
-      (ts.isImportDeclaration(statement) ||
-        ts.isExportDeclaration(statement)) &&
-      statement.moduleSpecifier
-    ) {
-      const specifier = (statement.moduleSpecifier as ts.StringLiteral).text;
-      const typeOnly = ts.isImportDeclaration(statement)
-        ? Boolean(statement.importClause?.isTypeOnly)
-        : statement.isTypeOnly;
-      imports.push({
-        specifier,
-        target: resolveLocalImport(path, specifier),
-        typeOnly,
-        reExport: ts.isExportDeclaration(statement),
-      });
-    }
+}
+
+/** Recognizes declaration-wide and inline type specifiers without erasing mixed imports. */
+function isTypeOnly(
+  statement: ts.ImportDeclaration | ts.ExportDeclaration,
+): boolean {
+  if (ts.isExportDeclaration(statement)) {
+    return (
+      statement.isTypeOnly ||
+      Boolean(
+        statement.exportClause &&
+        ts.isNamedExports(statement.exportClause) &&
+        statement.exportClause.elements.length &&
+        statement.exportClause.elements.every((element) => element.isTypeOnly),
+      )
+    );
   }
+  const clause = statement.importClause;
+  return Boolean(
+    clause?.isTypeOnly ||
+    (clause &&
+      !clause.name &&
+      clause.namedBindings &&
+      ts.isNamedImports(clause.namedBindings) &&
+      clause.namedBindings.elements.length &&
+      clause.namedBindings.elements.every((element) => element.isTypeOnly)),
+  );
+}
+
+/** Reads static, dynamic, and import-type edges; computed client imports fail closed. */
+function importsOf(path: string): ImportEdge[] {
+  const file = ts.createSourceFile(
+    path,
+    readFileSync(path, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const imports: ImportEdge[] = [];
+  const add = (
+    specifier: string,
+    typeOnly: boolean,
+    reExport = false,
+  ): void => {
+    imports.push({
+      specifier,
+      target: resolveLocalImport(path, specifier),
+      typeOnly,
+      reExport,
+    });
+  };
+  const visit = (node: ts.Node): void => {
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    ) {
+      add(
+        node.moduleSpecifier.text,
+        isTypeOnly(node),
+        ts.isExportDeclaration(node),
+      );
+    } else if (
+      ts.isImportTypeNode(node) &&
+      ts.isLiteralTypeNode(node.argument) &&
+      ts.isStringLiteral(node.argument.literal)
+    ) {
+      add(node.argument.literal.text, true);
+    } else if (
+      ts.isCallExpression(node) &&
+      (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isIdentifier(node.expression) &&
+          node.expression.text === 'require'))
+    ) {
+      const argument = node.arguments[0];
+      add(
+        argument && ts.isStringLiteralLike(argument)
+          ? argument.text
+          : '<computed-import>',
+        false,
+      );
+    } else if (
+      ts.isImportEqualsDeclaration(node) &&
+      ts.isExternalModuleReference(node.moduleReference) &&
+      node.moduleReference.expression &&
+      ts.isStringLiteral(node.moduleReference.expression)
+    ) {
+      add(node.moduleReference.expression.text, node.isTypeOnly);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
   return imports;
+}
+
+type SourceArea =
+  'generated' | 'sdk-public' | 'sdk' | 'cli' | 'web' | 'api' | 'outside';
+
+/** Classifies by complete path segments, with narrow client contracts taking precedence. */
+function areaOf(path: string): SourceArea {
+  const local = relative(ROOT, path).split(/[\\/]/).join('/');
+  if (local.startsWith('apps/cli/src/sdk/internal/generated/'))
+    return 'generated';
+  if (local === 'apps/cli/src/sdk/index.ts') return 'sdk-public';
+  if (local.startsWith('apps/cli/src/sdk/')) return 'sdk';
+  if (local.startsWith('apps/cli/src/')) return 'cli';
+  if (local.startsWith('apps/web/src/')) return 'web';
+  if (local.startsWith('apps/api/src/')) return 'api';
+  return 'outside';
+}
+
+/** Enforces process and SDK boundaries for both erased and runtime dependencies. */
+function clientEdgeAllowed(source: SourceArea, target: SourceArea): boolean {
+  const allowed: Record<SourceArea, readonly SourceArea[]> = {
+    generated: ['generated'],
+    'sdk-public': ['sdk-public', 'sdk'],
+    sdk: ['sdk', 'generated', 'sdk-public'],
+    cli: ['cli', 'sdk-public'],
+    web: ['web'],
+    api: ['api'],
+    outside: [],
+  };
+  return allowed[source].includes(target);
+}
+
+/** Resolves exported aliases through barrels so generated symbols cannot become SDK exports. */
+function generatedExportErrors(files: readonly string[]): string[] {
+  if (!files.includes(SDK_PUBLIC_ENTRY)) return [];
+  const program = ts.createProgram([...files], {
+    module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    noLib: true,
+    types: [],
+    skipLibCheck: true,
+  });
+  const checker = program.getTypeChecker();
+  const source = program.getSourceFile(SDK_PUBLIC_ENTRY);
+  const symbol = source && checker.getSymbolAtLocation(source);
+  if (!symbol) return [];
+  return checker.getExportsOfModule(symbol).flatMap((exported) => {
+    const original =
+      exported.flags & ts.SymbolFlags.Alias
+        ? checker.getAliasedSymbol(exported)
+        : exported;
+    return original.declarations?.some(
+      (declaration) =>
+        areaOf(declaration.getSourceFile().fileName) === 'generated',
+    )
+      ? [
+          `[sdk-generated-export] ${relative(ROOT, SDK_PUBLIC_ENTRY)}: generated symbol ${exported.name} cannot be exported through SDK public entry`,
+        ]
+      : [];
+  });
 }
 
 /** Returns dependency layers that a source layer is permitted to reference. */
@@ -143,6 +269,30 @@ function checkBoundaries(
       );
     }
     for (const imported of importsOf(file)) {
+      const sourceArea = areaOf(file);
+      const targetArea = imported.target ? areaOf(imported.target) : 'outside';
+      const clientSource = ['generated', 'sdk-public', 'sdk', 'cli'].includes(
+        sourceArea,
+      );
+      if (
+        (imported.target && !clientEdgeAllowed(sourceArea, targetArea)) ||
+        (sourceArea === 'generated' &&
+          (!imported.target || targetArea !== 'generated')) ||
+        (clientSource &&
+          (imported.specifier === '<computed-import>' ||
+            /^(?:@nestjs(?:\/|$)|typeorm(?:\/|$)|pg(?:\/|$)|fastify(?:\/|$)|@fastify\/)/.test(
+              imported.specifier,
+            )))
+      ) {
+        errors.push(
+          `[client-boundary] ${local} -> ${imported.specifier}: ${sourceArea} cannot depend on ${targetArea}`,
+        );
+      }
+      if (sourceArea === 'sdk-public' && targetArea === 'generated') {
+        errors.push(
+          `[sdk-generated-export] ${local}: SDK public entry cannot expose generated transport`,
+        );
+      }
       const targetFeature = imported.target ? featureOf(imported.target) : null;
       if (sourceIsCommon && targetFeature) {
         errors.push(
@@ -273,7 +423,10 @@ function findCycle(
 
 /** Builds the local import graph, runs every rule, and exits non-zero on violations. */
 function main(): void {
-  const files = SOURCE_ROOTS.flatMap(sourceFiles);
+  const files = [
+    ...SOURCE_ROOTS.flatMap(sourceFiles),
+    ...(existsSync(CLIENT_SOURCE_ROOT) ? sourceFiles(CLIENT_SOURCE_ROOT) : []),
+  ];
   const known = new Set(files);
   const graph = new Map(
     files.map((file) => [
@@ -283,7 +436,10 @@ function main(): void {
       ),
     ]),
   );
-  const errors = checkBoundaries(files, graph);
+  const errors = [
+    ...checkBoundaries(files, graph),
+    ...generatedExportErrors(files),
+  ];
   const cycle = findCycle(graph);
   if (cycle)
     errors.push(

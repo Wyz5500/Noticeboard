@@ -4,7 +4,7 @@
 
 告示牌采用 **API 核心、CLI-first、Web maintenance-only** 的长期方向：版本化 HTTP API 是跨进程业务能力边界；CLI 将成为主要交互入口；未来 TUI 与可能独立发布的 SDK 复用同一 HTTP SDK。现有 Web 保留运行和维护，但不再承接常规产品功能开发。
 
-本文同时描述当前架构与目标架构。tracked OpenAPI v1 artifact、稳定 operationId、服务端漂移检查和显式受支持基线兼容门禁已经实现；除非章节明确写明“当前”，CLI、SDK、generated transport、npm 客户端发布和 TUI 均属于尚未实现的目标合同，不能据此假定仓库中已经存在对应命令、目录或构建产物。
+本文同时描述当前架构与目标架构。tracked OpenAPI v1 artifact、稳定 operationId、服务端漂移检查、显式受支持基线兼容门禁和 internal generated Fetch transport / artifact → generated 漂移门禁已经实现；除非章节明确写明“当前”，CLI、手写 SDK、npm 客户端发布和 TUI 均属于尚未实现的目标合同，不能据此假定仓库中已经存在对应命令、目录或构建产物。
 
 当前仍是模块化单体：唯一的 NestJS + Fastify 进程同时提供版本化 API、健康检查、运行时 OpenAPI 和编译后的静态页面。应用实例无状态，PostgreSQL 是服务器任务与时间线的权威数据源。现有架构不包含 SQLite、Redis、CQRS、Outbox、Event Sourcing、Helm 或正式认证。
 
@@ -19,6 +19,10 @@
                            TypeORM Data Mapper / PostgreSQL
 
 同一 AppModule ── 确定性生成/漂移检查 ── tracked OpenAPI v1 artifact
+                                             │
+                                   Orval 生成/完整树漂移检查
+                                             │
+                  apps/cli/src/sdk/internal/generated/transport.ts
 
 目标：
 API 模块化单体
@@ -56,7 +60,7 @@ DTO、领域模型、读取投影与 ORM 实体分别建模。ORM 实体不会�
 
 `apps/api/src` 的直接顶层文件是 Composition Root，负责 Nest Module、全局 DataSource、migration 和 seed 组装。只有这些文件可以导入 Feature 的 `public/composition/` 注册入口；普通 Feature、`common` 和嵌套顶层代码不能使用该入口，Composition Root 也不能直接导入 Feature 私有实现。`common` 只能被 Feature 依赖，不能反向依赖任何 Feature。
 
-当前 `scripts/check-architecture.ts` 自动识别任意 `apps/api/src/<feature>/...`，检查 Feature Boundary、Composition Root 例外、循环、逆向层依赖、核心层框架泄漏和通用仓储/服务基类；新增 Feature 无需修改规则名单。客户端代码落地时必须扩展门禁，强制以下方向：
+当前 `scripts/check-architecture.ts` 自动识别任意 `apps/api/src/<feature>/...`，检查 Feature Boundary、Composition Root 例外、循环、逆向层依赖、核心层框架泄漏和通用仓储/服务基类；新增 Feature 无需修改规则名单。当前门禁也扫描已存在的 `apps/cli/src`，强制以下方向（手写 SDK 与 CLI 仍未实现）：
 
 ```text
 OpenAPI artifact → generated transport → handwritten SDK → CLI / TUI
@@ -95,8 +99,17 @@ HTTP 使用 URI 版本 `/api/v1`。Nest controller、DTO 和 metadata 是 author
 - 当前服务端生成结果与 tracked artifact 字节一致。
 - runtime `/api/openapi.json` 与 tracked artifact 语义一致，且不混入未版本化 health 运维端点。
 - v1 候选相对全部显式受支持基线没有结构性 breaking change。
+- tracked candidate 重建出的完整 generated tree 与提交内容字节一致。
 
-默认排序、错误码语义、身份处理、事务提交、乐观并发和脱敏继续由契约测试与人工审查固定。generated transport 尚未实现；建立后必须补充从 tracked artifact 重建且无漂移的门禁。
+默认排序、错误码语义、身份处理、事务提交、乐观并发和脱敏继续由契约测试与人工审查固定。当前 `npm run client:generate` / `npm run client:check` 使用精确锁定的根开发依赖 `orval@8.28.1`，只从 tracked candidate 生成 `apps/cli/src/sdk/internal/generated/transport.ts`。通过 `scripts/openapi-fetch-client.ts` 的 Orval 官方 client 扩展，直接从 operation 元数据生成 native Fetch 单文件输出，无运行时包依赖，不使用 mutator、输入转换、生成后补丁或格式化；单文件内部不需要跨文件 import。首次选型试验中 Hey API 0.99.0 bundled Fetch 无法通过现有 `exactOptionalPropertyTypes`，因此采用通过同一类型与 wire 验收的 Orval。
+
+Orval 8.28.1 默认 Fetch 模板使用大小写敏感的对象 spread 合并 Content-Type，会使调用方 `Headers` 产生重复媒体类型及 HTTP 415。因此仓库维护请求生成模板，仍复用 Orval 的 schema 类型生成与文件输出；不修改默认生成器返回的文本，也不对生成文件做补丁。模板复制原生 `Headers`，仅在缺少 Content-Type 时填入 JSON 默认值。当前支持 v1 必填路径参数、JSON 请求与明确数字状态码的 JSON/空响应；未支持的 query、非 JSON 等 wire 形态使生成失败，必须先扩展模板及合同验证。
+
+Generated transport 接收每调用的 `RequestInit` 与 `fetchFn`，由调用方的 Fetch 闭包绑定每实例 base URL；identity 和 AbortSignal 经请求选项注入，不修改全局 Fetch。HTTP status 与响应数据/错误信封保留；日期为字符串，网络、取消与 JSON 解析失败拒绝 Promise，无写重试。当前未实现手写 SDK 的认证提供者、错误 façade 或 public 入口。
+
+生成和检查先写临时树；generate 使用同文件系统的 staging 替换旧目录，替换失败尝试恢复旧树，恢复失败保留备份并报告路径。此流程保证受控失败的恢复，不声称跨进程或进程崩溃时原子切换。check 比较完整 POSIX 相对文件集合和原始字节，不改写 tracked tree；临时目录在 finally 清理，缺失、变化和陈旧文件均阻止验证通过。
+
+只有真实 `apps/cli/src/sdk/internal/generated/**` 路径豁免 ESLint、Prettier 和手写注释要求，仍接受根 strict TypeScript、架构导入和运行时循环检查。API/Web source roots 必须存在，CLI root 仅在尚未创建时可选。门禁覆盖静态 import/re-export、inline type-only、import type expression、字面量动态 import 和 require；客户端计算式动态依赖禁止。SDK public entry 固定为未来 `apps/cli/src/sdk/index.ts`，通过 TypeScript 符号解析禁止 generated 符号经手写 barrel 间接导出。手写 SDK 可依赖 generated，但不能导入 API/Web/CLI 或服务器框架/持久化包。
 
 ### 版本与兼容政策
 

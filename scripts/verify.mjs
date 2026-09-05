@@ -24,6 +24,7 @@ const STATIC_SCRIPTS = [
   'architecture',
   'openapi:check',
   'openapi:compatibility',
+  'client:check',
   'test:instance',
 ];
 const DATABASE_TEST_SCRIPTS = ['test:unit', 'test:api', 'test:contract'];

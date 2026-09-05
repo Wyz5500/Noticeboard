@@ -1,6 +1,6 @@
 # API v1 兼容政策
 
-> **实施状态：基础治理已落地。** 当前 HTTP API、运行时 `/api/openapi.json`、tracked `openapi/v1/noticeboard.openapi.json`、稳定 operationId、服务端漂移检查、runtime 等价测试和显式受支持基线兼容比较均已存在。generated transport、artifact → generated drift、SDK 与 CLI 仍是目标状态。
+> **实施状态：基础治理已落地。** 当前 HTTP API、运行时 `/api/openapi.json`、tracked `openapi/v1/noticeboard.openapi.json`、稳定 operationId、服务端漂移检查、runtime 等价测试和显式受支持基线兼容比较均已存在。internal generated Fetch transport 和 artifact → generated drift 已实现；手写 SDK 与 CLI 仍是目标状态。
 
 ## 目标
 
@@ -65,7 +65,9 @@ tracked artifact 不得手工编辑。需要改变 HTTP 契约时，应先更新
 
 - **服务端 → artifact drift（当前已实现）**：`npm run openapi:check` 从当前服务端重新生成后，结果必须与 tracked artifact 字节一致。
 - **runtime drift（当前已实现）**：真实 `AppModule` 的运行时 `/api/openapi.json` 必须与 tracked artifact 语义一致。
-- **artifact → generated drift（generated transport 建立后启用）**：从 tracked artifact 重新 codegen 后，结果必须与提交的 generated transport 一致。
+- **artifact → generated drift（当前已实现）**：`npm run client:check` 使用 `orval@8.28.1` 从 tracked candidate 重建 `apps/cli/src/sdk/internal/generated/`，比较完整相对文件集合与原始字节，分别报告 missing/changed/stale。检查不写入 tracked tree，已纳入完整 `verify`。
+
+`npm run client:generate` 先生成临时树，再替换整个 tracked generated 目录；受控替换失败恢复旧树，恢复失败保留备份并报告路径，不承诺进程崩溃时的原子目录事务。生成器不读取 baseline 或服务端源码，不启用 mutator、输入转换、生成后 patch 或格式化。Orval 通过 `scripts/openapi-fetch-client.ts` 的 client 扩展直接生成 native Fetch 与注入式 `fetchFn`；请求头由原生 `Headers` 复制并在缺少 Content-Type 时补默认值，避免大小写合并产生 HTTP 415。模板对尚未支持的 query、非 JSON 等 wire 形态失败关闭，base URL 由调用方闭包绑定，身份/取消信号由 `RequestInit` 注入；手写 SDK façade 尚未实现。
 
 Generated transport 是生成物：
 
@@ -206,7 +208,7 @@ HTTP/OpenAPI 变化至少需要：
 
 - 先更新失败的 HTTP/DTO/guard/OpenAPI 测试。
 - 生成并审查 tracked artifact diff。
-- 运行当前的 artifact drift 与 runtime equivalence 检查；generated transport 建立后再加入 generated drift。
+- 运行 artifact drift、runtime equivalence 与 generated drift；candidate 更新后必须运行 `npm run client:generate`。
 - 运行 v1 compatibility 检查，并人工审查工具无法判断的错误语义、排序、并发和脱敏行为。
 - SDK 与 CLI 建立后运行其 contract 和真实宿主机 HTTP smoke。
 - 保留 Web API、行为和视觉回归。

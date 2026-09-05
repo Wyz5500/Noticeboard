@@ -6,7 +6,7 @@
 
 项目后续采用 **API 核心、CLI-first、Web maintenance-only** 的方向：CLI 将成为主要交互入口，未来 TUI 与可能独立发布的 SDK 通过同一版本化 HTTP SDK 使用 `/api/v1`；现有 Web 继续运行和维护，但不再承接常规产品功能开发。
 
-提交到 Git 的 `openapi/v1/noticeboard.openapi.json`、稳定 operationId、服务端漂移检查和显式受支持基线兼容门禁已经实现。CLI、SDK、generated transport 和 TUI 目前尚未实现。本 README 中的命令仍只描述当前可运行的 API/Web、数据库、测试和部署入口；目标 CLI 合同见 [`docs/cli.md`](docs/cli.md)，API v1 兼容政策见 [`docs/api-compatibility.md`](docs/api-compatibility.md)，完整依赖边界见 [`docs/architecture.md`](docs/architecture.md)。
+提交到 Git 的 `openapi/v1/noticeboard.openapi.json`、稳定 operationId、服务端漂移检查和显式受支持基线兼容门禁已经实现。internal generated Fetch transport 与 artifact → generated 漂移门禁也已实现；手写 SDK、CLI 和 TUI 目前尚未实现。本 README 中的命令只描述当前可运行的 API/Web、transport 生成、数据库、测试和部署入口；目标 CLI 合同见 [`docs/cli.md`](docs/cli.md)，API v1 兼容政策见 [`docs/api-compatibility.md`](docs/api-compatibility.md)，完整依赖边界见 [`docs/architecture.md`](docs/architecture.md)。
 
 第一阶段计划只交付一个内部/私有 CLI npm 包，SDK 先作为 CLI 内部的严格逻辑边界，不引入 npm workspaces，也不单独发布 SDK。npm 包名在发布前另行确定，可执行文件暂定为 `noticeboard`。
 
@@ -157,6 +157,8 @@ npm run release -- ...                # 合并候选、部署、失败 revert �
 - `openapi/v1/noticeboard.openapi.json`：从真实 AppModule 确定性生成并提交的当前 HTTP 合同。
 - `openapi/v1/baselines/*.openapi.json`：按 SemVer 命名、显式保留且不可改写的受支持 v1 兼容快照。
 - `scripts/openapi-artifact.ts`、`scripts/check-openapi-compatibility.ts`：artifact 生成、漂移和显式基线兼容门禁。
+- `apps/cli/src/sdk/internal/generated/transport.ts`：从 tracked candidate 生成的内部 Fetch transport，禁止手改。
+- `scripts/generated-transport.ts`：完整生成目录的确定性生成、替换恢复与漂移门禁。
 - `scripts/verify.mjs`、`scripts/run-playwright.mjs`：宿主机验证与浏览器编排。
 - `scripts/deploy.mjs`、`scripts/release.mjs`：main-only 永久部署和 release 事务。
 - `docs/architecture.md`：当前架构、CLI-first 目标、依赖边界和事务设计。
@@ -164,13 +166,28 @@ npm run release -- ...                # 合并候选、部署、失败 revert �
 - `docs/api-compatibility.md`：API v1、OpenAPI artifact、SemVer、兼容变化与迁移政策。
 - `Dockerfile`、`compose.deploy.yaml`：永久部署；`compose.yaml`：仅本地隔离 PostgreSQL。
 
-`openapi/v1` 已作为客户端合同输入建立；SDK 逻辑边界和 `apps/cli` 尚未创建，仍只是架构目标而非可用源码入口。首个 CLI 版本稳定后，只有在 SDK 需要独立发布或 TUI 成为第二个真实消费者时才评估 npm workspaces。
+`apps/cli` 当前只包含 internal generated transport；手写 SDK public façade、CLI 命令、独立包和构建产物均未实现。首个 CLI 版本稳定后，只有在 SDK 需要独立发布或 TUI 成为第二个真实消费者时才评估 npm workspaces。
+
+## Internal Fetch transport
+
+```bash
+npm run client:generate
+npm run client:check
+```
+
+唯一输入为 `openapi/v1/noticeboard.openapi.json`，输出为 `apps/cli/src/sdk/internal/generated/transport.ts`。根开发依赖精确锁定 `orval@8.28.1`，通过 `scripts/openapi-fetch-client.ts` 的 Orval client 扩展直接生成 native Fetch 请求、运行时 Fetch 参数和原始 HTTP status；不生成 SDK public façade，也不安装客户端运行依赖。日期保持字符串，错误信封原样保留，网络/JSON 解析/取消失败拒绝 Promise，写请求不自动重试。
+
+生成模板使用 `new Headers` 复制调用方请求头，只在 `headers.has('content-type')` 为假时设置 JSON 默认值，避免大小写不同的键被 Fetch 拼接成重复媒体类型。当前模板覆盖 v1 的必填路径参数、JSON 请求与明确数字状态码的 JSON/空响应；新增 query、非 JSON 或其他未支持形态时生成失败，必须先补模板与合同测试。
+
+Generated operations 接收 `RequestInit` 与可选的 `fetchFn`；后续手写 SDK 将通过每实例的 Fetch 闭包绑定 base URL，并通过请求选项注入 demo 身份与取消信号。当前没有 SDK 构造器或 profile。生成物使用相对 API URL，Node 调用方应显式注入绑定 origin 的 Fetch。
+
+`client:generate` 先生成完整临时目录再替换旧树，替换失败恢复旧树；恢复也失败时保留备份路径供人工恢复。此过程不承诺跨进程或进程崩溃时的目录事务。`client:check` 在临时目录重建，按 POSIX 相对路径与原始字节报告 missing/changed/stale，不写 tracked tree。两个命令均不需要数据库；生成物不手改，不执行格式化补丁。完整 `verify` 已在 OpenAPI 漂移与兼容检查后接入 `client:check`。
 
 ## 后续客户端阶段
 
-当前已完成管理员 restore HTTP 200 对齐、确定性 OpenAPI v1 artifact、稳定 operationId，以及服务端漂移和显式受支持基线兼容门禁。下一阶段按以下顺序推进：
+当前已完成管理员 restore HTTP 200 对齐、确定性 OpenAPI v1 artifact、稳定 operationId，以及服务端漂移、显式受支持基线兼容和 artifact → generated 漂移门禁。下一阶段按以下顺序推进：
 
-1. 从 tracked artifact 生成 internal transport，并由手写 HTTP SDK 隔离生成器实现、错误映射和认证注入。
+1. 在已治理的 internal transport 上实现只读手写 HTTP SDK，隔离生成器实现、错误映射和认证注入。
 2. 交付 profile、demo identity、`task list/get` 和稳定 `--json`/退出码的只读 CLI。
 3. 加入任务创建、动作、续期和评论写入；未显式提供 expected version 时只预读一次，409 后不自动重放。
 4. SDK 与 CLI 合同稳定后再评估管理资源、独立 SDK 发布、workspaces 和 TUI。

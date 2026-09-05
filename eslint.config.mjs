@@ -6,6 +6,7 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
   {
     ignores: [
+      'apps/cli/src/sdk/internal/generated/**',
       'coverage/**',
       'dist/**',
       'node_modules/**',

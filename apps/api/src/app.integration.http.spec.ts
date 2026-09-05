@@ -8,6 +8,8 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { createTask } from '../../cli/src/sdk/internal/generated/transport.js';
+
 import { AppModule } from './app.module.js';
 import { configureHttpApplication } from './common/presentation/configure-http-application.js';
 
@@ -437,5 +439,37 @@ describe('application composition', () => {
       headers: { 'x-demo-user-id': 'noticeboard-admin' },
     });
     expect(lastAdmin.statusCode).toBe(409);
+  });
+  /** Normalized caller Content-Type must remain a single JSON media type accepted by Fastify. */
+  it('creates a task over HTTP with caller-supplied Content-Type', async () => {
+    await app.listen(0, '127.0.0.1');
+    const origin = await app.getUrl();
+    const fetchAtOrigin: typeof fetch = (input, init) =>
+      fetch(
+        new URL(input instanceof Request ? input.url : input, origin),
+        init,
+      );
+    const response = await createTask(
+      {
+        title: '请求头回归',
+        type: 'bounty',
+        description: '验证内容类型合并',
+        reward: '测试',
+        dueDate: '2026-09-12',
+      },
+      {
+        headers: new Headers({
+          'Content-Type': 'application/json',
+          'X-Demo-User-Id': 'adventurer-a',
+        }),
+      },
+      fetchAtOrigin,
+    );
+    expect(response.status).toBe(201);
+    expect(response.data).toMatchObject({
+      title: '请求头回归',
+      publisher: { id: 'adventurer-a' },
+      version: 1,
+    });
   });
 });

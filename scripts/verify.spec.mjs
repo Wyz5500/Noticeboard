@@ -30,6 +30,7 @@ test('verify dry-run keeps build application and tests on the host', () => {
     'architecture',
     'openapi:check',
     'openapi:compatibility',
+    'client:check',
     'test:instance',
     'build',
     'test:unit',
@@ -38,6 +39,18 @@ test('verify dry-run keeps build application and tests on the host', () => {
   ]) {
     assert.match(output, new RegExp(`npm run ${script.replace(':', '\\:')}`));
   }
+  assert.ok(
+    output.indexOf('npm run openapi:compatibility') <
+      output.indexOf('npm run client:check'),
+  );
+  assert.ok(
+    output.indexOf('npm run client:check') <
+      output.indexOf('npm run test:instance'),
+  );
+  assert.doesNotMatch(
+    output,
+    /npm run (?:deploy|release)|npm publish|git (?:merge|push|fetch|revert)/,
+  );
   assert.match(output, /HOST=127\.0\.0\.1 PORT=0 .*node .*dist\/api\/main\.js/);
   assert.match(output, /E2E_BASE_URL=<dynamic-host-url> .*npm run test:e2e/);
   assert.match(output, /E2E_BASE_URL=<dynamic-host-url> .*npm run test:visual/);
