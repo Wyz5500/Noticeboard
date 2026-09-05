@@ -4,7 +4,7 @@
 
 告示牌采用 **API 核心、CLI-first、Web maintenance-only** 的长期方向：版本化 HTTP API 是跨进程业务能力边界；CLI 将成为主要交互入口；未来 TUI 与可能独立发布的 SDK 复用同一 HTTP SDK。现有 Web 保留运行和维护，但不再承接常规产品功能开发。
 
-本文同时描述当前架构与目标架构。tracked OpenAPI v1 artifact、稳定 operationId、服务端漂移检查、显式受支持基线兼容门禁和 internal generated Fetch transport / artifact → generated 漂移门禁已经实现；除非章节明确写明“当前”，CLI、手写 SDK、npm 客户端发布和 TUI 均属于尚未实现的目标合同，不能据此假定仓库中已经存在对应命令、目录或构建产物。
+本文同时描述当前架构与目标架构。tracked OpenAPI v1 artifact、稳定 operationId、服务端漂移检查、显式受支持基线兼容门禁、internal generated Fetch transport / artifact → generated 漂移门禁和只读手写 HTTP SDK 已经实现。CLI、SDK 写操作、npm 客户端发布和 TUI 仍属于尚未实现的目标合同，不能据此假定仓库中已经存在对应命令或发布包。
 
 当前仍是模块化单体：唯一的 NestJS + Fastify 进程同时提供版本化 API、健康检查、运行时 OpenAPI 和编译后的静态页面。应用实例无状态，PostgreSQL 是服务器任务与时间线的权威数据源。现有架构不包含 SQLite、Redis、CQRS、Outbox、Event Sourcing、Helm 或正式认证。
 
@@ -23,6 +23,8 @@
                                    Orval 生成/完整树漂移检查
                                              │
                   apps/cli/src/sdk/internal/generated/transport.ts
+                                             │
+                            handwritten SDK（tasks / identities 只读）
 
 目标：
 API 模块化单体
@@ -45,7 +47,7 @@ API 模块化单体
 必须区分两类 public contract：
 
 - **服务端内部公共合同**：`apps/api/src/<feature>/public/`，只服务模块化单体内部的跨 Feature 协作，不是 npm SDK 或客户端导入入口。
-- **外部稳定合同**：HTTP `/api/v1` 的路径、方法、字段、枚举、状态码、错误语义与身份头；tracked OpenAPI v1 artifact；未来 SDK 根入口导出的 API；CLI 命令、参数、配置、JSON 信封、stdout/stderr 和退出码。
+- **外部稳定合同**：HTTP `/api/v1` 的路径、方法、字段、枚举、状态码、错误语义与身份头；tracked OpenAPI v1 artifact；SDK 根入口导出的 API；未来 CLI 命令、参数、配置、JSON 信封、stdout/stderr 和退出码。
 
 业务模块内部遵循：
 
@@ -60,7 +62,7 @@ DTO、领域模型、读取投影与 ORM 实体分别建模。ORM 实体不会�
 
 `apps/api/src` 的直接顶层文件是 Composition Root，负责 Nest Module、全局 DataSource、migration 和 seed 组装。只有这些文件可以导入 Feature 的 `public/composition/` 注册入口；普通 Feature、`common` 和嵌套顶层代码不能使用该入口，Composition Root 也不能直接导入 Feature 私有实现。`common` 只能被 Feature 依赖，不能反向依赖任何 Feature。
 
-当前 `scripts/check-architecture.ts` 自动识别任意 `apps/api/src/<feature>/...`，检查 Feature Boundary、Composition Root 例外、循环、逆向层依赖、核心层框架泄漏和通用仓储/服务基类；新增 Feature 无需修改规则名单。当前门禁也扫描已存在的 `apps/cli/src`，强制以下方向（手写 SDK 与 CLI 仍未实现）：
+当前 `scripts/check-architecture.ts` 自动识别任意 `apps/api/src/<feature>/...`，检查 Feature Boundary、Composition Root 例外、循环、逆向层依赖、核心层框架泄漏和通用仓储/服务基类；新增 Feature 无需修改规则名单。当前门禁也扫描已存在的 `apps/cli/src`，强制以下方向（CLI / TUI 仍未实现）：
 
 ```text
 OpenAPI artifact → generated transport → handwritten SDK → CLI / TUI
@@ -105,11 +107,11 @@ HTTP 使用 URI 版本 `/api/v1`。Nest controller、DTO 和 metadata 是 author
 
 Orval 8.28.1 默认 Fetch 模板使用大小写敏感的对象 spread 合并 Content-Type，会使调用方 `Headers` 产生重复媒体类型及 HTTP 415。因此仓库维护请求生成模板，仍复用 Orval 的 schema 类型生成与文件输出；不修改默认生成器返回的文本，也不对生成文件做补丁。模板复制原生 `Headers`，仅在缺少 Content-Type 时填入 JSON 默认值。当前支持 v1 必填路径参数、JSON 请求与明确数字状态码的 JSON/空响应；未支持的 query、非 JSON 等 wire 形态使生成失败，必须先扩展模板及合同验证。
 
-Generated transport 接收每调用的 `RequestInit` 与 `fetchFn`，由调用方的 Fetch 闭包绑定每实例 base URL；identity 和 AbortSignal 经请求选项注入，不修改全局 Fetch。HTTP status 与响应数据/错误信封保留；日期为字符串，网络、取消与 JSON 解析失败拒绝 Promise，无写重试。当前未实现手写 SDK 的认证提供者、错误 façade 或 public 入口。
+Generated transport 接收每调用的 `RequestInit` 与 `fetchFn`，由调用方的 Fetch 闭包绑定每实例 base URL；identity 和 AbortSignal 经请求选项注入，不修改全局 Fetch。HTTP status 与响应数据/错误信封保留；日期为字符串，网络、取消与 JSON 解析失败拒绝 Promise，无写重试。当前只读手写 SDK 在其上提供请求头提供者、错误映射与 public 入口，generated 自身仍不提供运行时资源校验。
 
 生成和检查先写临时树；generate 使用同文件系统的 staging 替换旧目录，替换失败尝试恢复旧树，恢复失败保留备份并报告路径。此流程保证受控失败的恢复，不声称跨进程或进程崩溃时原子切换。check 比较完整 POSIX 相对文件集合和原始字节，不改写 tracked tree；临时目录在 finally 清理，缺失、变化和陈旧文件均阻止验证通过。
 
-只有真实 `apps/cli/src/sdk/internal/generated/**` 路径豁免 ESLint、Prettier 和手写注释要求，仍接受根 strict TypeScript、架构导入和运行时循环检查。API/Web source roots 必须存在，CLI root 仅在尚未创建时可选。门禁覆盖静态 import/re-export、inline type-only、import type expression、字面量动态 import 和 require；客户端计算式动态依赖禁止。SDK public entry 固定为未来 `apps/cli/src/sdk/index.ts`，通过 TypeScript 符号解析禁止 generated 符号经手写 barrel 间接导出。手写 SDK 可依赖 generated，但不能导入 API/Web/CLI 或服务器框架/持久化包。
+只有真实 `apps/cli/src/sdk/internal/generated/**` 路径豁免 ESLint、Prettier 和手写注释要求，仍接受根 strict TypeScript、架构导入和运行时循环检查。API/Web source roots 必须存在，CLI root 仅在尚未创建时可选。门禁覆盖静态 import/re-export、inline type-only、import type expression、字面量动态 import 和 require；客户端计算式动态依赖禁止。SDK public entry 固定为 `apps/cli/src/sdk/index.ts`，通过 TypeScript 符号解析禁止 generated 符号经手写 barrel 间接导出。手写 SDK 可依赖 generated，但不能导入 API/Web/CLI 或服务器框架/持久化包。SDK 构建合同测试额外解析公共声明的传递依赖，禁止 generated 类型通过手写别名或方法签名泄漏。
 
 ### 版本与兼容政策
 
@@ -126,18 +128,24 @@ v1 通常允许新增 endpoint、可选响应字段以及具有旧行为默认�
 
 完整政策见 `docs/api-compatibility.md`。
 
-## SDK 目标边界
+## SDK 当前能力与目标边界
 
 SDK 是传输客户端，不是服务器应用层的进程外镜像。第一阶段不独立发布 SDK，而是在仓库内形成可单独 typecheck、build 和 test 的逻辑边界，并 bundle 到唯一发布的 CLI npm 包；当 SDK 需要独立发布或 CLI/TUI 成为两个真实消费者时，再引入 npm workspaces。
 
-SDK 目标依赖和行为：
+当前只读 SDK 提供 `createNoticeboardClient`、`tasks.list/get` 和 `identities.list`。唯一入口为 `apps/cli/src/sdk/index.ts`；通过 `sdk:typecheck`、`sdk:build` 和 `test:sdk` 独立检查、构建和测试，输出 `dist/sdk` ESM 与声明，尚无独立 npm 包。根 build 包含 SDK，verify 包含独立 SDK 类型检查，SDK 单元/构建合同与真实宿主机 HTTP smoke 分别进入 unit / API 门禁。服务器镜像仅复制 `dist/api` 与 `dist/web`。
+
+SDK 依赖和行为：
 
 - generated transport 只位于 internal 目录，不从 SDK 根入口导出，生成器符号和文件名不构成 public API。
-- 手写资源 façade 提供稳定的 `tasks`、`comments`、`identities` 等资源级方法与稳定类型名。
+- 手写资源 façade 当前提供稳定的 `tasks`、`identities` 只读方法与独立声明的稳定类型名；`comments` 和全部写操作仍为后续目标。
 - SDK 构造器接收 base URL、认证/身份提供者、`fetch` 和取消信号；不读取 CLI 配置文件，不持久化 profile，不打印 stdout/stderr。
 - SDK 统一暴露 API、网络和协议错误，并保留 HTTP status、服务器 `error.code`、message、details、path 和 timestamp。错误码按开放字符串透传。
 - SDK 不自动重试非幂等写请求，也不替 CLI 隐藏乐观并发。
 - 正式认证只预留请求认证注入边界；当前不提前决定 JWT、session、OAuth、token 生命周期或登录协议。
+
+当前构造参数为必填 `baseUrl`、可选 `fetch`、每次请求求值的同步/异步 `getHeaders` 和默认 `signal`。base URL 支持路径前缀，禁止凭据、查询和 fragment；提供者返回的请求头经复制注入，SDK 不选择默认 demo 身份。默认与单次 signal 合并，任一取消都终止请求；取消归为 network 错误的 `aborted` reason。请求不重试、不缓存、不筛选。无效 base URL 抛出 `TypeError`，提供者异常原样传播。
+
+只读响应按 tracked OpenAPI 校验全部已知字段的类型、必填性、闭合枚举、nullable 和时间线联合，容忍新增字段并仅映射已声明字段。SDK 不推导服务器业务规则或修改评论 tombstone。合法 HTTP 错误信封保留状态与所有已知错误字段；非法 JSON、结构错误和意外成功状态归为 protocol，保留可取得的 HTTP status；连接和响应读取失败归为 network 并保留 cause。使用方式和精确公共合同见 `docs/sdk.md`。
 
 ## CLI 目标边界
 

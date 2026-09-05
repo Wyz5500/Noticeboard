@@ -15,7 +15,7 @@
 
 ## 产品与客户端方向
 
-- 项目采用 API 核心、CLI-first、Web maintenance-only 的长期方向。CLI 将成为主要交互入口；未来 TUI 与可能独立发布的 SDK 复用同一 HTTP SDK。tracked OpenAPI v1 artifact、稳定 operationId、internal generated transport 及其漂移/兼容门禁已经实现；尚未实现的 CLI、手写 SDK 和 TUI 必须在文档中明确标为目标状态，不得写成当前可运行能力。
+- 项目采用 API 核心、CLI-first、Web maintenance-only 的长期方向。CLI 将成为主要交互入口；未来 TUI 与可能独立发布的 SDK 复用同一 HTTP SDK。tracked OpenAPI v1 artifact、稳定 operationId、internal generated transport、漂移/兼容门禁和只读手写 SDK 已经实现；尚未实现的 CLI、SDK 写操作和 TUI 必须在文档中明确标为目标状态，不得写成当前可运行能力。
 - CLI、TUI 与 SDK 只能通过版本化 HTTP/OpenAPI 使用业务能力，不得导入 API 的 Domain、Application、Nest Module、DTO、ORM、数据库代码或 Feature `public/`。Feature `public/` 只属于服务端模块化单体内部合同，不是客户端公共 API。
 - 目标客户端依赖方向固定为 OpenAPI artifact → internal generated transport → handwritten HTTP SDK → CLI / TUI。CLI 与 TUI 只能导入 SDK public 入口，禁止直接导入 generated/internal 子路径；Web 继续使用现有手写 `ApiClient`，不得导入 SDK。
 - 第一阶段不引入 npm workspaces，只交付一个内部/私有 CLI npm 包；SDK 先形成严格逻辑边界并 bundle 到 CLI。只有 SDK 需要独立发布或 CLI/TUI 成为两个真实消费者时，才重新评估 workspace 化。

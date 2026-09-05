@@ -26,6 +26,7 @@ test('verify dry-run keeps build application and tests on the host', () => {
     'format:check',
     'lint',
     'typecheck',
+    'sdk:typecheck',
     'comments',
     'architecture',
     'openapi:check',

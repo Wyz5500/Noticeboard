@@ -2,6 +2,8 @@
 
 > **实施状态：尚未实现。** 本文定义首版 CLI 的目标公共合同，用于后续设计、实现和兼容审查。当前仓库没有 `noticeboard` 可执行文件、CLI npm 包或下述命令；现有可运行入口见根 `README.md`。
 
+只读 HTTP SDK 已提供 `tasks.list/get` 与 `identities.list`，可独立构建和测试，使用合同见 [`sdk.md`](sdk.md)。下一阶段将以该公共入口实现只读 CLI；SDK 写操作、CLI profile、命令、JSON 信封和退出码仍未实现。
+
 ## 定位与边界
 
 CLI 是告示牌的主要目标交互入口，也是远程 HTTP 客户端。它只能通过手写 SDK 调用 `/api/v1`，不得直接访问 PostgreSQL、migration、Nest Module、服务器 Application/Domain、Feature `public/` 或 generated transport。
