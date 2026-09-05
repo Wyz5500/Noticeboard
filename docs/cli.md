@@ -134,7 +134,24 @@ noticeboard comment delete <task-id> <comment-id> \
 
 `--profile`、`--base-url` 和 `--user` 只覆盖当前命令，不隐式改写配置。`identity use` 与 `profile use/set/delete` 是修改配置的显式入口。
 
-参数允许出现在命令前后。未知命令、未知选项、重复单值参数、缺少参数与多余位置参数返回 64。`--help` 不读取配置或发起请求；与 `--json` 同用时返回 `{ "data": { "help": "..." } }`。
+参数允许出现在命令前后。未知命令、未知选项、重复单值参数、缺少参数与多余位置参数返回 64。`--help` / `-h` 不读取配置或发起请求；与 `--json` 同用时返回 `{ "data": { "help": "..." } }`。
+
+### 分层帮助与内置手册
+
+`noticeboard --help`（或无参数）显示全部命令索引；`noticeboard task --help` 显示该资源的子命令；`noticeboard task create --help` 只解释该命令的用途、语法、位置参数、选项、必填项、默认值、枚举、互斥条件和示例。所有命令及资源层级均支持 `-h`。查看帮助不要求补齐业务必填参数；未知命令、未知或重复选项及不属于当前命令的选项仍退出 64。
+
+```bash
+noticeboard man                      # 完整中文使用手册
+noticeboard man task                 # 任务资源手册
+noticeboard man task create          # 单条命令说明
+noticeboard man man                  # 手册命令说明
+noticeboard man --help               # 手册入口用法
+noticeboard man task create --json   # {"data":{"manual":"..."}}
+```
+
+`man [资源 [命令]]` 的主题必须为现有资源或完整命令；未知主题、多余位置参数返回 64。支持公共选项，连接与身份覆盖不生效，因为文档不访问服务。`man --help` 返回帮助信封，普通 `man --json` 返回 `{data:{manual:string}}`；成功退出 0，错误沿用现有 stderr 信封和退出码。
+
+完整手册包括快速开始、全部命令、profile 和环境变量优先级、演示身份、文件/stdin、乐观并发、确认、JSON、退出码与错误处理。内容和命令目录随 CLI bundle 分发，脱离仓库、离线、非 TTY 或配置损坏时均可读。帮助与手册不读取配置、正文文件或 stdin，不请求服务器或触发确认，直接输出中文纯文本，不调用系统 man 或分页器。
 
 任务写动作使用 API v1 机器枚举：
 

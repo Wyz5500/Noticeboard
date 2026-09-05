@@ -1,10 +1,6 @@
 /** Coordinates CLI commands with explicit process boundaries. */
-import {
-  helpText,
-  parseCommand,
-  normalizeBaseUrl,
-  type Command,
-} from './arguments.js';
+import { parseCommand, normalizeBaseUrl, type Command } from './arguments.js';
+import { helpText, manualText } from './help.js';
 import {
   configPath,
   readConfig,
@@ -47,6 +43,13 @@ export async function runCli(
     if (command.options.help) {
       const help = helpText(command.name);
       context.stdout(json ? `${JSON.stringify({ data: { help } })}\n` : help);
+      return 0;
+    }
+    if (command.name === 'man') {
+      const manual = manualText(command.operands.join(' '));
+      context.stdout(
+        json ? `${JSON.stringify({ data: { manual } })}\n` : manual,
+      );
       return 0;
     }
     const path = configPath(context.env);

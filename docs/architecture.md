@@ -159,6 +159,8 @@ CLI 是远程服务端客户端，只调用 HTTP SDK，不直接访问 PostgreSQ
 - `comment`：创建、编辑和删除。
 - `admin overview`、`user list/get`、`role list/get`、`permission list/get`：管理总览、三类列表筛选与详情，以及用户/角色创建、更新、软删除与恢复。
 
+CLI 命令语法与逐命令帮助共用客户端命令目录；所有命令支持 `--help` / `-h`。内置 `man [资源 [命令]]` 从同一目录构建离线中文使用手册，随 CLI bundle 安装；在配置加载和业务分发之前返回，不读取配置、正文或 stdin，不调用 HTTP、系统 man 或分页器。帮助 JSON 为 `{data:{help:string}}`，手册为 `{data:{manual:string}}`。
+
 用户与角色创建、更新、软删除和恢复已实现；demo reset 已实现；TUI 尚未实现。`task list` 可基于现有完整任务列表在客户端实现 `--mine`、`--status` 和 `--search`，不得因此复制或改变 `/api/v1/tasks` 的 wire contract。
 
 管理读取只通过 SDK public `admin.overview(options?: RequestOptions): Promise<AdminOverview>` 调用已有 generated `getAdminOverview`，HTTP 200 返回完整用户、角色和权限目录。手写 `AdminOverview`、`AdminUser`、`AdminRole`、`AdminPermission` 从 SDK 根入口导出，权限码复用 `Permission`；字段、nullable、闭合枚举和嵌套数组按 tracked OpenAPI 校验，忽略新增未知字段。保留服务器顺序、逻辑删除记录和字符串日期，不重算状态或权限。

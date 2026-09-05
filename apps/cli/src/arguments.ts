@@ -1,5 +1,6 @@
 /** Parses the command surface independently of files, network and output. */
 import { parseArgs } from 'node:util';
+import { COMMANDS, PUBLIC_OPTIONS, RESOURCES } from './command-catalog.js';
 import { CliError } from './errors.js';
 import { createNoticeboardClient, type TaskStatus } from './sdk/index.js';
 
@@ -30,70 +31,6 @@ const OPTIONS = {
   'expected-version': { type: 'string' },
   'recovery-strategy': { type: 'string' },
 } as const;
-const COMMANDS: Record<
-  string,
-  { min: number; max: number; options?: string[] }
-> = {
-  'demo reset': { min: 0, max: 0, options: ['yes'] },
-  'user create': { min: 0, max: 0, options: ['name', 'role-id'] },
-  'user update': { min: 1, max: 1, options: ['name', 'role-id'] },
-  'user delete': { min: 1, max: 1, options: ['yes'] },
-  'user restore': { min: 1, max: 1 },
-  'role create': { min: 0, max: 0, options: ['name', 'permissions'] },
-  'role update': {
-    min: 1,
-    max: 1,
-    options: ['name', 'permissions', 'clear-permissions'],
-  },
-  'role delete': { min: 1, max: 1, options: ['yes'] },
-  'role restore': { min: 1, max: 1 },
-  'admin overview': { min: 0, max: 0 },
-  'user list': { min: 0, max: 0, options: ['search', 'active', 'deleted'] },
-  'role list': { min: 0, max: 0, options: ['search', 'active', 'deleted'] },
-  'permission list': { min: 0, max: 0, options: ['search'] },
-  'user get': { min: 1, max: 1 },
-  'role get': { min: 1, max: 1 },
-  'permission get': { min: 1, max: 1 },
-  'profile list': { min: 0, max: 0 },
-  'profile show': { min: 0, max: 1 },
-  'profile set': { min: 1, max: 1 },
-  'profile use': { min: 1, max: 1 },
-  'profile delete': { min: 1, max: 1, options: ['yes'] },
-  'identity list': { min: 0, max: 0 },
-  'identity current': { min: 0, max: 0 },
-  'identity use': { min: 1, max: 1 },
-  'task list': { min: 0, max: 0, options: ['mine', 'status', 'search'] },
-  'task get': { min: 1, max: 1 },
-  'task create': {
-    min: 0,
-    max: 0,
-    options: [
-      'title',
-      'type',
-      'reward',
-      'due-date',
-      'description',
-      'description-file',
-    ],
-  },
-  'task act': { min: 2, max: 2, options: ['expected-version'] },
-  'task renew': {
-    min: 1,
-    max: 1,
-    options: ['due-date', 'recovery-strategy', 'expected-version'],
-  },
-  'comment create': {
-    min: 1,
-    max: 1,
-    options: ['content', 'content-file', 'expected-version'],
-  },
-  'comment edit': {
-    min: 2,
-    max: 2,
-    options: ['content', 'content-file', 'expected-version'],
-  },
-  'comment delete': { min: 2, max: 2, options: ['expected-version', 'yes'] },
-};
 const STATUSES: readonly TaskStatus[] = [
   'not_started',
   'in_progress',
@@ -167,46 +104,33 @@ export function parseCommand(args: string[]): Command {
       throw new CliError('usage', `选项重复：--${token.name}`);
     seen.add(token.name);
   }
-  const [resource, action, ...operands] = parsed.positionals;
-  const name = [resource, action].filter(Boolean).join(' ');
+  const [resource, action, ...rest] = parsed.positionals;
+  const name =
+    resource === 'man' ? 'man' : [resource, action].filter(Boolean).join(' ');
+  const operands = resource === 'man' ? parsed.positionals.slice(1) : rest;
   const shape = Object.hasOwn(COMMANDS, name) ? COMMANDS[name] : undefined;
-  if (
-    !name ||
-    (parsed.values.help &&
-      [
-        'demo',
-        'profile',
-        'identity',
-        'task',
-        'comment',
-        'admin',
-        'user',
-        'role',
-        'permission',
-      ].includes(name))
-  ) {
-    if (
-      [...seen].some(
-        (option) =>
-          !['profile', 'base-url', 'user', 'json', 'help'].includes(option),
-      )
-    )
+  if (!name || (parsed.values.help && RESOURCES.includes(name))) {
+    if ([...seen].some((option) => !PUBLIC_OPTIONS.includes(option)))
       throw new CliError('usage', '此选项需要对应的子命令');
     return { name, operands, options: { ...parsed.values, help: true } };
   }
   if (!shape) throw new CliError('usage', '未知命令，请使用 --help 查看用法');
   for (const name of seen)
-    if (
-      ![
-        'profile',
-        'base-url',
-        'user',
-        'json',
-        'help',
-        ...(shape.options ?? []),
-      ].includes(name)
-    )
+    if (![...PUBLIC_OPTIONS, ...(shape.options ?? [])].includes(name))
       throw new CliError('usage', `当前命令不支持 --${name}`);
+  if (name === 'man') {
+    for (const operand of operands) requireText(operand, '手册主题', 'usage');
+    const topic = operands.join(' ');
+    if (
+      operands.length > 2 ||
+      (topic && !RESOURCES.includes(topic) && !Object.hasOwn(COMMANDS, topic))
+    )
+      throw new CliError(
+        'usage',
+        '未知手册主题，请使用 noticeboard man --help 查看用法',
+      );
+    return { name, operands, options: parsed.values };
+  }
   if (parsed.values.help) return { name, operands, options: parsed.values };
   if (operands.length < shape.min || operands.length > shape.max)
     throw new CliError('usage', '位置参数数量不正确，请使用 --help 查看用法');
@@ -230,44 +154,4 @@ export function parseCommand(args: string[]): Command {
     )
       throw new CliError('usage', `--${option} 可选：true, false, all`);
   return { name, operands, options: parsed.values };
-}
-
-/** Produces resource-specific help without loading config or contacting a server. */
-export function helpText(name: string): string {
-  const resource = name.split(' ')[0];
-  const lines = [
-    'demo reset [--yes]',
-    'user create --name <text> --role-id <id>',
-    'user update <id> [--name <text>] [--role-id <id>]',
-    'user delete <id> [--yes]',
-    'user restore <id>',
-    'role create --name <text> [--permissions <code,code>]',
-    'role update <id> --name <text> (--permissions <code,code> | --clear-permissions)',
-    'role delete <id> [--yes]',
-    'role restore <id>',
-    'admin overview',
-    'user list [--search <text>] [--active true|false|all] [--deleted true|false|all]',
-    'user get <user-id>',
-    'role list [--search <text>] [--active true|false|all] [--deleted true|false|all]',
-    'role get <role-id>',
-    'permission list [--search <text>]',
-    'permission get <permission-code>',
-    'profile list',
-    'profile show [name]',
-    'profile set <name> --base-url <url> [--user <user-id>]',
-    'profile use <name>',
-    'profile delete <name> [--yes]',
-    'identity list',
-    'identity current',
-    'identity use <user-id>',
-    'task list [--mine] [--status <status>] [--search <text>]',
-    'task get <task-id>',
-    'task create --title <text> --type <type> --reward <text> --due-date <yyyy-mm-dd> (--description <text> | --description-file <path|->)',
-    'task act <task-id> <action> [--expected-version <number>]',
-    'task renew <task-id> --due-date <yyyy-mm-dd> --recovery-strategy <strategy> [--expected-version <number>]',
-    'comment create <task-id> (--content <text> | --content-file <path|->) [--expected-version <number>]',
-    'comment edit <task-id> <comment-id> (--content <text> | --content-file <path|->) [--expected-version <number>]',
-    'comment delete <task-id> <comment-id> [--expected-version <number>] [--yes]',
-  ].filter((line) => !resource || line.startsWith(`${resource} `));
-  return `用法：noticeboard <资源> <命令> [选项]\n\n${lines.map((line) => `  noticeboard ${line}`).join('\n')}\n\n公共选项：--profile <name> --base-url <url> --user <user-id> --json --help\n状态：${STATUSES.join(', ')}\n类型：exploration, collection, escort, bounty, building\n动作：accept, complete, approve, reopen, close\n续期策略：preserve_status, reopened\n写操作不重试；任务与评论省略版本时只预读一次。评论及管理删除在非 TTY 或 JSON 模式必须提供 --yes。\n管理写入无版本参数且不预读；角色更新必须显式提交名称与完整权限，清空使用 --clear-permissions。用户更新至少提供一个字段。\n管理筛选默认保留全部记录，条件按 AND 组合；详情按 ID 或权限代码精确匹配。\ndemo reset 替换全部任务及时间线，保留用户和角色；普通 TTY 确认目标服务，非 TTY 或 JSON 必须提供 --yes。重置无版本参数，不预读、不重试。\nHTTP 客户端；身份为 demo-only。\n`;
 }
