@@ -104,7 +104,11 @@ test('declares only Node and npm runtime majors', () => {
   assert.equal(readFileSync(NVM_PATH, 'utf8').trim(), '24');
   assert.equal(readFileSync(NODE_VERSION_PATH, 'utf8').trim(), '24');
   assert.match(dockerfile, /^FROM node:24-alpine AS runtime-base$/m);
-  assert.match(dockerfile, /^RUN npm install --global npm@11$/m);
+  assert.doesNotMatch(
+    dockerfile,
+    /\bnpm\s+(?:install|i|update|upgrade)\s[^\r\n]*\bnpm(?:@|\s|$)/m,
+    'Container builds must use the npm bundled with the Node base image',
+  );
   assert.equal(packageJson.dependencies['@nestjs/common'], '11.2.3');
   assert.equal(packageJson.devDependencies['@playwright/test'], '1.63.0');
   assert.equal(packageJson.allowScripts['esbuild@0.28.2'], true);

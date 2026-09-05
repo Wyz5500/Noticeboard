@@ -14,6 +14,8 @@
 
 项目支持任意 Node.js 24.x 与 npm 11.x。直接 npm 依赖、lockfile、PostgreSQL、Playwright/Chromium、Dockerfile frontend 和 esbuild 安装脚本授权仍保持精确版本。
 
+永久部署 Compose 的各应用构建阶段共用 `node:24-alpine` 基础镜像，直接使用镜像自带的 npm，构建时不额外安装或切换 npm。容器与宿主机均只要求 Node 24.x / npm 11.x，不限制 minor 或 patch；若镜像自带的运行时不满足要求，`npm ci` 通过项目 `engines` 与 `engine-strict` 报错，不自动替换运行时。
+
 `@nestjs/platform-fastify` 的 Fastify 依赖通过定向 `overrides` 跟随根依赖的精确版本，避免适配器锁定旧版导致安全修复缺失和插件类型不兼容。升级 NestJS 适配器时应重新评估该覆盖是否仍有必要。
 
 Docker 在本机开发和测试中只用于 PostgreSQL。先确保 Docker daemon 已运行，再安装依赖：
@@ -223,7 +225,9 @@ Generated operations 接收 `RequestInit` 与可选的 `fetchFn`；当前手写 
 
 管理写入已实现：`user` 与 `role` 均支持 `create/update/delete/restore`，通过 SDK 调用已有管理 API。角色更新显式提供名称与完整权限，清空使用 `--clear-permissions`；删除在非 TTY 或 JSON 模式必须提供 `--yes`。每条命令仅写一次，不预读、不重试，不提供版本参数；管理写入成功无 meta，删除返回 `{data:{ok:true,id}}`。精确参数见 `docs/cli.md`，业务权限仍由服务器判定。demo reset 已实现：`noticeboard demo reset [--yes]` 通过既有 HTTP API 替换全部任务及时间线，保留用户和角色。非 TTY 或 JSON 模式必须提供 `--yes`；普通 TTY 确认目标服务后执行。重置只提交一次，结果不确定时通过 `task list` / `task get` 核对。
 
-下一阶段在 SDK 与 CLI 合同稳定后再评估独立 SDK 发布、workspaces 和 TUI；registry 发布仍需独立授权。
+逐命令帮助与离线中文手册也已实现，并随私有 CLI 包分发；无需配置或服务连接即可阅读。当前 SDK 与 CLI 的读写能力、包安装和公共合同均已纳入完整验证。
+
+尚未实施的客户端事项为独立 SDK 包、TUI 和 registry 发布。只有 SDK 需要独立发布或 TUI 成为第二个真实消费者时才重新评估 workspaces；registry 发布的包名、版本与发布动作仍需独立授权。历史设计文档保留各阶段原始范围，当前能力以本 README、`docs/sdk.md` 和 `docs/cli.md` 为准。
 
 ## 健康与关闭
 

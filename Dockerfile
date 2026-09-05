@@ -1,6 +1,5 @@
 # syntax=docker/dockerfile:1.12
 FROM node:24-alpine AS runtime-base
-RUN npm install --global npm@11
 
 FROM runtime-base AS dependencies
 WORKDIR /app
