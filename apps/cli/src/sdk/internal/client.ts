@@ -10,6 +10,14 @@ import type {
   RequestOptions,
 } from '../options.js';
 import {
+  createAdminUser,
+  updateAdminUser,
+  deleteAdminUser,
+  restoreAdminUser,
+  createAdminRole,
+  updateAdminRole,
+  deleteAdminRole,
+  restoreAdminRole,
   getTask,
   getAdminOverview,
   listDemoUsers,
@@ -24,6 +32,8 @@ import {
 import { array } from './decoders.js';
 import type { Decoder } from './decoders.js';
 import {
+  decodeAdminUser,
+  decodeAdminRole,
   decodeAdminOverview,
   decodeError,
   decodeIdentity,
@@ -78,6 +88,11 @@ function networkError(
     signal?.aborted ? 'aborted' : 'network',
     signal?.aborted ? signal.reason : cause,
   );
+}
+
+/** Rejects a nonempty transport value for an operation contracted to return no content. */
+function decodeEmpty(value: unknown): void {
+  if (value !== undefined) throw new TypeError('删除响应必须为空');
 }
 
 /** Constructs an isolated HTTP client without reading process or filesystem configuration. */
@@ -151,6 +166,71 @@ export function createNoticeboardClient(
 
   return {
     admin: {
+      users: {
+        /** Creates a managed resource using its HTTP 201 contract. */
+        create: (input, request) =>
+          requestResource(
+            (init, fetch) => createAdminUser(input, init, fetch),
+            decodeAdminUser,
+            request,
+            201,
+          ),
+        /** Updates once without adding client-side concurrency semantics. */
+        update: (id, input, request) =>
+          requestResource(
+            (init, fetch) => updateAdminUser(id, input, init, fetch),
+            decodeAdminUser,
+            request,
+          ),
+        /** Accepts the empty deletion response without attempting resource decoding. */
+        delete: (id, request) =>
+          requestResource(
+            (init, fetch) => deleteAdminUser(id, init, fetch),
+            decodeEmpty,
+            request,
+            204,
+          ),
+        /** Restores once and validates the returned complete resource. */
+        restore: (id, request) =>
+          requestResource(
+            (init, fetch) => restoreAdminUser(id, init, fetch),
+            decodeAdminUser,
+            request,
+          ),
+      },
+      roles: {
+        /** Creates a managed resource using its HTTP 201 contract. */
+        create: (input, request) =>
+          requestResource(
+            (init, fetch) => createAdminRole(input, init, fetch),
+            decodeAdminRole,
+            request,
+            201,
+          ),
+        /** Updates once without adding client-side concurrency semantics. */
+        update: (id, input, request) =>
+          requestResource(
+            (init, fetch) => updateAdminRole(id, input, init, fetch),
+            decodeAdminRole,
+            request,
+          ),
+        /** Accepts the empty deletion response without attempting resource decoding. */
+        delete: (id, request) =>
+          requestResource(
+            (init, fetch) => deleteAdminRole(id, init, fetch),
+            decodeEmpty,
+            request,
+            204,
+          ),
+        /** Restores once and validates the returned complete resource. */
+        restore: (id, request) =>
+          requestResource(
+            (init, fetch) => restoreAdminRole(id, init, fetch),
+            decodeAdminRole,
+            request,
+          ),
+      },
+
       /** Uses the existing protected overview operation with the shared read error contract. */
       overview: (request) =>
         requestResource(getAdminOverview, decodeAdminOverview, request),

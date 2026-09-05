@@ -27,11 +27,34 @@ export class WriteFailure extends Error {
   }
 }
 
+export class ManagementWriteFailure extends Error {
+  /** Carries resource reconciliation context without inventing an optimistic task version. */
+  constructor(
+    cause: unknown,
+    readonly resource: 'user' | 'role',
+    readonly id: string | undefined,
+  ) {
+    super('管理写操作失败', { cause });
+  }
+}
+
 /** Keeps protocol classification ahead of HTTP status and preserves open API error codes. */
 export function describeError(cause: unknown): {
   error: Record<string, unknown>;
   meta: { exitCode: number; expectedVersion?: number };
 } {
+  if (cause instanceof ManagementWriteFailure) {
+    const failure = describeError(cause.cause);
+    const read =
+      cause.id === undefined
+        ? `${cause.resource} list 查找并通过 ${cause.resource} get`
+        : `${cause.resource} get`;
+    if (failure.error.status === 409)
+      failure.error.hint = `请使用 ${read} 读取服务器状态后再决定操作`;
+    if (failure.error.kind === 'network' || failure.error.kind === 'protocol')
+      failure.error.hint = `写入可能已提交；请使用 ${read} 核对服务器状态，不要直接重复操作`;
+    return failure;
+  }
   if (cause instanceof WriteFailure) {
     const failure = describeError(cause.cause);
     if (cause.expectedVersion !== undefined)

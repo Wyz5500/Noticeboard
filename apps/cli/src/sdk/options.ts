@@ -1,6 +1,16 @@
 /** Public construction and cancellation contracts; SDK configuration is supplied entirely by callers. */
-import type { AdminOverview, Identity, Task } from './models.js';
 import type {
+  AdminOverview,
+  AdminUser,
+  AdminRole,
+  Identity,
+  Task,
+} from './models.js';
+import type {
+  CreateAdminUserInput,
+  UpdateAdminUserInput,
+  CreateAdminRoleInput,
+  UpdateAdminRoleInput,
   CreateTaskInput,
   ActTaskInput,
   RenewTaskInput,
@@ -27,6 +37,41 @@ export interface NoticeboardClient {
   admin: {
     /** Reads the complete protected overview, retaining deleted records and server order. */
     overview(options?: RequestOptions): Promise<AdminOverview>;
+    roles: {
+      /** Creates once, leaving identifiers and business rules to the server. */
+      create(
+        input: CreateAdminRoleInput,
+        options?: RequestOptions,
+      ): Promise<AdminRole>;
+      /** Sends the supplied edit without pre-reading or retrying. */
+      update(
+        id: string,
+        input: UpdateAdminRoleInput,
+        options?: RequestOptions,
+      ): Promise<AdminRole>;
+      /** Soft-deletes once and accepts only the existing HTTP 204 response. */
+      delete(id: string, options?: RequestOptions): Promise<void>;
+      /** Restores a resource subject to the server's management constraints. */
+      restore(id: string, options?: RequestOptions): Promise<AdminRole>;
+    };
+
+    users: {
+      /** Creates once, leaving identifiers and business rules to the server. */
+      create(
+        input: CreateAdminUserInput,
+        options?: RequestOptions,
+      ): Promise<AdminUser>;
+      /** Sends the supplied edit without pre-reading or retrying. */
+      update(
+        id: string,
+        input: UpdateAdminUserInput,
+        options?: RequestOptions,
+      ): Promise<AdminUser>;
+      /** Soft-deletes once and accepts only the existing HTTP 204 response. */
+      delete(id: string, options?: RequestOptions): Promise<void>;
+      /** Restores a resource subject to the server's management constraints. */
+      restore(id: string, options?: RequestOptions): Promise<AdminUser>;
+    };
   };
   tasks: {
     /** Reads the complete server-ordered list without filtering, caching or retrying. */

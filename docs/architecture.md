@@ -4,7 +4,7 @@
 
 告示牌采用 **API 核心、CLI-first、Web maintenance-only** 的长期方向：版本化 HTTP API 是跨进程业务能力边界；CLI 将成为主要交互入口；未来 TUI 与可能独立发布的 SDK 复用同一 HTTP SDK。现有 Web 保留运行和维护，但不再承接常规产品功能开发。
 
-本文同时描述当前架构与目标架构。tracked OpenAPI v1 artifact、稳定 operationId、服务端漂移检查、显式受支持基线兼容门禁、internal generated Fetch transport / artifact → generated 漂移门禁和手写 HTTP SDK 的读取与任务/评论写操作已经实现。读写 CLI 与本地私有安装包也已实现。npm registry 发布和 TUI 仍属于尚未实现的目标合同，不能据此假定仓库中已经存在对应命令或发布包。
+本文同时描述当前架构与目标架构。tracked OpenAPI v1 artifact、稳定 operationId、服务端漂移检查、显式受支持基线兼容门禁、internal generated Fetch transport / artifact → generated 漂移门禁和手写 HTTP SDK 的读取与任务/评论及管理写操作已经实现。读写 CLI 与本地私有安装包也已实现。npm registry 发布和 TUI 仍属于尚未实现的目标合同，不能据此假定仓库中已经存在对应命令或发布包。
 
 当前仍是模块化单体：唯一的 NestJS + Fastify 进程同时提供版本化 API、健康检查、运行时 OpenAPI 和编译后的静态页面。应用实例无状态，PostgreSQL 是服务器任务与时间线的权威数据源。现有架构不包含 SQLite、Redis、CQRS、Outbox、Event Sourcing、Helm 或正式认证。
 
@@ -26,7 +26,7 @@
                                              │
                             handwritten SDK（tasks / comments / identities / admin）
                                              │
-                          CLI（profile / identity / task 读写 / comment 写入 / 管理读取）
+                          CLI（profile / identity / task 读写 / comment 写入 / 管理读写）
 
 目标：
 API 模块化单体
@@ -134,7 +134,7 @@ v1 通常允许新增 endpoint、可选响应字段以及具有旧行为默认�
 
 SDK 是传输客户端，不是服务器应用层的进程外镜像。第一阶段不独立发布 SDK，而是在仓库内形成可单独 typecheck、build 和 test 的逻辑边界，并 bundle 到唯一发布的 CLI npm 包；当 SDK 需要独立发布或 CLI/TUI 成为两个真实消费者时，再引入 npm workspaces。
 
-当前 SDK 提供 `createNoticeboardClient`、`tasks.list/get/create/act/renew`、`comments.create/edit/delete`、`identities.list` 和 `admin.overview`。唯一入口为 `apps/cli/src/sdk/index.ts`；通过 `sdk:typecheck`、`sdk:build` 和 `test:sdk` 独立检查、构建和测试，输出 `dist/sdk` ESM 与声明，尚无独立 npm 包。根 build 包含 SDK，verify 包含独立 SDK 类型检查，SDK 单元/构建合同与真实宿主机 HTTP smoke 分别进入 unit / API 门禁。服务器镜像仅复制 `dist/api` 与 `dist/web`。
+当前 SDK 提供 `createNoticeboardClient`、`tasks.list/get/create/act/renew`、`comments.create/edit/delete`、`identities.list`、`admin.overview` 和 `admin.users` / `admin.roles` 管理写入。唯一入口为 `apps/cli/src/sdk/index.ts`；通过 `sdk:typecheck`、`sdk:build` 和 `test:sdk` 独立检查、构建和测试，输出 `dist/sdk` ESM 与声明，尚无独立 npm 包。根 build 包含 SDK，verify 包含独立 SDK 类型检查，SDK 单元/构建合同与真实宿主机 HTTP smoke 分别进入 unit / API 门禁。服务器镜像仅复制 `dist/api` 与 `dist/web`。
 
 SDK 依赖和行为：
 
@@ -151,19 +151,23 @@ SDK 依赖和行为：
 
 ## CLI 当前能力与目标边界
 
-CLI 是远程服务端客户端，只调用 HTTP SDK，不直接访问 PostgreSQL、migration、服务器用例或现有运维脚本内部能力。当前实现 profile、demo identity、task list/get/create/act/renew、comment create/edit/delete 和管理资源读取，使用 Node 原生参数解析，严格拒绝未知/重复参数。当前采用资源型命令，范围包括：
+CLI 是远程服务端客户端，只调用 HTTP SDK，不直接访问 PostgreSQL、migration、服务器用例或现有运维脚本内部能力。当前实现 profile、demo identity、task list/get/create/act/renew、comment create/edit/delete 和管理资源读写，使用 Node 原生参数解析，严格拒绝未知/重复参数。当前采用资源型命令，范围包括：
 
 - `profile`：named profile 的查询、设置、切换与删除。
 - `identity`：demo 身份列表、当前身份和切换。
 - `task`：列表、详情、创建、生命周期动作和续期。
 - `comment`：创建、编辑和删除。
-- `admin overview`、`user list/get`、`role list/get`、`permission list/get`：管理总览、三类列表筛选与详情。
+- `admin overview`、`user list/get`、`role list/get`、`permission list/get`：管理总览、三类列表筛选与详情，以及用户/角色创建、更新、软删除与恢复。
 
-管理写入、demo reset 和 TUI 尚未实现。`task list` 可基于现有完整任务列表在客户端实现 `--mine`、`--status` 和 `--search`，不得因此复制或改变 `/api/v1/tasks` 的 wire contract。
+用户与角色创建、更新、软删除和恢复已实现；demo reset 和 TUI 尚未实现。`task list` 可基于现有完整任务列表在客户端实现 `--mine`、`--status` 和 `--search`，不得因此复制或改变 `/api/v1/tasks` 的 wire contract。
 
 管理读取只通过 SDK public `admin.overview(options?: RequestOptions): Promise<AdminOverview>` 调用已有 generated `getAdminOverview`，HTTP 200 返回完整用户、角色和权限目录。手写 `AdminOverview`、`AdminUser`、`AdminRole`、`AdminPermission` 从 SDK 根入口导出，权限码复用 `Permission`；字段、nullable、闭合枚举和嵌套数组按 tracked OpenAPI 校验，忽略新增未知字段。保留服务器顺序、逻辑删除记录和字符串日期，不重算状态或权限。
 
 每条管理 CLI 命令只请求一次完整 overview，完整校验后选择总览、对应数组或单个详情；JSON `data` 为 `AdminOverview`、`AdminUser[]`、`AdminRole[]`、`AdminPermission[]` 或对应单个资源，无成功 meta。详情按用户/角色 ID 或权限 code 区分大小写精确匹配，包含已删除记录；未找到返回本地 usage/66，不伪造 HTTP 错误。三类列表支持 CLI 本地 `--search`，用户/角色另支持独立的 `--active true|false|all` 与 `--deleted true|false|all`，默认保留全部记录，按 AND 组合并保留服务器顺序。搜索字段及标准化规则见 `docs/cli.md`；不新增 HTTP query 或 SDK 方法。人类输出为转义控制字符的中文表格，总览按用户、角色、权限组合，空列表明确提示；人类详情以中文逐字段展示全部声明字段并转义远端值。所有管理读取沿用公共配置优先级、30 秒取消窗口和 401/403→77、协议→65、网络→69 的错误规则，不重试、不落盘、不预读身份或自动选择管理员；服务器是 `system.manage` 权限检查的唯一权威。
+
+管理写入经 SDK public `admin.users` / `admin.roles` 的 `create/update/delete/restore` 使用已有 8 个 HTTP endpoint。SDK 独立声明并导出四种管理输入类型，复用完整用户/角色响应校验；创建接受 201，更新/恢复接受 200，删除接受 204 并返回 void。Generated transport 和 HTTP 合同保持不变。
+
+CLI 新增 `user` / `role` 的 `create/update/delete/restore`。用户更新至少提供一个字段；角色更新必须显式提供名称与完整权限，`--permissions` 逗号分隔且拒绝空项/重复项/未知码，`--clear-permissions` 显式清空。管理写入无 expectedVersion，不预读、不重试；权限及业务保护由服务器判定。删除沿用 TTY/JSON/--yes 确认规则，在请求前确认；其余管理写操作直接执行。管理写入成功 JSON data 为完整 AdminUser/AdminRole，删除为 `{ok:true,id}`，无成功 meta。409 提示对应资源 get；网络/协议失败提示可能已提交，创建通过 list/get 核对，其他操作通过 get 核对。精确参数与输出合同见 `docs/cli.md`。
 
 CLI 配置使用版本化 JSON schema 和 XDG/平台系统配置目录。一个配置文件可包含多个 named profile；每个 profile 第一阶段只保存 base URL 和当前 demo user ID，不保存任务、响应缓存或秘密。配置解析优先级固定为：
 
@@ -181,7 +185,7 @@ CLI 进程入口处理异步输出流错误：stdout 的 EPIPE 视为下游主�
 
 CLI npm 包名在公开发布前另行确定；可执行文件为 `noticeboard`。首版只通过内部或私有方式发布。包内容必须使用白名单，不能携带 API/Web 源码、数据库代码、测试 fixture 或仓库配置。
 
-任务写操作与评论增改删均只调用 SDK public 入口。任务创建接受 201，其余写操作接受 200，全部返回并校验完整 Task；DELETE 评论发送带 expectedVersion 的 JSON 请求体。写入输入类型独立手写并通过 generated 结构一致性及公共声明边界验证。
+任务写操作与评论增改删均只调用 SDK public 入口。任务创建接受 201，其余任务/评论写操作接受 200，全部返回并校验完整 Task；DELETE 评论发送带 expectedVersion 的 JSON 请求体。写入输入类型独立手写并通过 generated 结构一致性及公共声明边界验证。
 
 当前配置缺失时只在内存中使用 local demo 默认值，显式配置修改才落盘。profile set 不切换激活项，省略身份时保留旧值或使用 demo 默认；identity use 必须先通过服务器有效身份列表验证，只更新当前激活 profile，拒绝选择其他 profile 后直接修改。所有配置修改使用同目录临时文件、文件同步和原子替换，POSIX 文件权限 0600；并行写入采用最后成功替换的快照，不做跨进程合并。JSON 删除必须使用 --yes，即使在 TTY 中也不提示确认。
 
@@ -189,7 +193,7 @@ CLI npm 包名在公开发布前另行确定；可执行文件为 `noticeboard`�
 
 CLI 独立类型检查允许 Node 类型，SDK 独立类型检查仍只允许 Fetch/DOM 类型。根 build 用精确锁定的 esbuild@0.28.2 bundle CLI 和 SDK，生成 dist/cli 下无运行时依赖的 ESM 可执行文件与私有 manifest；本地占位包为 noticeboard-cli-local@0.0.0，不代表 registry 发布。包白名单只含 bin/noticeboard.js 与 README.md（npm 自动包含 manifest），实际 tarball 安装检查进入 unit 门禁，真实宿主机 HTTP smoke 进入 API 门禁，cli:typecheck 进入 verify。服务器镜像继续仅复制 dist/api 与 dist/web。
 
-全部写命令 JSON data 为完整 Task，除任务创建外带 meta.expectedVersion；data.version 表示服务器结果版本。409 保留服务器错误信息和本次提交版本，并提示 task get；网络和协议失败分别保持 69/65，提示写入可能已提交并要求核对，禁止重试。任务创建提示 task list 查找后 task get 核对。预读失败不写入、不标为结果不确定。人类任务输出包含可用于编辑/删除的评论 ID，并继续转义终端控制字符。
+任务与评论写命令 JSON data 为完整 Task，除任务创建外带 meta.expectedVersion；data.version 表示服务器结果版本。409 保留服务器错误信息和本次提交版本，并提示 task get；网络和协议失败分别保持 69/65，提示写入可能已提交并要求核对，禁止重试。任务创建提示 task list 查找后 task get 核对。预读失败不写入、不标为结果不确定。人类任务输出包含可用于编辑/删除的评论 ID，并继续转义终端控制字符。
 
 完整当前与目标合同见 `docs/cli.md`。
 

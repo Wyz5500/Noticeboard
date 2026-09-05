@@ -26,7 +26,11 @@ export function safeText(value: unknown): string {
 
 /** Provides actionable task summaries and readable structured output for other resources. */
 export function humanResult(command: string, data: unknown): string {
-  if (command === 'user get') {
+  if (command === 'user delete' || command === 'role delete')
+    return `已删除${command === 'user delete' ? '用户' : '角色'}：${safeText((data as { id: string }).id)}\n`;
+  if (
+    ['user get', 'user create', 'user update', 'user restore'].includes(command)
+  ) {
     const user = data as AdminUser;
     return managementDetail([
       ['ID', user.id],
@@ -40,7 +44,9 @@ export function humanResult(command: string, data: unknown): string {
       ['更新时间', user.updatedAt],
     ]);
   }
-  if (command === 'role get') {
+  if (
+    ['role get', 'role create', 'role update', 'role restore'].includes(command)
+  ) {
     const role = data as AdminRole;
     return managementDetail([
       ['ID', role.id],

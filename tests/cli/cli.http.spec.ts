@@ -1,5 +1,6 @@
 /** Exercises built CLI subprocesses through a real host API and isolated verification PostgreSQL. */
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -350,5 +351,126 @@ it('writes tasks and comments through the installed-style executable', async () 
   expect(JSON.parse(closed.stdout).data).toMatchObject({
     status: 'closed',
     version: 6,
+  });
+});
+
+/** Management writes use the real API, retain soft deletion and respect server-owned protections. */
+it('manages users and roles through the built CLI', async () => {
+  const roleName = `CLI 管理角色 ${randomUUID()}`;
+  const updatedRoleName = `${roleName} 更新`;
+  const admin = ['--user', 'noticeboard-admin'];
+  const denied = await cli([
+    'role',
+    'create',
+    '--name',
+    '拒绝创建',
+    '--user',
+    'noticeboard-master',
+  ]);
+  expect(denied.exitCode).toBe(77);
+  expect(JSON.parse(denied.stderr).error.status).toBe(403);
+  const createdRole = await cli([
+    'role',
+    'create',
+    '--name',
+    roleName,
+    '--permissions',
+    'tasks.view',
+    ...admin,
+  ]);
+  expect(createdRole.exitCode, createdRole.stderr).toBe(0);
+  const roleId = (JSON.parse(createdRole.stdout).data as { id: string }).id;
+  const updatedRole = await cli([
+    'role',
+    'update',
+    roleId,
+    '--name',
+    updatedRoleName,
+    '--clear-permissions',
+    ...admin,
+  ]);
+  expect(updatedRole.exitCode, updatedRole.stderr).toBe(0);
+  expect(JSON.parse(updatedRole.stdout).data).toMatchObject({
+    id: roleId,
+    name: updatedRoleName,
+    permissions: [],
+  });
+  const createdUser = await cli([
+    'user',
+    'create',
+    '--name',
+    'CLI 管理用户',
+    '--role-id',
+    roleId,
+    ...admin,
+  ]);
+  expect(createdUser.exitCode, createdUser.stderr).toBe(0);
+  const userId = (JSON.parse(createdUser.stdout).data as { id: string }).id;
+  const occupied = await cli(['role', 'delete', roleId, '--yes', ...admin]);
+  expect(occupied.exitCode).toBe(75);
+  expect(JSON.parse(occupied.stderr).error.code).toBe('ROLE_IN_USE');
+  const updatedUser = await cli([
+    'user',
+    'update',
+    userId,
+    '--name',
+    'CLI 更新用户',
+    ...admin,
+  ]);
+  expect(updatedUser.exitCode, updatedUser.stderr).toBe(0);
+  expect(JSON.parse(updatedUser.stdout).data).toMatchObject({
+    name: 'CLI 更新用户',
+    roleId,
+  });
+  expect((await cli(['user', 'delete', userId, ...admin])).exitCode).toBe(64);
+  const deletedUser = await cli(['user', 'delete', userId, '--yes', ...admin]);
+  expect(deletedUser.exitCode, deletedUser.stderr).toBe(0);
+  expect(JSON.parse(deletedUser.stdout)).toEqual({
+    data: { ok: true, id: userId },
+  });
+  const tombstone = await cli(['user', 'get', userId, ...admin]);
+  expect(JSON.parse(tombstone.stdout).data).toMatchObject({
+    active: false,
+    deletedAt: expect.any(String),
+  });
+  const restoredUser = await cli(['user', 'restore', userId, ...admin]);
+  expect(restoredUser.exitCode, restoredUser.stderr).toBe(0);
+  expect(JSON.parse(restoredUser.stdout).data).toMatchObject({
+    active: true,
+    deletedAt: null,
+  });
+  const reassigned = await cli([
+    'user',
+    'update',
+    userId,
+    '--role-id',
+    'role-user',
+    ...admin,
+  ]);
+  expect(reassigned.exitCode, reassigned.stderr).toBe(0);
+  const deletedRole = await cli(['role', 'delete', roleId, '--yes', ...admin]);
+  expect(deletedRole.exitCode, deletedRole.stderr).toBe(0);
+  expect(JSON.parse(deletedRole.stdout)).toEqual({
+    data: { ok: true, id: roleId },
+  });
+  const restoredRole = await cli(['role', 'restore', roleId, ...admin]);
+  expect(restoredRole.exitCode, restoredRole.stderr).toBe(0);
+  expect(JSON.parse(restoredRole.stdout).data).toMatchObject({
+    active: true,
+    deletedAt: null,
+  });
+  const builtin = await cli(['role', 'delete', 'role-user', '--yes', ...admin]);
+  expect(builtin.exitCode).toBe(75);
+  const lastAdmin = await cli([
+    'user',
+    'delete',
+    'noticeboard-admin',
+    '--yes',
+    ...admin,
+  ]);
+  expect(lastAdmin.exitCode).toBe(75);
+  expect(JSON.parse(lastAdmin.stderr).error).toMatchObject({
+    status: 409,
+    code: 'CONFLICT',
   });
 });

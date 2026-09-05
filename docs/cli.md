@@ -1,6 +1,6 @@
 # CLI 当前能力与目标合同
 
-> **实施状态：任务与评论读写及管理资源只读 CLI 已实现。** 当前支持 profile、demo identity、任务读取、创建、生命周期、续期、评论增改删和管理总览、三类列表筛选与详情，保留 JSON 信封与稳定退出码，并提供可本地打包安装的私有 CLI。registry 发布和 TUI 仍为目标状态。
+> **实施状态：任务、评论及管理资源读写 CLI 已实现。** 当前支持 profile、demo identity、任务读取、创建、生命周期、续期、评论增改删和管理总览、三类列表筛选与详情、用户和角色写入，保留 JSON 信封与稳定退出码，并提供可本地打包安装的私有 CLI。registry 发布和 TUI 仍为目标状态。
 
 CLI 只消费手写 SDK 公共入口的 `tasks`、`comments`、`identities` 与 `admin`，使用合同见 [`sdk.md`](sdk.md)。`npm run cli:build` 生成 `dist/cli`，`npm run test:cli` 验证命令和本地安装包；真实宿主机 HTTP smoke 随完整 verify 运行。
 
@@ -14,7 +14,7 @@ CLI 是告示牌的主要目标交互入口，也是远程 HTTP 客户端。它�
 - 可执行文件为 `noticeboard`；本地占位包名为 `noticeboard-cli-local`、版本为 `0.0.0`，标记 `private: true`，不代表 registry 发布版本。
 - SDK bundle 在 CLI 包内，不单独发布。
 - 支持 Node.js 24.x。
-- 当前覆盖 profile、demo identity、任务读取及任务和评论写入，以及管理总览、用户、角色和权限的列表筛选与详情。管理写入、demo reset 与 TUI 尚未实现。
+- 当前覆盖 profile、demo identity、任务读取及任务和评论写入，以及管理总览、用户、角色和权限的列表筛选与详情。用户与角色创建、更新、软删除及恢复已实现；demo reset 与 TUI 尚未实现。
 
 CLI 默认服务人工终端使用，同时必须提供稳定、无交互的脚本接口。
 
@@ -70,7 +70,30 @@ noticeboard permission get system.manage --user noticeboard-admin
 
 总览和列表的 JSON `data` 分别为 `AdminOverview`、`AdminUser[]`、`AdminRole[]`、`AdminPermission[]`；详情为单个完整 `AdminUser`、`AdminRole` 或 `AdminPermission`，均无成功 meta。人类输出为中文表格：用户显示 ID、用户名、姓名、角色 ID/名称、启用状态和删除时间；角色显示 ID、代码、名称、内置标记、权限码、启用状态和删除时间；权限显示代码、名称和描述。总览按用户、角色、权限的顺序组合三张表；空列表明确提示，远端文本统一转义终端控制字符。JSON 保留全部声明字段，包括更新时间。人类详情使用中文逐字段显示全部声明字段，包括用户角色代码和用户/角色更新时间，并转义每个远端值。
 
-### 写命令
+### 管理写入
+
+```text
+noticeboard user create --name <text> --role-id <id>
+noticeboard user update <id> [--name <text>] [--role-id <id>]
+noticeboard user delete <id> [--yes]
+noticeboard user restore <id>
+noticeboard role create --name <text> [--permissions <code,code>]
+noticeboard role update <id> --name <text> (--permissions <code,code> | --clear-permissions)
+noticeboard role delete <id> [--yes]
+noticeboard role restore <id>
+```
+
+所有命令只通过 SDK `admin.users` / `admin.roles` 调用已有版本化 API，要求 `system.manage`。不自动选择管理员或修改 profile；公共配置与 30 秒取消窗口保持一致。每条命令仅提交一次写请求，不预读、不重试。管理 API 无版本字段，因此不接受 `--expected-version`，也不提供乐观并发保证。
+
+用户创建要求名称与角色 ID；用户更新至少提供一个修改字段，省略字段不发送。名称与角色 ID 使用非空、无控制字符的文本规则，其余业务校验交给服务器。角色创建省略权限时采用服务器默认空权限；更新必须显式提交名称和完整权限列表，不从 overview 补齐。`--permissions` 按逗号分隔，每项去除首尾空白，拒绝空项、重复项和未知权限码；`--clear-permissions` 只用于角色更新，发送空数组，与 `--permissions` 互斥。用户 username 与角色 code 由服务器生成，不提供设置参数；`active` 仅供读取筛选。
+
+删除是软删除，在任何 HTTP 请求前确认；非 TTY 或 JSON 模式必须提供 `--yes`，TTY 拒绝确认返回 64。创建、更新与恢复直接执行，不接受 `--yes`。非法或重复参数在请求前返回 64。服务器负责内置角色、角色占用及最后一名管理员保护，客户端不预检或复制这些规则。
+
+创建接受 201，更新/恢复接受 200，JSON 输出 `{data: AdminUser}` 或 `{data: AdminRole}`，人类输出复用完整管理详情；删除接受 204，输出 `{data:{ok:true,id}}`，人类输出显示资源类型及 ID。管理写入没有成功 meta。所有远端值继续转义终端控制字符。
+
+错误沿用现有信封与退出码：400→64、401/403→77、404→66、409/429→75、网络→69、协议→65。409 保留业务错误，提示使用 `user get` 或 `role get` 核对，不输出任务版本提示。网络或协议失败提示写入可能已提交；已知目标使用对应 `get` 核对，创建使用对应 `list` 查找后 `get` 核对，禁止自动重放。
+
+### 任务与评论写命令
 
 ```text
 noticeboard task create --title <text> --type <type> --reward <text> \
@@ -221,7 +244,7 @@ CLI 不提供默认交互向导。缺少必填输入时返回 usage 错误，不
 - TTY：默认请求确认，可用 `--yes` 明确跳过。
 - 非 TTY：必须显式传入 `--yes`；缺少时拒绝执行。
 
-评论删除和 profile 删除视为危险操作；任务动作（包括 close）直接执行，不接受 `--yes`。删除确认在任何 HTTP 请求前完成。不能因为 stdin 不可交互而默认执行。
+评论、profile、用户和角色删除视为危险操作；任务动作（包括 close）直接执行，不接受 `--yes`。删除确认在任何 HTTP 请求前完成。不能因为 stdin 不可交互而默认执行。
 
 ## 乐观并发与重试
 
@@ -233,7 +256,7 @@ CLI 不提供默认交互向导。缺少必填输入时返回 usage 错误，不
 2. 未提供时，CLI 先执行一次任务详情读取，并使用读取到的最新版本提交。
 3. 服务端返回 409 时，CLI 不自动再次读取并重放操作；应显示服务器 `error.code`、本次使用的版本和重新 `task get` 的建议，并以退出码 75 结束。JSON 错误保留服务器信封字段，`meta.expectedVersion` 记录本次提交版本，`error.hint` 提供核对建议。
 
-SDK 和 CLI 均不得默认重试非幂等写操作。网络在提交后断开时，客户端无法确定服务器是否已提交；此时应报告结果不确定并要求用户重新读取状态，不能自动重复评论或任务动作。写入 network 失败保持退出码 69，protocol 失败保持 65，并在 `error.hint` 提醒“可能已提交”；任务创建提示 `task list` 查找后 `task get` 核对，其余写入提示 `task get`。预读失败不提交，也不标为写入结果不确定。
+SDK 和 CLI 均不得默认重试非幂等写操作。网络在提交后断开时，客户端无法确定服务器是否已提交；此时应报告结果不确定并要求用户重新读取状态，不能自动重复评论或任务动作。写入 network 失败保持退出码 69，protocol 失败保持 65，并在 `error.hint` 提醒“可能已提交”；任务创建提示 `task list` 查找后 `task get` 核对，其余任务/评论写入提示 `task get`；管理写入使用对应 `user` / `role` 的 list/get 核对。预读失败不提交，也不标为写入结果不确定。
 
 只读请求未来可以在明确、可观测且不改变 public 行为的策略下增加有限重试，但不属于首版默认合同。
 
@@ -271,7 +294,7 @@ SDK 和 CLI 均不得默认重试非幂等写操作。网络在提交后断开�
 - 不能在 JSON 前后混入进度、提示或人类文案。
 - 无响应正文的成功操作仍输出明确结果，例如 `{ "data": { "ok": true } }`。
 
-当前读取 JSON 的 `data`：任务列表为 `Task[]`，详情为 `Task`，身份列表为 `Identity[]`，当前/切换身份为 `Identity`。profile 列表为 `{name,baseUrl,demoUserId,current}[]`，show/set/use 返回单个同形对象；删除返回 `{ok:true,name}`。读取不输出成功 meta。全部写命令成功的 `data` 为服务器返回的完整 `Task`；任务创建无 meta，其余写操作带 `meta.expectedVersion`，表示提交使用的版本，而 `data.version` 为服务器结果版本。人类输出展示任务详情及评论 ID，便于后续编辑和删除；终端控制字符继续转义。
+当前读取 JSON 的 `data`：任务列表为 `Task[]`，详情为 `Task`，身份列表为 `Identity[]`，当前/切换身份为 `Identity`。profile 列表为 `{name,baseUrl,demoUserId,current}[]`，show/set/use 返回单个同形对象；删除返回 `{ok:true,name}`。读取不输出成功 meta。任务与评论写命令成功的 `data` 为服务器返回的完整 `Task`；任务创建无 meta，其余任务/评论写操作带 `meta.expectedVersion`，表示提交使用的版本，而 `data.version` 为服务器结果版本。人类输出展示任务详情及评论 ID，便于后续编辑和删除；终端控制字符继续转义。
 
 ### JSON 错误信封
 
